@@ -83,6 +83,9 @@ export interface DubSlice {
   dubFailure: DubFailure | null;
   isTranslating: boolean;
 
+  /** Pre-translation brief review (TermsReviewPanel) open? Transient. */
+  termsReviewOpen: boolean;
+
   // ── Content ───────────────────────────────────────────────────────────
   dubSegments: DubSegment[];
   dubTranscript: string;
@@ -165,6 +168,7 @@ export interface DubSlice {
   setDubError: (v: Updater<string>) => void;
   setDubFailure: (v: Updater<DubSlice['dubFailure']>) => void;
   setIsTranslating: (v: Updater<boolean>) => void;
+  setTermsReviewOpen: (v: Updater<boolean>) => void;
   setDubSegments: (v: Updater<DubSegment[]>) => void;
   setDubTranscript: (v: Updater<string>) => void;
   setDubFilename: (v: Updater<string>) => void;
@@ -214,6 +218,7 @@ const INITIAL: Omit<
   | 'setDubError'
   | 'setDubFailure'
   | 'setIsTranslating'
+  | 'setTermsReviewOpen'
   | 'setDubSegments'
   | 'setDubTranscript'
   | 'setDubFilename'
@@ -250,6 +255,7 @@ const INITIAL: Omit<
   dubError: '',
   dubFailure: null,
   isTranslating: false,
+  termsReviewOpen: false,
   dubSegments: [],
   dubTranscript: '',
   dubFilename: '',
@@ -288,6 +294,7 @@ export const createDubSlice: StateCreator<DubSlice, [], [], DubSlice> = (set, ge
   setDubError: (v) => set((s) => ({ dubError: resolve(v, s.dubError) })),
   setDubFailure: (v) => set((s) => ({ dubFailure: resolve(v, s.dubFailure) })),
   setIsTranslating: (v) => set((s) => ({ isTranslating: resolve(v, s.isTranslating) })),
+  setTermsReviewOpen: (v) => set((s) => ({ termsReviewOpen: resolve(v, s.termsReviewOpen) })),
   setDubSegments: (v) => set((s) => ({ dubSegments: resolve(v, s.dubSegments) })),
   setDubTranscript: (v) => set((s) => ({ dubTranscript: resolve(v, s.dubTranscript) })),
   setDubFilename: (v) => set((s) => ({ dubFilename: resolve(v, s.dubFilename) })),

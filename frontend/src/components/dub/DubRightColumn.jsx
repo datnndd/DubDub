@@ -81,10 +81,13 @@ export default function DubRightColumn({
   dubStep,
   dubProgress,
   pasteTranslations,
+  termsReviewSlot,
 }) {
   const [pasteOpen, setPasteOpen] = useState(false);
   return (
     <div className="studio-panel dub-panel-col">
+      {/* Pre-translation brief review — slotted in from DubTab. */}
+      {termsReviewSlot && <div className="mb-[4px]">{termsReviewSlot}</div>}
       {/* Output options + timing — moved to the top of the right section. */}
       <div>
         <div className={OUT_ROW}>

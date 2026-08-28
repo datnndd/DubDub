@@ -849,8 +849,15 @@ export default function useDubWorkflow({
   // that language rather than rendering a wrong-language track.
   const handleTranslateAll = useCallback(
     async (langOverride) => {
+      // Accepts a plain language code (legacy callers + the multi-language
+      // loop) or an options object: { lang, translationContext } — the
+      // reviewed brief from TermsReviewPanel makes the backend skip its
+      // hidden auto-extraction entirely.
+      const opts = langOverride && typeof langOverride === 'object' ? langOverride : null;
+      const langArg = opts ? opts.lang : langOverride;
+      const translationContext = opts?.translationContext || null;
       const targetLang =
-        typeof langOverride === 'string' && langOverride ? langOverride : dubLangCode;
+        typeof langArg === 'string' && langArg ? langArg : dubLangCode;
       // Snapshot segments at call time: inside the multi-language loop the
       // click-time closure is stale after the previous pick's translate pass.
       const segs = useAppStore.getState().dubSegments;
@@ -897,6 +904,9 @@ export default function useDubWorkflow({
           glossary: glossaryTerms.length
             ? glossaryTerms.map((t) => ({ source: t.source, target: t.target, note: t.note || '' }))
             : undefined,
+          // Reviewed brief (TermsReviewPanel) — when present the backend uses
+          // it verbatim instead of its hidden auto-glossary pass.
+          translation_context: translationContext || undefined,
         });
         const translatedMap = {};
         const errors = [];

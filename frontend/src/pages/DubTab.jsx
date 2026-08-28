@@ -13,6 +13,7 @@ import IdleSkeleton from '../components/dub/IdleSkeleton';
 import DubHeader from '../components/dub/DubHeader';
 import DubLeftColumn from '../components/dub/DubLeftColumn';
 import DubRightColumn from '../components/dub/DubRightColumn';
+import TermsReviewPanel from '../components/dub/TermsReviewPanel';
 import DubFooter from '../components/dub/DubFooter';
 import {
   hasCompleteTranslation,
@@ -111,6 +112,9 @@ export default function DubTab(props) {
   const dubFailure = useAppStore((s) => s.dubFailure);
   const dubProgress = useAppStore((s) => s.dubProgress);
   const isTranslating = useAppStore((s) => s.isTranslating);
+  const autoGlossaryPref = useAppStore((s) => s.autoGlossary);
+  const termsReviewOpen = useAppStore((s) => s.termsReviewOpen);
+  const setTermsReviewOpen = useAppStore((s) => s.setTermsReviewOpen);
   const preserveBg = useAppStore((s) => s.preserveBg);
   const setPreserveBg = useAppStore((s) => s.setPreserveBg);
   const defaultTrack = useAppStore((s) => s.defaultTrack);
@@ -444,9 +448,16 @@ export default function DubTab(props) {
   const reviewMode = useAppStore((s) => s.reviewMode);
   const [dismissedStages, setDismissedStages] = useState(() => new Set());
   const hasTranslations = dubSegments.some((s) => s.text_original && s.text_original !== s.text);
+  // Pre-translation brief review: on the LLM engine (single-language mode),
+  // the post-ASR checkpoint becomes a review stop — the drafted brief (theme
+  // + terminology) is shown and editable BEFORE any translation starts.
+  const reviewEligible =
+    translateProvider === 'openai' && autoGlossaryPref && !multiLangMode;
   const checkpointStage =
     dubStep === 'editing' && !hasTranslations
-      ? 'asr'
+      ? reviewEligible
+        ? 'terms'
+        : 'asr'
       : dubStep === 'editing' && hasTranslations
         ? 'translate'
         : dubStep === 'done'
@@ -455,7 +466,8 @@ export default function DubTab(props) {
   const showCheckpoint =
     reviewMode === 'on' && checkpointStage && !dismissedStages.has(checkpointStage);
   const onCheckpointContinue = () => {
-    if (checkpointStage === 'asr') handleTranslateAll?.();
+    if (checkpointStage === 'terms') setTermsReviewOpen(true);
+    else if (checkpointStage === 'asr') handleTranslateAll?.();
     else if (checkpointStage === 'translate') handleDubGenerate?.();
   };
   const onCheckpointDismiss = () => {
@@ -465,6 +477,45 @@ export default function DubTab(props) {
       return next;
     });
   };
+  // As soon as a fresh transcript is ready, draft the brief and show it —
+  // the summarize pass is the SAME call the translator previously ran hidden,
+  // just surfaced now. Once per job; closing the panel keeps it closed.
+  const lastAutoOpenJobRef = useRef(null);
+  useEffect(() => {
+    const translated = dubSegments.some((s) => s.text_original && s.text_original !== s.text);
+    if (
+      dubStep === 'editing' &&
+      dubJobId &&
+      reviewEligible &&
+      dubSegments.length &&
+      !translated &&
+      !termsReviewOpen &&
+      lastAutoOpenJobRef.current !== dubJobId
+    ) {
+      lastAutoOpenJobRef.current = dubJobId;
+      setTermsReviewOpen(true);
+    }
+  }, [dubStep, dubJobId, reviewEligible, dubSegments.length, termsReviewOpen, setTermsReviewOpen, dubSegments]);
+  // The TermsReviewPanel hands back the edited brief; the backend skips its
+  // hidden auto-extraction when translation_context is present.
+  const startReviewedTranslate = useCallback(
+    (brief) => {
+      setTermsReviewOpen(false);
+      return handleTranslateAll?.({ lang: dubLangCode, translationContext: brief });
+    },
+    [handleTranslateAll, dubLangCode, setTermsReviewOpen],
+  );
+  const termsReviewSlot =
+    dubJobId && termsReviewOpen ? (
+      <TermsReviewPanel
+        jobId={dubJobId}
+        targetLang={dubLangCode}
+        segments={dubSegments}
+        translating={isTranslating}
+        onTranslate={startReviewedTranslate}
+        onClose={() => setTermsReviewOpen(false)}
+      />
+    ) : null;
   // Persist the "pull YouTube captions" intent across ingests — it's opt-in
   // per-URL but almost always on once the user discovers it. Stored on the
   // component instead of the global store to avoid polluting cross-project
@@ -829,6 +880,7 @@ export default function DubTab(props) {
               segmentDelete={segmentDelete}
               segmentRestoreOriginal={segmentRestoreOriginal}
               pasteTranslations={pasteTranslations}
+              termsReviewSlot={termsReviewSlot}
               handleSegmentPreview={handleSegmentPreview}
               onDirectSegment={onDirectSegment}
               segmentSplit={segmentSplit}

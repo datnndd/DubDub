@@ -152,6 +152,29 @@ export async function dubTranslate(body: Record<string, unknown>): Promise<DubTr
   return apiPost<DubTranslateResponse>('/dub/translate', body);
 }
 
+/** Response of POST /dub/translate-context — the pre-translation brief. */
+export interface DubTranslateContextResponse {
+  theme?: string;
+  terms?: Array<{ source: string; target: string; note?: string }>;
+  fingerprint?: string;
+  source_lang?: string;
+  target_lang?: string;
+  cached?: boolean;
+  user_edited?: boolean;
+}
+
+/**
+ * Extract (or return the cached) translation brief — a theme summary plus a
+ * source→target terminology map — for the pre-translation review step. The
+ * fingerprint cache is shared with /dub/translate, so preview → translate
+ * without edits costs a single LLM call in total.
+ */
+export async function dubTranslateContext(
+  body: Record<string, unknown>,
+): Promise<DubTranslateContextResponse> {
+  return apiPost<DubTranslateContextResponse>('/dub/translate-context', body);
+}
+
 export async function dubGenerate(jobId: string, body: Record<string, unknown>): Promise<unknown> {
   return apiPost(`/dub/generate/${jobId}`, body);
 }

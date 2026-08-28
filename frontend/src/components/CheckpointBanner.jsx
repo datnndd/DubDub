@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, ArrowRight, X, Sparkles, Languages, Mic } from 'lucide-react';
+import { CheckCircle, ArrowRight, X, Sparkles, Languages, Mic, BookOpen } from 'lucide-react';
 import { Button } from '../ui';
 import { useTranslation } from 'react-i18next';
 
@@ -18,12 +18,18 @@ import { useTranslation } from 'react-i18next';
 
 const STAGE_ICONS = {
   asr: { icon: Mic, accent: '#b8bb26', ctaIcon: Languages },
+  terms: { icon: BookOpen, accent: '#fabd2f', ctaIcon: Languages },
   translate: { icon: Languages, accent: '#83a598', ctaIcon: Sparkles },
   done: { icon: CheckCircle, accent: '#8ec07c' },
 };
 
 const STAGE_KEYS = {
   asr: { title: 'checkpoint.asr_title', cta: 'checkpoint.asr_cta', hint: 'checkpoint.asr_hint' },
+  terms: {
+    title: 'checkpoint.terms_title',
+    cta: 'checkpoint.terms_cta',
+    hint: 'checkpoint.terms_hint',
+  },
   translate: {
     title: 'checkpoint.translate_title',
     cta: 'checkpoint.translate_cta',
