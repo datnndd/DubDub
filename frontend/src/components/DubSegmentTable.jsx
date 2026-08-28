@@ -4,19 +4,10 @@ import { List } from 'react-window';
 import DubSegmentRow from './DubSegmentRow';
 import { Table, Select } from '../ui';
 import { useAppStore } from '../store';
+import { COLUMNS } from './segmentColumns';
 
 const BASE_ROW_HEIGHT = 26;
 const ROW_HEIGHT_WITH_ORIG = 40;
-
-const COLUMNS = [
-  { key: 'time', width: 50 },
-  { key: 'spkr', width: 45 },
-  { key: 'text', flex: 1 },
-  { key: 'lang', width: 42 },
-  { key: 'voice', width: 60 },
-  { key: 'vol', width: 40 },
-  { key: 'act', width: 42 },
-];
 
 export default function DubSegmentTable({
   segments,

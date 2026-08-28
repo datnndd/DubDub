@@ -26,7 +26,8 @@ import DubFailureNotice from './DubFailureNotice';
 import PrepOverlay from './PrepOverlay';
 import TranscribeOverlay from './TranscribeOverlay';
 import AsrEngineSelector from '../AsrEngineSelector';
-import { LANG_CODES } from '../../utils/languages';
+import { COLUMNS } from '../segmentColumns';
+import DubLangSelects from './DubLangSelects';
 import { useAppStore } from '../../store';
 
 const SPEAKERS_INPUT =
@@ -253,50 +254,19 @@ export default function IdleSkeleton({
                 <div className="flex flex-wrap items-center justify-between gap-[10px]">
                   <AsrEngineSelector />
                   <div className="flex flex-wrap items-center gap-[10px]">
-                    <label className="inline-flex items-center gap-[5px] text-[12px] text-[var(--muted,#a89984)] whitespace-nowrap">
-                      <Globe size={13} className="text-[var(--chrome-fg-muted)]" />
-                      <span className="font-medium text-[color:var(--chrome-fg,#ebdbb2)]">
-                        {t('dub.source_language')}:
-                      </span>
-                      <select
-                        className="px-2 py-1 text-xs rounded-md border border-[var(--border,#3c3836)] bg-[var(--input-bg,#282828)] text-[color:var(--chrome-fg,#ebdbb2)] cursor-pointer focus:border-[var(--color-brand,#fabd2f)] focus:outline-none"
-                        value={dubSourceLangCode || 'auto'}
-                        disabled={dubStep === 'uploading' || dubStep === 'transcribing'}
-                        onChange={(e) => setDubSourceLangCode(e.target.value)}
-                        data-testid="dub-source-lang-select"
-                      >
-                        <option value="auto">🌐 {t('dub.auto')}</option>
-                        {LANG_CODES.map((lc) => (
-                          <option key={lc.code} value={lc.code}>
-                            {lc.label} ({lc.code})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="inline-flex items-center gap-[5px] text-[12px] text-[var(--muted,#a89984)] whitespace-nowrap">
-                      <Languages size={13} className="text-[var(--chrome-fg-muted)]" />
-                      <span className="font-medium text-[color:var(--chrome-fg,#ebdbb2)]">
-                        {t('dub.target_language')}:
-                      </span>
-                      <select
-                        className="px-2 py-1 text-xs rounded-md border border-[var(--border,#3c3836)] bg-[var(--input-bg,#282828)] text-[color:var(--chrome-fg,#ebdbb2)] cursor-pointer focus:border-[var(--color-brand,#fabd2f)] focus:outline-none"
-                        value={dubLangCode}
-                        disabled={dubStep === 'uploading' || dubStep === 'transcribing'}
-                        onChange={(e) => {
-                          const lc = LANG_CODES.find((l) => l.code === e.target.value);
-                          setDubLangCode(e.target.value);
-                          if (lc) setDubLang(lc.label);
-                        }}
-                        data-testid="dub-target-lang-select"
-                      >
-                        {LANG_CODES.map((lc) => (
-                          <option key={lc.code} value={lc.code}>
-                            {lc.label} ({lc.code})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <DubLangSelects
+                      variant="bar"
+                      sourceValue={dubSourceLangCode}
+                      targetValue={dubLangCode}
+                      onSourceChange={(code) => setDubSourceLangCode(code)}
+                      onTargetChange={(code, label) => {
+                        setDubLangCode(code);
+                        if (label) setDubLang(label);
+                      }}
+                      disabled={dubStep === 'uploading' || dubStep === 'transcribing'}
+                      sourceTestId="dub-source-lang-select"
+                      targetTestId="dub-target-lang-select"
+                    />
                   </div>
                 </div>
 
@@ -547,46 +517,16 @@ export default function IdleSkeleton({
               {/* Language selection: Source Audio Language & Target Dubbing Language */}
               <div className="flex flex-wrap items-center justify-between gap-[10px] mt-[10px] px-[10px] py-[8px] [border:1px_solid_var(--chrome-border)] rounded-[10px] bg-[var(--chrome-hover-bg)]">
                 <div className="flex flex-wrap items-center gap-[12px]">
-                  <label className="dub-landing-opts__lang inline-flex items-center gap-[7px] min-w-0 text-[var(--chrome-fg-muted)]">
-                    <Globe size={13} />
-                    <span className="text-[0.72rem] font-medium whitespace-nowrap">
-                      {t('dub.source_language')}:
-                    </span>
-                    <select
-                      className="input-base text-[0.65rem]"
-                      value={dubSourceLangCode || 'auto'}
-                      onChange={(e) => setDubSourceLangCode(e.target.value)}
-                    >
-                      <option value="auto">🌐 {t('dub.auto')}</option>
-                      {LANG_CODES.map((lc) => (
-                        <option key={lc.code} value={lc.code}>
-                          {lc.label} ({lc.code})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="dub-landing-opts__lang inline-flex items-center gap-[7px] min-w-0 text-[var(--chrome-fg-muted)]">
-                    <Languages size={13} />
-                    <span className="text-[0.72rem] font-medium whitespace-nowrap">
-                      {t('dub.target_language')}:
-                    </span>
-                    <select
-                      className="input-base text-[0.65rem]"
-                      value={dubLangCode}
-                      onChange={(e) => {
-                        const lc = LANG_CODES.find((l) => l.code === e.target.value);
-                        setDubLangCode(e.target.value);
-                        if (lc) setDubLang(lc.label);
-                      }}
-                    >
-                      {LANG_CODES.map((lc) => (
-                        <option key={lc.code} value={lc.code}>
-                          {lc.label} — {lc.code}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <DubLangSelects
+                    variant="landing"
+                    sourceValue={dubSourceLangCode}
+                    targetValue={dubLangCode}
+                    onSourceChange={(code) => setDubSourceLangCode(code)}
+                    onTargetChange={(code, label) => {
+                      setDubLangCode(code);
+                      if (label) setDubLang(label);
+                    }}
+                  />
                 </div>
 
                 <button
@@ -705,45 +645,17 @@ export default function IdleSkeleton({
         {dubVideoFile ? (
           <div className="studio-panel dub-panel-col">
             <div className="flex gap-[6px] mb-[6px] flex-wrap items-end">
-              <div className="flex-1 min-w-[100px]">
-                <div className="label-row text-xs text-[var(--chrome-fg-muted)]">
-                  <Globe className="label-icon" size={10} /> {t('dub.source_language')}
-                </div>
-                <select
-                  className="input-base text-[0.68rem]"
-                  value={dubSourceLangCode || 'auto'}
-                  disabled={dubStep === 'uploading' || dubStep === 'transcribing'}
-                  onChange={(e) => setDubSourceLangCode(e.target.value)}
-                >
-                  <option value="auto">🌐 {t('dub.auto')}</option>
-                  {LANG_CODES.map((lc) => (
-                    <option key={lc.code} value={lc.code}>
-                      {lc.label} ({lc.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex-1 min-w-[100px]">
-                <div className="label-row text-xs text-[var(--chrome-fg-muted)]">
-                  <Languages className="label-icon" size={10} /> {t('dub.target_language')}
-                </div>
-                <select
-                  className="input-base text-[0.68rem]"
-                  value={dubLangCode}
-                  disabled={dubStep === 'uploading' || dubStep === 'transcribing'}
-                  onChange={(e) => {
-                    const lc = LANG_CODES.find((l) => l.code === e.target.value);
-                    setDubLangCode(e.target.value);
-                    if (lc) setDubLang(lc.label);
-                  }}
-                >
-                  {LANG_CODES.map((lc) => (
-                    <option key={lc.code} value={lc.code}>
-                      {lc.label} — {lc.code}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <DubLangSelects
+                variant="ghost"
+                sourceValue={dubSourceLangCode}
+                targetValue={dubLangCode}
+                onSourceChange={(code) => setDubSourceLangCode(code)}
+                onTargetChange={(code, label) => {
+                  setDubLangCode(code);
+                  if (label) setDubLang(label);
+                }}
+                disabled={dubStep === 'uploading' || dubStep === 'transcribing'}
+              />
               <div className="flex-1 min-w-[90px]">
                 <div className="label-row text-xs text-[var(--chrome-fg-muted)]">
                   <UserSquare2 className="label-icon" size={10} /> {t('dub.style')}
@@ -766,11 +678,15 @@ export default function IdleSkeleton({
             </div>
             <div className="segment-table dub-skel-table">
               <div className="segment-header">
-                <span className="w-[55px] flex-[0_0_55px]">{t('dub.time_col')}</span>
-                <span className="w-[44px] flex-[0_0_44px]">{t('dub.spkr_col')}</span>
-                <span className="flex-1">{t('dub.text_col')}</span>
-                <span className="w-[70px] flex-[0_0_70px]">{t('dub.voice_col')}</span>
-                <span className="w-[40px] flex-[0_0_40px]"></span>
+                {COLUMNS.map((c) => (
+                  <span
+                    key={c.key}
+                    style={c.flex ? undefined : { width: c.width, flex: `0 0 ${c.width}px` }}
+                    className={c.flex ? 'flex-1' : ''}
+                  >
+                    {c.key === 'act' ? '' : t(`segment.${c.key}`)}
+                  </span>
+                ))}
               </div>
               {[1, 2, 3, 4, 5, 6].map((i) => (
                 <div
@@ -778,15 +694,19 @@ export default function IdleSkeleton({
                   className="segment-row dub-skel-row"
                   style={{ opacity: 0.5 + 0.07 * (6 - i) }}
                 >
-                  <span className="dub-skel-bar w-[55px] flex-[0_0_55px]" />
-                  <span className="dub-skel-bar w-[44px] flex-[0_0_44px]" />
-                  <div className="dub-skel-bar flex-1 min-w-0" />
-                  <span className="dub-skel-bar w-[70px] flex-[0_0_70px]" />
-                  <div className="flex gap-[1px] w-[40px] flex-[0_0_40px]">
-                    <span className="segment-del dub-skel-cell-acts__icon">
-                      <Trash2 size={9} />
-                    </span>
-                  </div>
+                  {COLUMNS.map((c) =>
+                    c.key === 'act' ? (
+                      <div key={c.key} className="flex gap-[1px]" style={{ width: c.width, flex: `0 0 ${c.width}px` }}>
+                        <span className="segment-del dub-skel-cell-acts__icon">
+                          <Trash2 size={9} />
+                        </span>
+                      </div>
+                    ) : c.flex ? (
+                      <div key={c.key} className="dub-skel-bar flex-1 min-w-0" />
+                    ) : (
+                      <span key={c.key} className="dub-skel-bar" style={{ width: c.width, flex: `0 0 ${c.width}px` }} />
+                    ),
+                  )}
                 </div>
               ))}
               <div className="px-[8px] pt-[10px] pb-[4px] text-[0.62rem] text-[var(--chrome-fg-dim)] text-center">

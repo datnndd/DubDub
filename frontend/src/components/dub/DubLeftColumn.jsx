@@ -50,6 +50,57 @@ const ENGINE_CHIP =
 const ENGINE_INSTALL_BTN =
   'inline-flex items-center gap-[3px] ml-[6px] px-[7px] py-[1px] text-[0.55rem] font-semibold leading-[1.5] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-[var(--color-fg-inverse)] border border-transparent rounded-[var(--radius-pill)] whitespace-nowrap cursor-pointer transition-colors shadow-[0_0_0_2px_color-mix(in_srgb,var(--color-brand)_25%,transparent)] disabled:opacity-60 disabled:cursor-default';
 
+// Single source of truth for the translate / clean-up action pair — it used
+// to be duplicated in the collapsed summary and the expanded settings bar and
+// had drifted (different labels + variants for the same actions).
+function SettingsActions({
+  t,
+  onTranslate,
+  onCleanup,
+  translating,
+  canTranslate,
+  canCleanup,
+  hasAny,
+  translateVariant = 'subtle',
+  cleanupFirst = false,
+}) {
+  const translateBtn = (
+    <Button
+      variant={translateVariant}
+      size="sm"
+      onClick={onTranslate}
+      disabled={canTranslate}
+      loading={translating}
+      leading={!translating && <Languages size={10} />}
+    >
+      {translating ? t('dub.translating') : hasAny ? t('dub.retranslate') : t('dub.translate_all')}
+    </Button>
+  );
+  const cleanupBtn = (
+    <Button
+      variant="subtle"
+      size="sm"
+      onClick={onCleanup}
+      disabled={canCleanup}
+      title={t('dub.clean_up_title')}
+      leading={<Wand2 size={10} />}
+    >
+      {t('dub.clean_up')}
+    </Button>
+  );
+  return cleanupFirst ? (
+    <>
+      {cleanupBtn}
+      {translateBtn}
+    </>
+  ) : (
+    <>
+      {translateBtn}
+      {cleanupBtn}
+    </>
+  );
+}
+
 export default function DubLeftColumn({
   hasDubbedTrack,
   t,
@@ -440,30 +491,15 @@ export default function DubLeftColumn({
               </span>
             )}
           </button>
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={handleTranslateAll}
-            disabled={isTranslating || !dubSegments.length}
-            loading={isTranslating}
-            leading={!isTranslating && <Languages size={10} />}
-          >
-            {isTranslating
-              ? t('dub.translating')
-              : hasAnyTranslation
-                ? t('dub.retranslate')
-                : t('dub.translate_all')}
-          </Button>
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={handleCleanupSegments}
-            disabled={!dubSegments.length || !dubJobId}
-            title={t('dub.clean_up_title')}
-            leading={<Wand2 size={10} />}
-          >
-            {t('dub.clean_up')}
-          </Button>
+          <SettingsActions
+            t={t}
+            onTranslate={handleTranslateAll}
+            onCleanup={handleCleanupSegments}
+            translating={isTranslating}
+            canTranslate={isTranslating || !dubSegments.length}
+            canCleanup={!dubSegments.length || !dubJobId}
+            hasAny={hasAnyTranslation}
+          />
         </div>
       )}
       {settingsOpen && (
@@ -783,26 +819,17 @@ export default function DubLeftColumn({
             >
               {t('dub.restore')}
             </Button>
-            <Button
-              variant="subtle"
-              size="sm"
-              onClick={handleCleanupSegments}
-              disabled={!dubSegments.length || !dubJobId}
-              title={t('dub.clean_up_title')}
-              leading={<Wand2 size={10} />}
-            >
-              {t('dub.clean_up')}
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleTranslateAll}
-              disabled={isTranslating || !dubSegments.length}
-              loading={isTranslating}
-              leading={!isTranslating && <Languages size={10} />}
-            >
-              {isTranslating ? t('dub.translating') : t('dub.translate_all')}
-            </Button>
+            <SettingsActions
+              t={t}
+              cleanupFirst
+              translateVariant="primary"
+              onTranslate={handleTranslateAll}
+              onCleanup={handleCleanupSegments}
+              translating={isTranslating}
+              canTranslate={isTranslating || !dubSegments.length}
+              canCleanup={!dubSegments.length || !dubJobId}
+              hasAny={hasAnyTranslation}
+            />
           </div>
         </div>
       )}
