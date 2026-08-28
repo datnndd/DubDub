@@ -1,14 +1,27 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, BookOpen, Languages, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { Button, Input, Textarea } from '../../ui';
+import { useAppStore } from '../../store';
 import { dubTranslateContext } from '../../api/dub';
+import {
+  listGlossary,
+  addGlossaryTerm,
+  updateGlossaryTerm,
+  deleteGlossaryTerm,
+} from '../../api/glossary';
 
 // Pre-translation brief review. The backend's /dub/translate-context drafts
 // a theme summary + terminology map from the transcript (one LLM pass,
 // fingerprint-cached on the job); the user edits it here and only then
 // starts the translation — the reviewed brief rides back on /dub/translate
 // as translation_context and replaces the hidden auto-extraction.
+//
+// Terminology is ONE source of truth with the project glossary: rows the
+// user completes are persisted through /glossary/{job} (visible in the
+// Glossary panel and sent as `glossary` on every translate), while untouched
+// extraction suggestions stay local drafts until completed.
 
 const SHELL =
   'rounded-[var(--chrome-radius-pill)] border border-[var(--chrome-border)] bg-[var(--chrome-bg)]';
@@ -19,6 +32,9 @@ const LABEL =
 const PILL =
   'px-[6px] py-[1px] rounded-full text-[0.58rem] uppercase tracking-[var(--chrome-label-track)] bg-[var(--chrome-hover-bg)] text-[var(--chrome-fg-muted)]';
 
+let draftSeq = 0;
+const nextDraftKey = () => `draft-${Date.now()}-${draftSeq++}`;
+
 export default function TermsReviewPanel({
   jobId,
   targetLang,
@@ -28,13 +44,51 @@ export default function TermsReviewPanel({
   onClose,
 }) {
   const { t } = useTranslation();
+  const setGlossaryTerms = useAppStore((s) => s.setGlossaryTerms);
   const [status, setStatus] = useState('extracting'); // extracting | ready | error
   const [extracting, setExtracting] = useState(false);
   const [theme, setTheme] = useState('');
-  const [terms, setTerms] = useState([]);
+  const [terms, setTerms] = useState([]); // {key, source, target, note, raw?}
   const [error, setError] = useState('');
   const [cached, setCached] = useState(false);
   const [dirty, setDirty] = useState(false);
+
+  const syncGlossaryStore = useCallback(
+    (nextRows) => {
+      if (!jobId) return;
+      setGlossaryTerms(
+        nextRows
+          .filter((r) => r.raw)
+          .map((r) => ({ ...r.raw, source: r.source, target: r.target, note: r.note || '' })),
+      );
+    },
+    [jobId, setGlossaryTerms],
+  );
+
+  // saved rows (glossary) first, extraction suggestions appended as drafts —
+  // a suggestion whose source already exists in the glossary is dropped, so
+  // the user's rows always win.
+  const mergeRows = (savedRows, autoTerms) => {
+    const bySource = new Map();
+    const saved = savedRows.map((r) => ({
+      key: `g-${r.id}`,
+      source: r.source,
+      target: r.target,
+      note: r.note || '',
+      raw: r,
+    }));
+    saved.forEach((r) => bySource.set(r.source.trim().toLowerCase(), r));
+    const drafts = [];
+    for (const term of autoTerms || []) {
+      const s = String(term?.source || '').trim();
+      const tg = String(term?.target || '').trim();
+      if (!s || !tg) continue;
+      if (bySource.has(s.toLowerCase())) continue;
+      bySource.set(s.toLowerCase(), null);
+      drafts.push({ key: nextDraftKey(), source: s, target: tg, note: '' });
+    }
+    return [...saved, ...drafts];
+  };
 
   const extract = useCallback(
     async (force = false) => {
@@ -42,6 +96,13 @@ export default function TermsReviewPanel({
       setExtracting(true);
       setError('');
       try {
+        // Fresh glossary rows are the base; the LLM draft only adds what's new.
+        let baseRows = [];
+        try {
+          baseRows = jobId ? await listGlossary(jobId) : [];
+        } catch {
+          baseRows = [];
+        }
         const res = await dubTranslateContext({
           job_id: jobId || undefined,
           target_lang: targetLang,
@@ -54,16 +115,11 @@ export default function TermsReviewPanel({
           })),
         });
         setTheme(res.theme || '');
-        setTerms(
-          (res.terms || []).map((x) => ({
-            source: x.source || '',
-            target: x.target || '',
-            note: x.note || '',
-          })),
-        );
+        setTerms(mergeRows(baseRows, res.terms || []));
         setCached(!!res.cached);
         setDirty(false);
         setStatus('ready');
+        syncGlossaryStore(mergeRows(baseRows, res.terms || []));
       } catch (e) {
         setError(String(e?.message || e));
         setStatus('error');
@@ -86,25 +142,72 @@ export default function TermsReviewPanel({
     setTheme(value);
     setDirty(true);
   };
+
   const editTerm = (index, key, value) => {
-    setTerms((prev) => prev.map((row, i) => (i === index ? { ...row, [key]: value } : row)));
+    const next = terms.map((row, i) => (i === index ? { ...row, [key]: value } : row));
+    setTerms(next);
     setDirty(true);
+    const row = next[index];
+    if (!jobId) return;
+    if (row.raw) {
+      // Saved glossary row → patch it in place (single source of truth).
+      updateGlossaryTerm(jobId, row.raw.id, { [key]: value })
+        .then((resp) => {
+          setTerms((cur) => {
+            const withRaw = cur.map((r) => (r.key === row.key ? { ...r, raw: resp } : r));
+            syncGlossaryStore(withRaw);
+            return withRaw;
+          });
+        })
+        .catch((e) => toast.error(t('glossary.update_error', { message: String(e?.message || e) })));
+    } else if (row.source.trim() && row.target.trim()) {
+      // A completed draft becomes a real glossary row the moment both sides
+      // are filled — that's the sync guarantee with the Glossary panel.
+      addGlossaryTerm(jobId, {
+        source: row.source.trim(),
+        target: row.target.trim(),
+        note: row.note || '',
+      })
+        .then((resp) => {
+          setTerms((cur) => {
+            const withRaw = cur.map((r) => (r.key === row.key ? { ...r, raw: resp } : r));
+            syncGlossaryStore(withRaw);
+            return withRaw;
+          });
+        })
+        .catch((e) => toast.error(t('glossary.add_error', { message: String(e?.message || e) })));
+    }
   };
+
   const addTerm = () => {
-    setTerms((prev) => [...prev, { source: '', target: '', note: '' }]);
+    setTerms((prev) => [...prev, { key: nextDraftKey(), source: '', target: '', note: '' }]);
     setDirty(true);
   };
+
   const removeTerm = (index) => {
+    const row = terms[index];
     setTerms((prev) => prev.filter((_, i) => i !== index));
     setDirty(true);
+    if (row?.raw && jobId) {
+      deleteGlossaryTerm(jobId, row.raw.id)
+        .then(() => syncGlossaryStore(terms.filter((_, i) => i !== index)))
+        .catch((e) => toast.error(t('glossary.delete_error', { message: String(e?.message || e) })));
+    }
   };
+
   const reextract = () => {
     if (dirty && !window.confirm(t('terms_review.re_extract_confirm'))) return;
     extract(true);
   };
+
   const start = () => {
     if (!onTranslate || extracting || translating) return;
-    onTranslate({ theme: theme.trim(), terms });
+    onTranslate({
+      theme: theme.trim(),
+      terms: terms
+        .filter((r) => r.source.trim() && r.target.trim())
+        .map((r) => ({ source: r.source.trim(), target: r.target.trim(), note: r.note || '' })),
+    });
   };
 
   return (
@@ -181,7 +284,7 @@ export default function TermsReviewPanel({
           )}
           <div className="flex flex-col gap-[4px] mb-[6px]">
             {terms.map((row, i) => (
-              <div key={i} className="flex items-center gap-[4px]">
+              <div key={row.key} className="flex items-center gap-[4px]">
                 <Input
                   value={row.source}
                   placeholder={t('terms_review.term_source_placeholder')}
@@ -196,6 +299,7 @@ export default function TermsReviewPanel({
                   disabled={extracting}
                   onChange={(e) => editTerm(i, 'target', e.target.value)}
                   className="flex-1 min-w-0 !text-[0.65rem] !px-[6px] !py-[3px]"
+                  title={row.raw ? undefined : t('terms_review.draft_title')}
                 />
                 <Button
                   variant="ghost"

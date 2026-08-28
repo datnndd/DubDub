@@ -881,6 +881,8 @@ export default function DubTab(props) {
               segmentRestoreOriginal={segmentRestoreOriginal}
               pasteTranslations={pasteTranslations}
               termsReviewSlot={termsReviewSlot}
+              termsReviewOpen={termsReviewOpen}
+              setTermsReviewOpen={setTermsReviewOpen}
               handleSegmentPreview={handleSegmentPreview}
               onDirectSegment={onDirectSegment}
               segmentSplit={segmentSplit}

@@ -1883,7 +1883,9 @@
     "cached": "đã lưu cache",
     "close_title": "Đóng phần xem brief",
     "remove_term_title": "Xóa thuật ngữ này",
-    "terms_empty": "Chưa có thuật ngữ nào được đề xuất — bạn có thể tự thêm."
+    "terms_empty": "Chưa có thuật ngữ nào được đề xuất — bạn có thể tự thêm.",
+    "toggle_btn": "Brief",
+    "draft_title": "Bản nháp — tự lưu vào glossary của dự án khi điền đủ 2 ô"
   },
   "checkpoint": {
     "asr_title": "Bản ghi đã sẵn sàng",

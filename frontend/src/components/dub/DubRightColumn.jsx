@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState } from 'react';
-import { ChevronUp, ChevronDown, FileText, ClipboardPaste } from 'lucide-react';
+import { BookOpen, ChevronUp, ChevronDown, FileText, ClipboardPaste } from 'lucide-react';
 import { Button, Segmented } from '../../ui';
 import GlossaryPanel from '../GlossaryPanel';
 import CheckpointBanner from '../CheckpointBanner';
@@ -82,6 +82,8 @@ export default function DubRightColumn({
   dubProgress,
   pasteTranslations,
   termsReviewSlot,
+  termsReviewOpen,
+  setTermsReviewOpen,
 }) {
   const [pasteOpen, setPasteOpen] = useState(false);
   return (
@@ -227,6 +229,22 @@ export default function DubRightColumn({
         </div>
       )}
 
+      {/* Pre-translation brief — always reachable: the checkpoint opens it
+                  once per fresh transcript, this chip opens it any time. */}
+      {dubJobId && (
+        <button
+          type="button"
+          className={`inline-flex items-center px-[var(--space-3)] py-[3px] mb-[4px] mr-[6px] font-[family-name:var(--chrome-font-mono)] text-[length:var(--chrome-label-size)] tracking-[var(--chrome-label-track)] uppercase rounded-[var(--chrome-radius-pill)] cursor-pointer transition-colors border ${
+            termsReviewOpen
+              ? 'text-[var(--chrome-fg)] bg-[var(--chrome-hover-bg)] border-[var(--chrome-border)]'
+              : 'text-[var(--chrome-fg-muted)] bg-transparent border-transparent hover:bg-[var(--chrome-hover-bg)] hover:border-transparent hover:text-[var(--chrome-fg)]'
+          }`}
+          onClick={() => setTermsReviewOpen(!termsReviewOpen)}
+          title={t('terms_review.title')}
+        >
+          <BookOpen size={10} className="align-middle mr-[3px]" /> {t('terms_review.toggle_btn')}
+        </button>
+      )}
       {/* Phase 1.3 — Project glossary. Hidden behind a chip until
                   the user wants it (or terms already exist). */}
       {dubJobId && !glossaryVisible && (

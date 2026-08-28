@@ -2484,7 +2484,9 @@
     "cached": "cached",
     "close_title": "Close the brief review",
     "remove_term_title": "Remove this term",
-    "terms_empty": "No terms proposed — you can add your own."
+    "terms_empty": "No terms proposed — you can add your own.",
+    "toggle_btn": "Brief",
+    "draft_title": "Draft — saved to the project glossary as soon as both fields are filled"
   },
   "checkpoint": {
     "asr_title": "Transcripts ready",
