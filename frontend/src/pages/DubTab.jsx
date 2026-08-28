@@ -806,6 +806,8 @@ export default function DubTab(props) {
               dubInstruct={dubInstruct}
               setDubInstruct={setDubInstruct}
               handleTranslateAll={onTranslateClick}
+          onHardsubExtract={handleHardsubExtract}
+          hardsubRunning={hardsubRunning}
               isTranslating={isTranslating}
               hasAnyTranslation={hasAnyTranslation}
               handleCleanupSegments={handleCleanupSegments}

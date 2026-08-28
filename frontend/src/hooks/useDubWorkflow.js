@@ -10,6 +10,7 @@ import {
   tasksStreamUrl,
   tasksCancel,
   transcribeStreamUrl,
+  dubHardsubExtract,
   dubImportSrt,
   DUB_COOKIE_TRANSPORT_ERROR,
   DUB_COOKIE_SIZE_ERROR,
@@ -99,6 +100,8 @@ export default function useDubWorkflow({
   const [showTranscript, setShowTranscript] = useState(false);
   const [previewAudios, setPreviewAudios] = useState({});
   const [transcribeStart, setTranscribeStart] = useState(null);
+  const [hardsubRunning, setHardsubRunning] = useState(false);
+  const [hardsubProgress, setHardsubProgress] = useState(null);
   const [transcribeElapsed, setTranscribeElapsed] = useState(0);
   // Real fraction of chunks transcribed, straight from the backend's `segments`
   // events. The overlay used to *invent* an ETA from the video's duration
@@ -776,6 +779,95 @@ export default function useDubWorkflow({
     retryTranscribeRef.current = handleDubRetryTranscribe;
   }, [handleDubRetryTranscribe]);
 
+  // Hardsub/soft-sub subtitle extraction ? the OCR/ffprobe flow lands its
+  // cues as segments (same as a user-supplied .srt); the existing transcript
+  // editor is the review surface.
+  const _waitForHardsub = useCallback(
+    (taskId, ctrl) =>
+      new Promise((resolve, reject) => {
+        const evt = new EventSource(tasksStreamUrl(taskId));
+        const close = () => {
+          try {
+            evt.close();
+          } catch {}
+        };
+        ctrl.signal.addEventListener('abort', () => {
+          close();
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        }, { once: true });
+        evt.onmessage = (e) => {
+          if (!e.data) return;
+          let m;
+          try {
+            m = JSON.parse(e.data);
+          } catch {
+            return;
+          }
+          if (m.type === 'hardsub_progress') {
+            setHardsubProgress({
+              framesDone: m.frames_done ?? null,
+              framesTotal: m.frames_total ?? null,
+              percent: typeof m.percent === 'number' ? m.percent : null,
+            });
+          } else if (m.type === 'hardsub_done') {
+            close();
+            resolve(m);
+          } else if (m.type === 'error' || m.type === 'failure') {
+            close();
+            reject(new Error(m.reason || m.message || 'hardsub OCR failed'));
+          } else if (m.type === 'cancelled') {
+            close();
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          }
+        };
+        evt.onerror = () => {
+          close();
+          reject(new Error('lost the task stream'));
+        };
+      }),
+    [],
+  );
+
+  const handleHardsubExtract = useCallback(
+    async (opts = {}) => {
+      if (!dubJobId) return;
+      const ctrl = new AbortController();
+      dubAbortCtrlRef.current = ctrl;
+      setHardsubRunning(true);
+      setDubError('');
+      try {
+        const data = await dubHardsubExtract(dubJobId, {
+          mode: opts.mode || 'auto',
+          fps: opts.fps || undefined,
+        });
+        const res = await _waitForHardsub(data.task_id, ctrl);
+        const segs = (res && res.segments) || [];
+        setDubSegments(
+          segs.map((s) => ({
+            ...s,
+            id: s.id != null ? String(s.id) : String(Math.random()),
+          })),
+        );
+        setDubStep('editing');
+        toast.success(t('dub_workflow.hardsub_done', { count: segs.length }), {
+          duration: 6000,
+        });
+        loadProjects();
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          toast(t('dub.hardsub_cancelled'));
+        } else {
+          setDubError(err?.message || t('dub_workflow.hardsub_failed'));
+          toast.error(err?.message || t('dub_workflow.hardsub_failed'));
+        }
+      } finally {
+        setHardsubRunning(false);
+        dubAbortCtrlRef.current = null;
+      }
+    },
+    [dubJobId, setDubError, setDubSegments, setDubStep, loadProjects, t],
+  );
+
   const handleDubImportSrt = useCallback(
     async (file) => {
       if (!dubJobId) {
@@ -1248,5 +1340,8 @@ export default function useDubWorkflow({
     handleCleanupSegments,
     handleTranslateAll,
     handleDubImportSrt,
+  handleHardsubExtract,
+  hardsubRunning,
+  hardsubProgress,
   };
 }

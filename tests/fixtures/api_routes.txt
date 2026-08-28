@@ -176,6 +176,7 @@ POST /dictation/prefs
 POST /dub/abort/{job_id}
 POST /dub/cleanup-segments/{job_id}
 POST /dub/generate/{job_id}
+POST /dub/hardsub-extract/{job_id}
 POST /dub/import-srt/{job_id}
 POST /dub/ingest-url
 POST /dub/parse-subtitle-text

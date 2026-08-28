@@ -179,6 +179,14 @@ export async function dubGenerate(jobId: string, body: Record<string, unknown>):
   return apiPost(`/dub/generate/${jobId}`, body);
 }
 
+/** Burned-in/soft subtitle extraction (OCR or the container's own streams). */
+export async function dubHardsubExtract(
+  jobId: string,
+  body: Record<string, unknown>,
+): Promise<{ task_id: string }> {
+  return apiPost<{ task_id: string }>(`/dub/hardsub-extract/${jobId}`, body);
+}
+
 export function tasksStreamUrl(taskId: string): string {
   return apiUrl(`/tasks/stream/${taskId}`);
 }

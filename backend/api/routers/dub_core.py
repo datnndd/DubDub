@@ -18,7 +18,11 @@ from core.config import PREVIEW_DIR
 from core.tasks import task_manager
 from core.logging_utils import log_safe
 from core import event_bus
-from schemas.requests import DubIngestUrlRequest, ParseSubtitleTextRequest
+from schemas.requests import (
+    DubIngestUrlRequest,
+    HardsubExtractRequest,
+    ParseSubtitleTextRequest,
+)
 from services.model_manager import get_model, _gpu_pool, _cpu_pool, get_diarization_pipeline, offload_tts_for_asr, restore_tts_after_asr, should_preload_tts_asr
 from services.asr_backend import (
     ASR_TRANSCRIBE_TIMEOUT_S,
@@ -252,6 +256,121 @@ async def dub_import_srt(job_id: str, file: UploadFile = File(...)):
             "clamped_to_duration": clamped,
         },
     }
+
+
+@router.post("/dub/hardsub-extract/{job_id}")
+async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
+    """Extract subtitles already present in the job's video (soft-sub or
+    hardsub-OCR) and replace ``job["segments"]`` with them — the same landing
+    as :func:`dub_import_srt`, for videos whose burned-in text is a better
+    source than Whisper ASR.
+
+    ``mode="auto"`` prefers a real subtitle stream and falls back to OCR.
+    The OCR path runs as a background task (progress on
+    ``/tasks/stream/{task_id}``, final event ``hardsub_done`` carrying the
+    new segments)."""
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job_dir = _safe_job_dir(job_id)
+    video_path = next(
+        (os.path.join(job_dir, f) for f in os.listdir(job_dir)
+         if f.startswith("original.")),
+        None,
+    )
+    if not video_path:
+        raise HTTPException(
+            status_code=400,
+            detail="No source video in this job — upload the video first.",
+        )
+
+    from services import hardsub_ocr as hso
+
+    def _apply(srt_text: str) -> dict:
+        from services.srt_parser import parse_srt
+        result = parse_srt(srt_text)
+        if not result.segments:
+            raise HTTPException(
+                status_code=400,
+                detail="No usable subtitle cues were found in this video.",
+            )
+        duration = float(job.get("duration") or 0.0)
+        clamped = 0
+        kept = []
+        for seg in result.segments:
+            if duration > 0 and seg["start"] >= duration:
+                continue
+            if duration > 0 and seg["end"] > duration:
+                seg = {**seg, "end": round(duration, 3)}
+                clamped += 1
+            kept.append(seg)
+        segments = [{**s, "id": i} for i, s in enumerate(kept)]
+        job["segments"] = segments
+        _save_job(job_id, job)
+        logger.info(
+            "hardsub-extract: %d cue(s) for job %s (clamped=%d)",
+            len(segments), log_safe(job_id), clamped,
+        )
+        return {"segments": segments, "stats": {"imported": len(segments), "clamped": clamped}}
+
+    # ── soft-sub path (fast, exact) ────────────────────────────────────────
+    if req.mode in ("auto", "soft"):
+        try:
+            subs = hso.detect_soft_subtitles(video_path)
+        except Exception as e:  # noqa: BLE001 — ffprobe is best-effort
+            logger.warning("soft-sub detect failed: %s", e)
+            subs = []
+        if subs:
+            idx = req.soft_index if req.soft_index is not None else 0
+            if idx >= len(subs):
+                idx = 0
+            try:
+                srt_text = hso.extract_soft_subtitle(video_path, subs[idx]["index"])
+            except Exception as e:
+                if req.mode == "soft":
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Could not extract the subtitle stream: {e}",
+                    )
+                srt_text = None
+            if srt_text:
+                return _apply(srt_text)
+        if req.mode == "soft":
+            raise HTTPException(
+                status_code=400,
+                detail="This video has no embedded subtitle stream to extract.",
+            )
+        # mode=auto and no soft subs → fall through to OCR below.
+
+    # ── OCR path (background task) ─────────────────────────────────────────
+    task_id = f"hardsub_{job_id}"
+    loop = asyncio.get_running_loop()
+
+    async def _hardsub_gen() -> "AsyncIterator[str]":
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _progress(msg: dict) -> None:
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                prep_event("hardsub_progress",
+                           frames_done=msg.get("frames_done"),
+                           frames_total=msg.get("frames_total"),
+                           percent=msg.get("percent")),
+            )
+
+        yield prep_event("hardsub_start", fps=req.fps, mode="ocr")
+        cues = await asyncio.to_thread(
+            hso.run_ocr_client, video_path,
+            fps=req.fps, band_top=req.band_top, text_score=req.text_score,
+            progress_cb=_progress,
+        )
+        srt_text = hso.build_srt(cues)
+        result = _apply(srt_text)
+        yield prep_event("hardsub_done", **result)
+        return
+
+    await task_manager.add_task(task_id, "hardsub", _hardsub_gen)
+    return {"task_id": task_id}
 
 
 @router.post("/dub/cleanup-segments/{job_id}")

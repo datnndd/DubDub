@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import {
   Sparkles,
   Loader,
@@ -57,6 +57,9 @@ function SettingsActions({
   t,
   onTranslate,
   onCleanup,
+  onHardsubExtract,
+  hardsubRunning,
+  canHardsub,
   translating,
   canTranslate,
   canCleanup,
@@ -88,15 +91,35 @@ function SettingsActions({
       {t('dub.clean_up')}
     </Button>
   );
-  return cleanupFirst ? (
+  const hardsubBtn = onHardsubExtract ? (
+    <Button
+      variant="subtle"
+      size="sm"
+      onClick={() => {
+        if (window.confirm(t('dub.hardsub_confirm'))) onHardsubExtract();
+      }}
+      disabled={hardsubRunning || !canHardsub}
+      loading={hardsubRunning}
+      leading={!hardsubRunning && <Languages size={10} />}
+      title={t('dub.hardsub_title')}
+    >
+      {t('dub.hardsub_btn')}
+    </Button>
+  ) : null;
+  if (cleanupFirst) {
+    return (
+      <>
+        {cleanupBtn}
+        {translateBtn}
+        {hardsubBtn}
+      </>
+    );
+  }
+  return (
     <>
-      {cleanupBtn}
-      {translateBtn}
-    </>
-  ) : (
-    <>
       {translateBtn}
       {cleanupBtn}
+      {hardsubBtn}
     </>
   );
 }
@@ -139,6 +162,8 @@ export default function DubLeftColumn({
   isTranslating,
   hasAnyTranslation,
   handleCleanupSegments,
+  onHardsubExtract,
+  hardsubRunning,
   setDubLang,
   setDubLangCode,
   dubDialect,
@@ -493,6 +518,9 @@ export default function DubLeftColumn({
           </button>
           <SettingsActions
             t={t}
+            onHardsubExtract={onHardsubExtract}
+            hardsubRunning={hardsubRunning}
+            canHardsub={!!dubJobId}
             onTranslate={handleTranslateAll}
             onCleanup={handleCleanupSegments}
             translating={isTranslating}
@@ -821,6 +849,9 @@ export default function DubLeftColumn({
             </Button>
             <SettingsActions
               t={t}
+              onHardsubExtract={onHardsubExtract}
+              hardsubRunning={hardsubRunning}
+              canHardsub={!!dubJobId}
               cleanupFirst
               translateVariant="primary"
               onTranslate={handleTranslateAll}

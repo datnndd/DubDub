@@ -208,6 +208,20 @@ class TranslateContextRequest(BaseModel):
     force: bool = False
 
 
+class HardsubExtractRequest(BaseModel):
+    """Burned-in (hardsub) subtitle extraction for a dub job.
+
+    ``mode``: ``auto`` — prefer a real subtitle stream (soft-sub) inside the
+    container, fall back to OCR when none exists; ``soft`` — extract the
+    stream at ``soft_index`` only; ``ocr`` — always OCR (RapidOCR over
+    sampled frames)."""
+    mode: str = "auto"  # auto | soft | ocr
+    soft_index: Optional[int] = None
+    fps: float = 2.0
+    band_top: float = 0.55
+    text_score: float = 0.5
+
+
 class ParseSubtitleTextRequest(BaseModel):
     """Raw pasted subtitle text (SRT/VTT-ish) to be parsed into timed cues.
 
