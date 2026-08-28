@@ -6,6 +6,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 `frontend/package.json` is the app-version source of truth; Cargo, Python, and
 the frozen-backend fallback mirror it for their toolchains.
 
+## [Unreleased]
+
+### Added
+
+- The Dub workspace can show its work before translating: preview the LLM translation brief (theme + terminology) for the target language, edit it, and only then start the translation — the reviewed brief replaces the hidden auto-extraction (`POST /dub/translate-context`, `translation_context` on `/dub/translate`).
+
+### Changed
+
+- `/dub/translate` responses now carry `context_source` — `user`, `auto`, or `none` — so it's always clear which brief the translator used.
+
 ## [0.5.0] — 2026-08-13
 
 **Highlights**
