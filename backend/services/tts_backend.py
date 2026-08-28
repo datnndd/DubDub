@@ -2118,6 +2118,22 @@ def _sidecar_installable_ids() -> frozenset[str]:
         return frozenset()
 
 
+def _languages_of(cls) -> Optional[list[str]]:
+    """Static language surface of a TTS engine (list_backends field).
+
+    ``supported_languages`` is a property on most engines; resolve it from a
+    throwaway instance — construction is lazy-load-free by contract (models
+    load in ``ensure_ready()``, never ``__init__``). Any failure → None
+    (= model-dependent / unknown), and the matrix simply hides the field:
+    listing must never fail wholesale because one engine hiccups.
+    """
+    try:
+        langs = cls().supported_languages
+        return [str(x).lower() for x in langs] if langs else None
+    except Exception:  # noqa: BLE001 — listing must never fail wholesale
+        return None
+
+
 def list_backends() -> list[dict]:
     """Enumerate every registered backend with its availability state.
 
@@ -2208,6 +2224,9 @@ def list_backends() -> list[dict]:
             # Graded-emotion capability (#1208) — drives the Audiobook emotion
             # panel's engine gate. Class attr, defaults False.
             "supports_emotion": bool(getattr(cls, "supports_emotion", False)),
+            # Static language surface (list of ISO codes / "multi"); None when
+            # model-dependent or unknown. Drives the matrix's language chips.
+            "languages": _languages_of(cls),
             "install_hint": _INSTALL_HINTS.get(bid),
             # Exact `export VAR=...` line for path-gated opt-in engines, or None.
             "setup_snippet": _SETUP_SNIPPETS.get(bid),

@@ -191,6 +191,9 @@ function normalizeEntry(entry) {
     // Cloning capability: only an explicit true earns the badge (null =
     // model-dependent, e.g. mlx-audio; absent = legacy payload).
     supports_cloning: entry.supports_cloning === true,
+    // Static language surface the engine speaks (list_backends "languages").
+    // Null on legacy payloads / model-dependent engines → no chips rendered.
+    languages: Array.isArray(entry.languages) ? entry.languages : null,
     install_hint: entry.install_hint || null,
     last_error: entry.last_error || null,
     isolation_mode: entry.isolation_mode || 'in-process',
@@ -1067,6 +1070,25 @@ export default function EngineCompatibilityMatrix({
                               </span>
                             );
                           })}
+                          {/* Language chips: the static language surface this
+                              engine speaks (list_backends "languages"). Hidden
+                              on legacy / model-dependent payloads. */}
+                          {b.languages && b.languages.length > 0 && (
+                            <Badge
+                              tone="neutral"
+                              size="xs"
+                              title={t('engines.languagesChipTitle', {
+                                languages: b.languages.join(', '),
+                              })}
+                            >
+                              {b.languages.length > 2
+                                ? t('engines.languagesMany', {
+                                    first: b.languages[0],
+                                    count: b.languages.length,
+                                  })
+                                : b.languages.join('/').toUpperCase()}
+                            </Badge>
+                          )}
                           {/* Routing badge: known status → toned badge; unknown
                               status → neutral fallback; suppressed when the row is
                               unavailable (availability badge covers it) or legacy

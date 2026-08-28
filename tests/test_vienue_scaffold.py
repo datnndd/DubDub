@@ -36,9 +36,12 @@ def test_language_env_override(monkeypatch):
     assert VieNueBackend().supported_languages == ["vi", "en"]
 
 
-def test_inert_without_venv(monkeypatch):
-    monkeypatch.delenv("OMNIVOICE_VIENEU_VENV", raising=False)
+def test_inert_without_venv(monkeypatch, tmp_path):
+    # Hermetic: point the package-owned venv at a nonexistent tmp dir — a dev
+    # machine that already installed vieneu has a real .venv on disk.
     from engines.vienue import bootstrap, VieNueBackend
+    monkeypatch.setattr(bootstrap, "_ENGINES_VENV_DIR", tmp_path / ".venv")
+    monkeypatch.delenv("OMNIVOICE_VIENEU_VENV", raising=False)
     bootstrap.invalidate()
     assert bootstrap.is_vieneu_installed() is False
 
@@ -48,10 +51,33 @@ def test_inert_without_venv(monkeypatch):
     assert "uv" in reason  # the fix must name the tool
 
 
-def test_resolve_without_uv_is_actionable(monkeypatch):
+def test_sidecar_spec_registered():
+    """Phase 2 — the engine is one-click installable: a pip-package
+    SidecarSpec exists and points the engine's own bootstrap env var at the
+    provisioned venv."""
+    from services.sidecar_install import get_spec
+    spec = get_spec("vienue")
+    assert spec is not None
+    assert spec.pip_requirement == "vieneu>=3.0"
+    assert spec.env_var == "OMNIVOICE_VIENEU_VENV"
+    assert spec.probe_module == "vieneu"
+    assert spec.weights_repo_id is None  # weights download lazily inside the SDK
+
+
+def test_one_click_install_and_languages_reach_list_backends():
+    from services.tts_backend import list_backends
+    row = next(r for r in list_backends() if r["id"] == "vienue")
+    assert row["one_click_install"] is True
+    assert row["languages"] == ["vi"]
+
+
+def test_resolve_without_uv_is_actionable(monkeypatch, tmp_path):
     """No venv + no uv → a RuntimeError naming the fix (uv), not a traceback."""
-    monkeypatch.delenv("OMNIVOICE_VIENEU_VENV", raising=False)
+    # Hermetic: a dev machine that already installed vieneu has a real
+    # package-owned .venv on disk — point it at a nonexistent tmp dir.
     from engines.vienue import bootstrap
+    monkeypatch.setattr(bootstrap, "_ENGINES_VENV_DIR", tmp_path / ".venv")
+    monkeypatch.delenv("OMNIVOICE_VIENEU_VENV", raising=False)
     bootstrap.invalidate()
     monkeypatch.setattr(bootstrap, "_locate_uv", lambda: None)
     import pytest

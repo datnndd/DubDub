@@ -2020,6 +2020,8 @@
     "active": "active",
     "whyUnavailable": "What it needs",
     "sectionReady": "Ready to use",
+    "languagesChipTitle": "This engine speaks: {{languages}}",
+    "languagesMany": "{{first}} +{{count}}",
     "sectionMore": "Add more engines",
     "lastError": "Last error: {{error}}",
     "installedAndReady": "Installed and ready",

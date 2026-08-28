@@ -722,6 +722,8 @@
     "active": "hoạt động",
     "whyUnavailable": "Cần những gì",
     "sectionReady": "Sẵn sàng sử dụng",
+    "languagesChipTitle": "Engine này hỗ trợ: {{languages}}",
+    "languagesMany": "{{first}} +{{count}}",
     "sectionMore": "Thêm động cơ khác",
     "lastError": "Lỗi cuối cùng: {{error}}",
     "installedAndReady": "Đã cài đặt và sẵn sàng",

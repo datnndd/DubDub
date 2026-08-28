@@ -1,4 +1,4 @@
-"""One-click sidecar-engine provisioner.
+﻿"""One-click sidecar-engine provisioner.
 
 Some engines (IndexTTS 2.5, MOSS-v1.5, dots.tts, and Confucius4) have the
 same shape and can't live in the app venv because they pin a ``transformers``
@@ -97,11 +97,17 @@ class SidecarSpec:
 
     engine_id: str
     display_name: str
-    repo_url: str                      # git clone URL (primary fetch path)
-    tarball_url: str                   # source tarball (fallback when git is absent)
-    checkout_dirname: str              # directory name of the checkout under the managed root
-    env_var: str                       # env var the engine's bootstrap reads (install dir)
-    probe_module: str                  # python -c "import <probe_module>" proves the venv works
+    repo_url: Optional[str] = None     # git clone URL (primary fetch path); None for PyPI-package engines
+    tarball_url: Optional[str] = None  # source tarball (fallback when git is absent)
+    checkout_dirname: Optional[str] = None  # directory name of the checkout under the managed root
+    env_var: Optional[str] = None      # env var the engine's bootstrap reads (install dir)
+    probe_module: Optional[str] = None  # python -c "import <probe_module>" proves the venv works
+    # PyPI-package engines (no source checkout): when set, the provisioner
+    # skips fetch_source/weights and installs this requirement into
+    # <managed_root>/<checkout_dirname>/.venv, then points env_var at that
+    # venv directory. Weights (if any) are the engine's own business — they
+    # download lazily from HF on first synthesize.
+    pip_requirement: Optional[str] = None
     repo_ref: Optional[str] = None     # branch/tag selected by git clone
     source_revision: Optional[str] = None  # reviewed upstream commit
     source_required_path: Optional[str] = None  # distinguishes incompatible source generations
@@ -126,6 +132,16 @@ def _indextts_invalidate() -> None:
 def _indextts_installed() -> bool:
     from engines.indextts.bootstrap import is_indextts_installed
     return is_indextts_installed()
+
+
+def _vienue_invalidate() -> None:
+    from engines.vienue import bootstrap
+    bootstrap.invalidate()
+
+
+def _vienue_installed() -> bool:
+    from engines.vienue.bootstrap import is_vieneu_installed
+    return is_vieneu_installed()
 
 
 SPECS: dict[str, SidecarSpec] = {
@@ -154,6 +170,26 @@ SPECS: dict[str, SidecarSpec] = {
         required_bytes=12 * _GIB,
         invalidate=_indextts_invalidate,
         installed_probe=_indextts_installed,
+    ),
+    # VieNeu-TTS — Vietnamese instant voice cloning (PyPI `vieneu`, the
+    # Vietnamese fine-tune of NeuTTS Air). A PyPI-package spec: no source
+    # checkout, no bundled-weights download (the SDK pulls its checkpoint
+    # from HF lazily on first synthesize, with progress frames). The
+    # provisioner creates the venv, installs `vieneu>=3.0`, and points
+    # OMNIVOICE_VIENEU_VENV at it — the engine's bootstrap Probe 1 reads it.
+    "vienue": SidecarSpec(
+        engine_id="vienue",
+        display_name="VieNeu-TTS",
+        env_var="OMNIVOICE_VIENEU_VENV",
+        probe_module="vieneu",
+        checkout_dirname="vieneu",
+        pip_requirement="vieneu>=3.0",
+        docs_path="docs/engines/vieneu-tts.md",
+        # ~0.5 GB venv (ONNX Runtime + sea_g2p, no torch on the CPU path) +
+        # ~1.5 GB v3-Turbo weights (downloaded lazily by the SDK, not here).
+        required_bytes=4 * _GIB,
+        invalidate=_vienue_invalidate,
+        installed_probe=_vienue_installed,
     ),
 }
 
@@ -186,6 +222,19 @@ def _legacy_managed_checkouts(spec: SidecarSpec) -> tuple[Path, ...]:
     if spec.engine_id == "indextts2":
         return (managed_root(spec) / "index-tts",)
     return ()
+
+
+def _managed_paths(spec: SidecarSpec) -> tuple[Path, ...]:
+    """Every on-disk path the app-managed install owns. For PyPI-package
+    engines the venv lives at <managed_root>/<checkout_dirname>/.venv and the
+    persisted env var points AT the venv (the engine's bootstrap takes a venv
+    directory, not a checkout) — so the venv itself is ours to manage."""
+    checkout = managed_checkout(spec)
+    paths = [checkout]
+    if spec.pip_requirement:
+        paths.append(checkout / ".venv")
+    paths.extend(_legacy_managed_checkouts(spec))
+    return tuple(paths)
 
 
 def _venv_python(venv_dir: Path) -> Path:
@@ -430,7 +479,7 @@ def get_status(engine_id: str) -> dict:
         # True when the on-disk install is the app-managed one (uninstallable
         # from the app). A user's own clone is never "managed".
         "managed": bool(
-            (checkout.is_dir() and (not env_dir or Path(env_dir) == checkout))
+            (checkout.is_dir() and (not env_dir or Path(env_dir) in _managed_paths(spec)))
             or (env_dir and Path(env_dir) in _legacy_managed_checkouts(spec))
         ),
         "install_dir": env_dir or (str(checkout) if checkout.is_dir() else None),
@@ -449,8 +498,7 @@ def _user_managed_dir(spec: SidecarSpec) -> Optional[Path]:
     """The user's own install dir when the env var points anywhere but the
     app-managed checkout; None for managed/unset (ours to provision)."""
     env_dir = os.environ.get(spec.env_var)
-    managed_paths = (managed_checkout(spec), *_legacy_managed_checkouts(spec))
-    if env_dir and Path(env_dir) not in managed_paths:
+    if env_dir and Path(env_dir) not in _managed_paths(spec):
         return Path(env_dir)
     return None
 
@@ -462,6 +510,10 @@ def _healthy(spec: SidecarSpec) -> bool:
     instead of reporting already_installed."""
     if _user_managed_dir(spec) is not None:
         return _safe_installed(spec)
+    if spec.pip_requirement:
+        # PyPI-package engine: healthy = the managed venv exists and the
+        # engine's own probe agrees (the import probe ran at install time).
+        return _venv_python(managed_checkout(spec) / ".venv").is_file() and _safe_installed(spec)
     checkout = managed_checkout(spec)
     if not checkout.is_dir():
         # A working app-managed predecessor stays available to the engine,
@@ -487,9 +539,12 @@ def _persist(spec: SidecarSpec) -> None:
     use, prefs.json ``env.*`` for the next launch, and invalidate the
     engine's memoised venv resolution so it re-probes without a restart."""
     checkout = managed_checkout(spec)
-    os.environ[spec.env_var] = str(checkout)
+    # PyPI-package engines take a VENV directory in their env var (the
+    # engine's bootstrap probes a venv, not a source checkout).
+    target = (checkout / ".venv") if spec.pip_requirement else checkout
+    os.environ[spec.env_var] = str(target)
     from core import prefs
-    prefs.set_(f"env.{spec.env_var}", str(checkout))
+    prefs.set_(f"env.{spec.env_var}", str(target))
     try:
         spec.invalidate()
     except Exception:
@@ -546,7 +601,7 @@ def uninstall(engine_id: str) -> dict:
             return {"status": "install_in_progress", "engine": engine_id}
     env_dir = os.environ.get(spec.env_var)
     checkout = managed_checkout(spec)
-    managed_paths = (checkout, *_legacy_managed_checkouts(spec))
+    managed_paths = _managed_paths(spec)
     if env_dir and Path(env_dir) not in managed_paths:
         return {
             "status": "not_managed",
@@ -563,7 +618,7 @@ def uninstall(engine_id: str) -> dict:
     if env_dir:  # only ever the managed checkout at this point
         os.environ.pop(spec.env_var, None)
     from core import prefs
-    if prefs.get(f"env.{spec.env_var}") in {str(path) for path in managed_paths}:
+    if prefs.get(f"env.{spec.env_var}") in {str(path) for path in managed_paths} | {str(checkout / ".venv") if spec.pip_requirement else checkout}:
         prefs.delete(f"env.{spec.env_var}")
     try:
         spec.invalidate()
@@ -635,6 +690,11 @@ def _step_preflight(spec: SidecarSpec, job: dict) -> None:
 
 def _step_fetch_source(spec: SidecarSpec, job: dict) -> None:
     step = _job_step(job, "fetch_source")
+    if spec.pip_requirement:
+        step["state"] = "skipped"
+        step["detail"] = f"PyPI package ({spec.pip_requirement}) — no source checkout"
+        _log(job, "PyPI-package engine — skipping the source checkout.")
+        return
     checkout = managed_checkout(spec)
     if _source_present(spec, checkout):
         step["state"] = "done"
@@ -780,6 +840,8 @@ def _safe_extract_members(tf: "tarfile.TarFile", dest: str) -> None:
 def _step_create_venv(spec: SidecarSpec, job: dict) -> None:
     step = _job_step(job, "create_venv")
     checkout = managed_checkout(spec)
+    if spec.pip_requirement:
+        checkout.mkdir(parents=True, exist_ok=True)
     venv_dir = checkout / ".venv"
     py = _venv_python(venv_dir)
     if py.is_file():
@@ -816,15 +878,19 @@ def _step_install_deps(spec: SidecarSpec, job: dict) -> None:
     py = _venv_python(checkout / ".venv")
     uv = _locate_uv()
     _log(job, f"Installing {spec.display_name} into its venv (this can take several minutes) …")
+    if spec.pip_requirement:
+        argv = [uv, "pip", "install", "--python", str(py), spec.pip_requirement]
+    else:
+        argv = [uv, "pip", "install", "--python", str(py), "-e", str(checkout)]
     rc = _run_logged(
         job,
-        [uv, "pip", "install", "--python", str(py), "-e", str(checkout)],
+        argv,
         timeout=_UV_PIP_INSTALL_TIMEOUT_S,
         env=uv_subprocess_env(Path(DATA_DIR) / "engines"),
     )
     if rc != 0:
         raise _StepError(
-            f"uv pip install -e failed (exit {rc}).",
+            f"uv pip install failed (exit {rc}).",
             "Usually a network hiccup — re-run the install to resume. Behind a "
             "proxy, set HTTPS_PROXY in Settings → Environment first.",
         )

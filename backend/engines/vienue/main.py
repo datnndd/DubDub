@@ -180,6 +180,61 @@ def _to_pcm_b64(audio, sample_rate: int) -> tuple[str, int, int]:
     return base64.b64encode(pcm).decode("ascii"), int(sample_rate), int(arr.shape[0])
 
 
+# ── prepared-reference LRU (v3turbo) ──────────────────────────────────────
+#
+# Every infer(ref_audio=...) re-encodes the reference clip (denoise + trim +
+# speaker embedding + codes) — a fixed per-call cost that dominates short
+# segments (dub per-segment refs). The SDK's add_voice()/remove_voice()
+# registers a PREPARED voice under a name, and infer(voice=name) skips the
+# re-encode entirely — so the sidecar keeps an LRU of prepared references
+# keyed by the clip's content (abspath + mtime_ns + size). Same file →
+# zero-encode synthesis; file changed → new key → re-encode. Eviction beyond
+# _REF_VOICE_CACHE_MAX goes through the SDK's remove_voice. Only v3turbo:
+# transcript-conditional modes (standard/turbo) resolve refs differently and
+# keep the direct ref_audio path. Fail-soft always: a cache miss/error falls
+# back to the direct ref_audio path (the cache is never load-bearing).
+_REF_VOICE_CACHE_MAX = 16
+_ref_voice_order: dict = {}  # cache_name -> None (insertion-ordered LRU)
+
+
+def _cache_key(ref_audio: str) -> str:
+    import hashlib
+    st = os.stat(ref_audio)
+    basis = f"{os.path.abspath(ref_audio)}|{st.st_mtime_ns}|{st.st_size}"
+    return "vs-" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:16]
+
+
+def _voice_for(tts, ref_audio: str) -> dict:
+    """infer() kwargs for this reference: a prepared-voice name (cache hit)
+    or the direct ref_audio path (miss/failure — never load-bearing)."""
+    mode = os.environ.get("OMNIVOICE_VIENEU_MODE", _DEFAULT_MODE)
+    if mode != "v3turbo":
+        return {"ref_audio": ref_audio}
+    try:
+        name = _cache_key(ref_audio)
+        if name in _ref_voice_order:
+            _ref_voice_order.pop(name, None)
+        else:
+            while len(_ref_voice_order) >= _REF_VOICE_CACHE_MAX:
+                oldest = next(iter(_ref_voice_order))
+                try:
+                    tts.remove_voice(oldest)
+                except Exception:
+                    pass  # eviction is best-effort; the dict entry is dropped below
+                _ref_voice_order.pop(oldest, None)
+            tts.add_voice(name, ref_audio)
+        _ref_voice_order[name] = None
+        return {"voice": name}
+    except Exception as exc:  # noqa: BLE001 — cache is an optimization
+        print(
+            f"[vienue] prepared-voice cache miss ({type(exc).__name__}: {exc}); "
+            "falling back to the direct ref_audio path",
+            file=sys.stderr,
+        )
+        _ref_voice_order.clear()
+        return {"ref_audio": ref_audio}
+
+
 def _handle_synthesize(msg: dict, stdout) -> None:
     """Dispatch one synthesize request. Emits the audio frame or raises."""
     text = msg.get("text")
@@ -196,7 +251,7 @@ def _handle_synthesize(msg: dict, stdout) -> None:
     gen_kwargs: dict = {"text": text}
     ref_audio = msg.get("ref_audio")
     if ref_audio:
-        gen_kwargs["ref_audio"] = ref_audio
+        gen_kwargs.update(_voice_for(tts, ref_audio))
         ref_text = msg.get("ref_text")
         if ref_text:
             # v3turbo resolves the voice from the clip alone and takes no

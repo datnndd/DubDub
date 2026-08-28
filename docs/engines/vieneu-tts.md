@@ -58,6 +58,15 @@ PyPI into `backend/engines/vienue/.venv` on first use when `uv` is available.
 Model weights download from HuggingFace on first synthesize (progress is
 surfaced through the normal task stream).
 
+## Install (one-click)
+
+With the sidecar provisioner wired (Phase 2), **Model Catalogue ? Engines ?
+VieNeu-TTS** offers an in-app Install button: it creates the venv at
+`%APPDATA%/OmniVoice/engines/vienue/vieneu/.venv`, installs `vieneu>=3.0`
+from PyPI, and points `OMNIVOICE_VIENEU_VENV` at it (persisted in prefs) ?
+no restart needed. Weights still download lazily from HuggingFace on first
+synthesize. The manual steps below remain the fallback.
+
 ## Voice cloning
 
 Provide a reference clip (WAV, a few seconds is enough — the SDK cleans and
@@ -75,6 +84,24 @@ The `v3turbo` mode resolves the voice **from the clip alone**; the
 transcript-conditional modes (`standard` / `turbo`) additionally take
 `ref_text`. VoiceStudio sends the transcript either way and the sidecar
 forwards it only where the active mode uses it.
+
+## Measured performance (one machine, take as a hint)
+
+Measured on the maintainer's Windows x64 host, **v3-Turbo CPU path (ONNX
+Runtime, no torch)**, 345-character Vietnamese paragraph, no reference clip
+(built-in default voice), via the real sidecar wire protocol ? 2026-08-28:
+
+| Run | Wall | Audio produced | RTF |
+|---|---|---|---|
+| Cold (incl. weights load) | 67.9 s | 17.9 s | 3.80 |
+| Warm #1 | 11.3 s | 17.2 s | **0.655** |
+| Warm #2 | 11.3 s | 17.4 s | **0.649** |
+
+Reading: on a CPU-only machine, Vieneu v3-Turbo synthesizes slower than
+real-time (RTF ~0.65) ? fine for Voice/Brief previews, slow for long
+Audiobook/Dub renders. Prefer the CUDA path (PyTorch mode) for heavy batch
+work, and keep OmniVoice for 600+-language jobs. Numbers are
+machine-specific; re-measure before quoting them anywhere.
 
 ## Configuration
 

@@ -41,6 +41,9 @@ export interface EngineBackend {
   // emotion controls only when the active engine sets this. Absent on legacy
   // payloads (treated as false).
   supports_emotion?: boolean;
+  // Static language surface the engine speaks (list_backends "languages").
+  // Null on legacy payloads / model-dependent engines — no chips rendered.
+  languages?: string[] | null;
   install_hint?: string | null;
   // Copy-paste-ready `export VAR=...` line for a path-gated opt-in engine
   // (IndexTTS / MOSS-v1.5 / dots.tts / Confucius4), else null/absent.
