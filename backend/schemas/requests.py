@@ -174,6 +174,39 @@ class TranslateRequest(BaseModel):
     # per-segment suggestion the user applies manually, never auto-applied.
     # No LLM configured / LLM failure → silently no suggestion.
     condense: Optional[bool] = False
+    # Client-reviewed translation context (the pre-translation review step):
+    # the theme summary + terminology map the user previewed — and optionally
+    # edited — in the UI before starting the translation. When present it
+    # REPLACES the hidden auto-extraction entirely: the reviewed brief is
+    # authoritative and costs zero extra LLM calls. Shape:
+    #   {"theme": "<one-two sentences>",
+    #    "terms": [{"source": "...", "target": "...", "note": "..."}]}
+    translation_context: Optional[dict] = None
+    # When true, use EXACTLY the `glossary` the client sent — no auto-extracted
+    # terms merged on top. Default (None/False) keeps the historical behaviour:
+    # manual entries always win, auto terms fill the rest.
+    glossary_only: Optional[bool] = None
+
+class TranslateContextRequest(BaseModel):
+    """Preview the translation brief (theme + terminology) for user review.
+
+    Powers the pre-translation review step: the client calls
+    POST /dub/translate-context BEFORE /dub/translate, shows the returned
+    theme/terms for the user to inspect and edit, and only then starts the
+    translation with the reviewed brief attached as
+    TranslateRequest.translation_context. Segments are optional — when
+    omitted, the job's stored transcript is used.
+    """
+
+    segments: Optional[List[TranslateSegment]] = None
+    job_id: Optional[str] = None
+    target_lang: str  # ISO 639-1 code like "es", "fr"
+    source_lang: Optional[str] = None  # ISO 639-1; overrides job detection
+    max_terms: int = 30
+    # Re-run extraction even when the transcript-fingerprint cache already
+    # holds a context for this job/target.
+    force: bool = False
+
 
 class ParseSubtitleTextRequest(BaseModel):
     """Raw pasted subtitle text (SRT/VTT-ish) to be parsed into timed cues.

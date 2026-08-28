@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from schemas.requests import TranslateRequest
+from schemas.requests import TranslateContextRequest, TranslateRequest
 from services.model_manager import _cpu_pool, _gpu_pool
 from services.hf_revisions import revision_for
 from services.translator import cinematic_available, cinematic_refine_many, _cinematic_budget
@@ -253,6 +253,205 @@ def _resolve_translation_context(req, client, model_name: str, timeout: float,
     return ctx
 
 
+
+def _sanitize_user_context(user_ctx: dict) -> dict:
+    """Normalize a client-supplied translation brief to {theme, terms}.
+
+    Terms accept the glossary row shape ({source, target, note}); extra keys
+    are dropped so the cached brief matches what extract_context_sync returns.
+    Rows without both a source and a target are discarded, and what survives
+    is stripped so blank edits cannot leak into every segment prompt.
+    """
+    theme = str(user_ctx.get("theme") or "").strip()
+    terms = []
+    for t in (user_ctx.get("terms") or []):
+        if not isinstance(t, dict):
+            continue
+        src = str(t.get("source") or "").strip()
+        tgt = str(t.get("target") or "").strip()
+        if not src or not tgt:
+            continue
+        row = {"source": src, "target": tgt}
+        note = str(t.get("note") or "").strip()
+        if note:
+            row["note"] = note
+        terms.append(row)
+    return {"theme": theme, "terms": terms}
+
+
+def _cache_user_context(req, ctx: dict) -> None:
+    """Persist a user-reviewed brief onto the job's translation_context cache.
+
+    Same slot the auto-extractor uses, keyed by the same transcript
+    fingerprint — reviewing a brief then translating (or re-translating the
+    same transcript) is one coherent cache entry, and the History blob keeps
+    showing the brief that was actually applied. Best-effort: caching must
+    never fail a translate.
+    """
+    if not getattr(req, "job_id", None):
+        return
+    try:
+        from services import translation_quality as tq
+        job = _get_job(req.job_id)
+        if job is None:
+            return
+        fp = tq.transcript_fingerprint([(s.text or "") for s in req.segments])
+        job.setdefault("translation_context", {})[req.target_lang] = {
+            **ctx, "fingerprint": fp, "user_edited": True,
+        }
+        _save_job(req.job_id, job)
+    except Exception:  # noqa: BLE001 — persistence is best-effort
+        logger.debug("user translation context persist skipped", exc_info=True)
+
+
+@router.post("/dub/translate-context")
+async def dub_translate_context(req: TranslateContextRequest):
+    """Extract (or return the cached) translation brief for user review.
+
+    One LLM pass over the transcript returns a theme summary + terminology
+    map — the same brief the translator would otherwise apply invisibly.
+    The UI shows it BEFORE translating so the user can inspect and edit it;
+    the reviewed brief then rides back on
+    TranslateRequest.translation_context. The cache slot
+    (job["translation_context"][target], keyed by transcript fingerprint) is
+    shared with /dub/translate, so preview → translate without edits costs a
+    single LLM call in total.
+    """
+    try:
+        from services import llm_skills
+        from services import translation_quality as tq
+
+        texts: list = []
+        if req.segments:
+            texts = [(s.text or "") for s in req.segments]
+        elif req.job_id:
+            job = _get_job(req.job_id)
+            segs = (job or {}).get("segments")
+            if isinstance(segs, list) and segs:
+                texts = [
+                    str((s or {}).get("text") or "") if isinstance(s, dict) else str(s or "")
+                    for s in segs
+                ]
+            elif (job or {}).get("full_transcript"):
+                texts = [str(job["full_transcript"])]
+        texts = [t for t in texts if t and t.strip()]
+        if not texts:
+            return JSONResponse(status_code=400, content={"error":
+                "No transcript to summarize. Run transcription first (or pass "
+                "the segments to summarize), then try again."})
+
+        class _Shim:
+            pass
+
+        shim = _Shim()
+        shim.source_lang = req.source_lang
+        shim.job_id = req.job_id
+        shim.segments = req.segments or []
+        src_lang = _resolve_source_lang(shim)
+
+        fp = tq.transcript_fingerprint(texts)
+        job = _get_job(req.job_id) if req.job_id else None
+        if job is not None and not req.force:
+            cached = (job.get("translation_context") or {}).get(req.target_lang)
+            if isinstance(cached, dict) and cached.get("fingerprint") == fp:
+                out = {
+                    "theme": cached.get("theme", ""),
+                    "terms": cached.get("terms") or [],
+                    "fingerprint": fp,
+                    "source_lang": src_lang,
+                    "target_lang": req.target_lang,
+                    "cached": True,
+                }
+                if cached.get("user_edited"):
+                    out["user_edited"] = True
+                return out
+
+        # Same client the translator uses (LLM Skills → active provider, with
+        # the legacy TRANSLATE_* env fallback), so the previewed brief is
+        # exactly the brief the translation pass would have built.
+        llm_timeout = llm_skills._default_timeout()
+        handle = None
+        try:
+            handle = llm_skills.resolve_skill_client("dub_translation")
+        except Exception:  # noqa: BLE001 — resolution must never 500 a preview
+            logger.exception("dub_translation skill resolution failed; trying env fallback")
+        if handle is not None:
+            client = handle.client
+            model_name = handle.model
+            llm_timeout = handle.timeout
+        elif os.environ.get("TRANSLATE_BASE_URL") or os.environ.get("TRANSLATE_API_KEY"):
+            from openai import OpenAI
+            # max_retries=0 — same 429 rationale as the translate path.
+            client = OpenAI(base_url=os.environ.get("TRANSLATE_BASE_URL"),
+                            api_key=os.environ.get("TRANSLATE_API_KEY") or "local",
+                            max_retries=0)
+            model_name = os.environ.get("TRANSLATE_MODEL", "gpt-4o-mini")
+        else:
+            try:
+                reason = llm_skills.resolve_skill("dub_translation").reason
+            except Exception:  # noqa: BLE001
+                reason = None
+            if reason == "disabled":
+                friendly = (
+                    "The LLM translation engine is turned off — enable the "
+                    "'Dub translation' skill in Settings → LLM Skills to "
+                    "preview the translation brief."
+                )
+            else:
+                friendly = (
+                    "The LLM translation engine has no provider configured, so "
+                    "there is nothing to summarize the transcript with. Add and "
+                    "test one in Settings → LLM Providers, or start the "
+                    "translation without a brief review."
+                )
+            return JSONResponse(status_code=400, content={"error": friendly})
+
+        ctx = await asyncio.get_running_loop().run_in_executor(
+            _cpu_pool,
+            lambda: tq.extract_context_sync(
+                client, model_name, llm_timeout,
+                segment_texts=texts,
+                source_lang=src_lang,
+                target_lang=req.target_lang,
+                source_name=LANG_NAMES.get(src_lang, src_lang),
+                target_name=LANG_NAMES.get(req.target_lang, req.target_lang),
+                max_terms=max(1, min(int(req.max_terms or 30), 100)),
+            ),
+        )
+        if ctx is None:
+            return JSONResponse(status_code=502, content={"error":
+                "Couldn't extract the translation brief (the LLM call failed "
+                "or returned nothing usable). Test your provider in "
+                "Settings → LLM Providers and try again — or start the "
+                "translation without a reviewed brief."})
+        ctx = {**ctx, "fingerprint": fp}
+        if job is not None and req.job_id:
+            try:
+                job.setdefault("translation_context", {})[req.target_lang] = ctx
+                _save_job(req.job_id, job)
+            except Exception:  # noqa: BLE001 — persistence is best-effort
+                logger.debug("translation context persist skipped", exc_info=True)
+        return {
+            "theme": ctx.get("theme", ""),
+            "terms": ctx.get("terms") or [],
+            "fingerprint": fp,
+            "source_lang": src_lang,
+            "target_lang": req.target_lang,
+            "cached": False,
+        }
+    except Exception as e:
+        from core.public_errors import public_failure
+
+        error = public_failure(
+            logger,
+            "Translation brief preview failed",
+            e,
+            response="Couldn't prepare the translation brief; check the backend log for details.",
+            traceback=True,
+        )
+        return JSONResponse(status_code=500, content={"error": error})
+
+
 def _unload_nllb():
     """Release NLLB VRAM so TTS model can reload."""
     global _nllb_model, _nllb_tokenizer
@@ -429,13 +628,43 @@ async def dub_translate(req: TranslateRequest):
             # merged with the user's manual glossary (user entries win) and
             # injected into every per-segment prompt below. With the toggle off
             # the manual glossary still rides along — that costs no extra call.
+            # A user-reviewed brief (theme + terms previewed and optionally
+            # edited in the UI before translating) is authoritative: it replaces
+            # the hidden auto-extraction entirely and costs zero extra LLM
+            # calls. It is persisted onto the same job cache slot so
+            # re-translates of the same transcript — and the History blob —
+            # keep reflecting the brief that was approved.
+            user_ctx = getattr(req, "translation_context", None)
             auto_ctx = None
-            if auto_glossary_on:
+            context_source = "none"
+            if isinstance(user_ctx, dict) and (str(user_ctx.get("theme") or "").strip()
+                                               or user_ctx.get("terms")):
+                auto_ctx = _sanitize_user_context(user_ctx)
+                context_source = "user"
+                _cache_user_context(req, auto_ctx)
+            elif auto_glossary_on:
                 auto_ctx = await loop.run_in_executor(
                     _cpu_pool, _resolve_translation_context,
                     req, client, model_name, llm_timeout, src_lang,
                 )
-            merged_terms = tq.merge_glossary(req.glossary, (auto_ctx or {}).get("terms"))
+                if auto_ctx:
+                    context_source = "auto"
+            if getattr(req, "glossary_only", None):
+                # The reviewed workflow sends the exact brief to use.
+                merged_terms = [g for g in (req.glossary or []) if isinstance(g, dict)]
+            elif context_source == "user":
+                # The reviewed brief is user-level: its rows (notes included)
+                # are kept verbatim, manual glossary entries win clashes, and
+                # brief rows fill in the rest ? unlike auto-extracted terms,
+                # which merge_glossary strips to bare source/target pairs.
+                seen_srcs = {(g.get("source") or "").strip().lower()
+                             for g in (req.glossary or []) if isinstance(g, dict)}
+                merged_terms = tq.merge_glossary(req.glossary, None) + [
+                    t for t in auto_ctx["terms"]
+                    if (t.get("source") or "").strip().lower() not in seen_srcs
+                ]
+            else:
+                merged_terms = tq.merge_glossary(req.glossary, (auto_ctx or {}).get("terms"))
             context_extra = tq.context_clause((auto_ctx or {}).get("theme", ""), merged_terms)
 
             def _build_prompt(src_code: str, tgt_code: str) -> str:
@@ -574,7 +803,8 @@ async def dub_translate(req: TranslateRequest):
             # rate-ratio badges and runs the bounded Autofit fit pass. Before
             # this it returned here, so Cinematic/Autofit on the LLM engine did
             # nothing.
-            return await _maybe_cinematic(translated, req, src_lang, loop, already_llm=True)
+            return await _maybe_cinematic(translated, req, src_lang, loop, already_llm=True,
+                                          context_source=context_source)
 
         # Offline Argos Translate
         if provider == "argos" or provider == "libretranslate":
@@ -926,7 +1156,8 @@ async def _apply_fit_pass(rows, req, slots_by_id, source_by_id, quality, loop, d
             row["rate_error"] = f["error"]
 
 
-async def _maybe_cinematic(translated, req, src_lang, loop, *, already_llm=False):
+async def _maybe_cinematic(translated, req, src_lang, loop, *, already_llm=False,
+                           context_source: str | None = None):
     """Post-process a literal translation into Cinematic/Autofit output.
 
     Runs for EVERY provider now (Argos/NLLB/Google/…/OpenAI). The three
@@ -955,6 +1186,8 @@ async def _maybe_cinematic(translated, req, src_lang, loop, *, already_llm=False
     base = {"translated": translated, "target_lang": req.target_lang, "source_lang": src_lang,
             "quality_used": "fast",
             **_dialect_flags(req, applied=(already_llm and bool(dialect_hint)))}
+    if context_source:
+        base["context_source"] = context_source
 
     # Fast (and anything unrecognised) returns the plain translation unchanged
     # (plus the pre-synthesis duration-plan badges — no LLM needed for those).
@@ -992,9 +1225,12 @@ async def _maybe_cinematic(translated, req, src_lang, loop, *, already_llm=False
         await _apply_fit_pass(merged, req, slots_by_id, source_by_id, quality, loop, deadline)
         # Plan AFTER the fit pass — verdicts must describe the final text.
         await _finalize_duration_plan(merged, req, loop)
-        return {"translated": merged, "target_lang": req.target_lang,
-                "source_lang": src_lang, "quality_used": quality,
-                **_dialect_flags(req, applied=bool(dialect_hint))}
+        out = {"translated": merged, "target_lang": req.target_lang,
+               "source_lang": src_lang, "quality_used": quality,
+               **_dialect_flags(req, applied=bool(dialect_hint))}
+        if context_source:
+            out["context_source"] = context_source
+        return out
 
     # Non-LLM provider → the reflect/adapt refine needs a separately-configured
     # LLM (Settings → LLM Providers). Without one, degrade to Fast with a flag.
@@ -1069,10 +1305,13 @@ async def _maybe_cinematic(translated, req, src_lang, loop, *, already_llm=False
     # Plan AFTER the fit pass — verdicts must describe the final text.
     await _finalize_duration_plan(merged, req, loop)
 
-    return {
+    out = {
         "translated": merged,
         "target_lang": req.target_lang,
         "source_lang": src_lang,
         "quality_used": quality,
         **_dialect_flags(req, applied=bool(dialect_hint)),
     }
+    if context_source:
+        out["context_source"] = context_source
+    return out

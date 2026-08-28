@@ -470,3 +470,190 @@ async def test_mt_engine_unaffected_by_quality_flags(monkeypatch):
     row = resp["translated"][0]
     assert row["text"] == "[es]Hello"
     assert "literal" not in row  # response shape unchanged for MT engines
+
+
+# ── Pre-translation review: /dub/translate-context + reviewed brief ─────────
+
+
+@pytest.mark.asyncio
+async def test_translate_context_endpoint_extracts_and_caches(monkeypatch):
+    """The preview endpoint returns {theme, terms} for the UI and stores it in
+    the SAME fingerprint-keyed slot /dub/translate uses — preview then
+    translate without edits costs exactly one LLM call in total."""
+    from api.routers import dub_translate
+    from schemas.requests import TranslateContextRequest
+
+    job = {"filename": "clip.mp4"}
+    monkeypatch.setattr(dub_translate, "_get_job", lambda jid: job if jid == "j1" else None)
+    monkeypatch.setattr(dub_translate, "_save_job", lambda jid, j, *a, **kw: None)
+
+    client = _ScriptedLLMClient(lambda kw: _CONTEXT_BODY)
+    _wire_skill_client(monkeypatch, client)
+
+    req = TranslateContextRequest(
+        segments=_segs("Fire up the grill.", "Chef Okonkwo tastes it."),
+        job_id="j1", target_lang="es", source_lang="en",
+    )
+    resp = await dub_translate.dub_translate_context(req)
+    assert resp["cached"] is False
+    assert resp["theme"] == "A casual cooking show about regional street food."
+    assert resp["terms"] == [
+        {"source": "Chef Okonkwo", "target": "Chef Okonkwo"},
+        {"source": "flat-top grill", "target": "plancha"},
+    ]
+    assert resp["fingerprint"]
+    assert job["translation_context"]["es"]["fingerprint"] == resp["fingerprint"]
+
+    # Unchanged transcript → cache hit, still exactly one LLM call.
+    resp2 = await dub_translate.dub_translate_context(req)
+    assert resp2["cached"] is True
+    assert len(client.calls) == 1
+
+    # The cached brief satisfies /dub/translate's fingerprint too — the
+    # translation pass runs with zero extra context calls.
+    await dub_translate.dub_translate(
+        _req(_segs("Fire up the grill.", "Chef Okonkwo tastes it."),
+             job_id="j1", reflect=False))
+    assert len([c for c in client.calls if _is_context_call(client, c)]) == 1
+
+
+@pytest.mark.asyncio
+async def test_translate_context_endpoint_force_bypasses_cache(monkeypatch):
+    from api.routers import dub_translate
+    from schemas.requests import TranslateContextRequest
+
+    monkeypatch.setattr(dub_translate, "_get_job", lambda jid: None)
+    monkeypatch.setattr(dub_translate, "_save_job", lambda jid, j, *a, **kw: None)
+
+    client = _ScriptedLLMClient(lambda kw: _CONTEXT_BODY)
+    _wire_skill_client(monkeypatch, client)
+
+    req = TranslateContextRequest(
+        segments=_segs("Fire up the grill."), target_lang="es", source_lang="en")
+    await dub_translate.dub_translate_context(req)
+    forced = await dub_translate.dub_translate_context(
+        req.model_copy(update={"force": True}))
+    assert forced["cached"] is False
+    assert len(client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_translate_context_endpoint_no_llm_names_next_step(monkeypatch):
+    """No provider configured → 400 naming the exact next step, never a 500."""
+    from api.routers import dub_translate
+    from schemas.requests import TranslateContextRequest
+    from services import llm_skills
+
+    monkeypatch.setattr(llm_skills, "resolve_skill_client", lambda sid: None)
+    monkeypatch.delenv("TRANSLATE_BASE_URL", raising=False)
+    monkeypatch.delenv("TRANSLATE_API_KEY", raising=False)
+
+    resp = await dub_translate.dub_translate_context(
+        TranslateContextRequest(segments=_segs("hi"), target_lang="es",
+                                source_lang="en"))
+    assert resp.status_code == 400
+    body = __import__("json").loads(resp.body)
+    assert "LLM Providers" in body["error"]
+
+
+@pytest.mark.asyncio
+async def test_translate_context_endpoint_without_transcript_is_400(monkeypatch):
+    from api.routers import dub_translate
+    from schemas.requests import TranslateContextRequest
+
+    monkeypatch.setattr(dub_translate, "_get_job", lambda jid: {"filename": "x.mp4"})
+
+    resp = await dub_translate.dub_translate_context(
+        TranslateContextRequest(job_id="j1", target_lang="es"))
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_reviewed_context_replaces_auto_extraction(monkeypatch):
+    """A user-edited brief rides every segment prompt verbatim, the hidden
+    auto-extraction never runs, the response says context_source=user, and
+    the approved brief is persisted with a user_edited marker."""
+    from api.routers import dub_translate
+
+    job = {"filename": "clip.mp4"}
+    monkeypatch.setattr(dub_translate, "_get_job", lambda jid: job if jid == "j1" else None)
+    monkeypatch.setattr(dub_translate, "_save_job", lambda jid, j, *a, **kw: None)
+
+    def _forbidden(req, *a, **kw):
+        raise AssertionError("auto-extraction must not run when a reviewed brief is sent")
+
+    monkeypatch.setattr(dub_translate, "_resolve_translation_context", _forbidden)
+
+    client = _ScriptedLLMClient(lambda kw: "hola")
+    _wire_skill_client(monkeypatch, client)
+
+    resp = await dub_translate.dub_translate(_req(
+        _segs("Fire up the grill."), job_id="j1", reflect=False,
+        translation_context={
+            "theme": "A tense kitchen rivalry.",
+            "terms": [{"source": "Chef Okonkwo", "target": "Chef Okonkwo",
+                       "note": "character name"}],
+        },
+    ))
+    assert resp["context_source"] == "user"
+    sys_msg = client.system_of(client.calls[0])
+    assert "Video context: A tense kitchen rivalry." in sys_msg
+    assert "Chef Okonkwo → Chef Okonkwo" in sys_msg
+    assert "(note: character name)" in sys_msg
+    stored = job["translation_context"]["es"]
+    assert stored["user_edited"] is True
+    assert stored["theme"] == "A tense kitchen rivalry."
+
+
+@pytest.mark.asyncio
+async def test_glossary_only_sends_exactly_the_client_glossary(monkeypatch):
+    """glossary_only=true: the reviewed brief's terms are NOT merged on top of
+    the client glossary — the UI sent the exact brief to use."""
+    from api.routers import dub_translate
+
+    client = _ScriptedLLMClient(lambda kw: "hola")
+    _wire_skill_client(monkeypatch, client)
+
+    resp = await dub_translate.dub_translate(_req(
+        _segs("Fire up the grill."), reflect=False,
+        glossary=[{"source": "grill", "target": "parrilla", "note": ""}],
+        translation_context={"theme": "A casual cooking show.",
+                             "terms": [{"source": "grill", "target": "grill"}]},
+        glossary_only=True,
+    ))
+    assert resp["context_source"] == "user"
+    sys_msg = client.system_of(client.calls[0])
+    assert "grill → parrilla" in sys_msg      # client glossary rides along
+    assert "grill → grill" not in sys_msg     # brief terms NOT merged on top
+
+
+@pytest.mark.asyncio
+async def test_auto_path_reports_context_source_auto(monkeypatch):
+    from api.routers import dub_translate
+
+    def script(kw):
+        if "translation brief" in kw["messages"][0]["content"]:
+            return _CONTEXT_BODY
+        return "hola"
+
+    client = _ScriptedLLMClient(script)
+    _wire_skill_client(monkeypatch, client)
+    resp = await dub_translate.dub_translate(
+        _req(_segs("Fire up the grill."), reflect=False))
+    assert resp["context_source"] == "auto"
+
+
+def test_sanitize_user_context_drops_blank_rows():
+    from api.routers.dub_translate import _sanitize_user_context
+
+    out = _sanitize_user_context({
+        "theme": "  Tense.  ",
+        "terms": [
+            {"source": "A", "target": "B", "note": "n"},
+            {"source": "", "target": "B"},
+            {"source": "C"},
+            "junk",
+        ],
+    })
+    assert out == {"theme": "Tense.",
+                   "terms": [{"source": "A", "target": "B", "note": "n"}]}

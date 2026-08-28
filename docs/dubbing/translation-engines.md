@@ -136,6 +136,20 @@ MT engines can't run either stage):
   turn it off for long videos on slow or metered providers. If any refinement
   step fails or times out, the direct translation is kept silently; refinement
   can never fail a segment.
+#### Review the brief before translating
+
+The brief doesn't have to stay invisible. **Preview translation brief** (in the
+Dub tab's Translate step) runs the same extraction pass on demand
+(`POST /dub/translate-context`) and shows the theme summary plus the proposed
+terminology for the target language. Edit both ? fix a term, drop a row,
+rewrite the theme ? and only then start the translation: the reviewed brief
+rides back on the translate request (`translation_context`) and **replaces**
+the automatic extraction entirely, costing zero extra LLM calls. Sending
+`glossary_only` uses exactly the glossary the client sent, with nothing merged
+on top. The translate response reports `context_source` ? `user` (reviewed
+brief), `auto` (untouched extraction), or `none` (no brief) ? so it's always
+clear what the translator actually used.
+
 ### Fit prediction (all quality levels)
 
 Every translation additionally gets a **pre-synthesis fit check** — no LLM

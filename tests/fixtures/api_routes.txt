@@ -24,6 +24,7 @@ DELETE /workers/inbound/keys/{key_id}
 DELETE /workers/{worker_id}
 GET /api/mcp/bindings
 GET /api/settings/analytics
+GET /api/settings/asr-deepgram
 GET /api/settings/asr-openai-compat
 GET /api/settings/changelog
 GET /api/settings/db-backup
@@ -150,6 +151,7 @@ PATCH /projects/{project_id}
 PATCH /workers/{worker_id}
 POST /api/auth/session
 POST /api/auth/ws-ticket
+POST /api/settings/asr-deepgram/test
 POST /api/settings/asr-openai-compat/test
 POST /api/settings/hf-mirror/test
 POST /api/settings/hf-token
@@ -181,6 +183,7 @@ POST /dub/preview-segment/{job_id}
 POST /dub/qc/{job_id}
 POST /dub/transcribe/{job_id}
 POST /dub/translate
+POST /dub/translate-context
 POST /dub/upload
 POST /engines/select
 POST /engines/sidecar/{engine_id}/install
@@ -267,6 +270,7 @@ POST /workers/{worker_id}/consent
 POST /workers/{worker_id}/resume
 PUT /api/mcp/bindings
 PUT /api/settings/analytics
+PUT /api/settings/asr-deepgram
 PUT /api/settings/asr-openai-compat
 PUT /api/settings/dictation-refinement
 PUT /api/settings/hf-mirror
