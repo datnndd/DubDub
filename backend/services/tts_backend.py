@@ -1953,6 +1953,14 @@ _LAZY_REGISTRY: dict[str, tuple[str, str]] = {
     # 2026-07-02 (CPU, Apple Silicon; 22.05 kHz output). Gated behind
     # OMNIVOICE_CONFUCIUS4_TTS_DIR so it's inert until enabled.
     "confucius4-tts": ("engines.confucius4", "Confucius4Backend"),
+    # VieNeu-TTS — Vietnamese instant voice cloning (a Vietnamese fine-tune of
+    # NeuTTS Air, Qwen 0.5B backbone; PyPI `vieneu`). Opt-in +
+    # subprocess-isolated in its own venv (GGUF/ONNX runtime + sea_g2p
+    # phonemizer stack). 48 kHz (v3-Turbo); CPU via ONNX Runtime (torch-free),
+    # GPU via PyTorch; Windows-capable. License care: Apache-2.0 variants only
+    # (0.5B / v2-Turbo) — never the CC BY-NC 0.3B. Weights auto-download from
+    # HuggingFace on first synthesize.
+    "vienue": ("engines.vienue", "VieNueBackend"),
 }
 
 
@@ -2057,6 +2065,7 @@ _INSTALL_HINTS: dict[str, str] = {
     "moss-tts-v15":  "git clone OpenMOSS/MOSS-TTS + set OMNIVOICE_MOSS_TTS_V15_DIR  (own venv, transformers==5.0; 8B, ~16 GB weights; CUDA/CPU, no MPS; Apache-2.0)",
     "dots-tts":      "git clone rednote-hilab/dots.tts + set OMNIVOICE_DOTS_TTS_DIR  (own venv, transformers==4.57; 2B, ~9 GB weights; CUDA/CPU, Linux/macOS only — no Windows; Apache-2.0)",
     "confucius4-tts":"git clone netease-youdao/Confucius4-TTS + set OMNIVOICE_CONFUCIUS4_TTS_DIR  (own Python 3.10 venv; 14-lang cross-lingual zero-shot clone; ~5 GB weights auto-download; CUDA/CPU, no MPS; Apache-2.0)",
+    "vienue":        "uv venv backend/engines/vienue/.venv && uv pip install --python backend/engines/vienue/.venv/Scripts/python.exe vieneu  (Vietnamese instant voice clone — Vietnamese fine-tune of NeuTTS Air; 48 kHz v3-Turbo; CPU via ONNX Runtime / GPU via PyTorch; weights auto-download from HF; Apache-2.0 variants only: 0.5B / v2-Turbo — never the CC BY-NC 0.3B; auto-installed from PyPI on first use when uv is present)",
 }
 
 

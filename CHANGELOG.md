@@ -10,6 +10,7 @@ the frozen-backend fallback mirror it for their toolchains.
 
 ### Added
 
+- A new opt-in TTS engine for Vietnamese: **VieNeu-TTS** (a Vietnamese fine-tune of NeuTTS Air) with instant voice cloning from a short reference clip ? 48 kHz, runs on CPU (ONNX Runtime) or GPU, Windows included. All existing voice-management features (profiles, lock, gallery, personas, history, dub cloning) work with it out of the box. License care: Apache-2.0 variants only. Seeded generation now reaches subprocess-isolated engines too.
 - The Dub workspace can show its work before translating: preview the LLM translation brief (theme + terminology) for the target language, edit it, and only then start the translation — the reviewed brief replaces the hidden auto-extraction (`POST /dub/translate-context`, `translation_context` on `/dub/translate`).
 
 ### Changed

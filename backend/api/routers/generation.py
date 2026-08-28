@@ -718,6 +718,15 @@ def _run_backend_inference(
             instruct=instruct, num_step=num_step, guidance_scale=guidance_scale,
             speed=speed, denoise=denoise, postprocess_output=postprocess_output,
         )
+        # Subprocess-isolated engines run in a separate interpreter, so the
+        # parent's torch.manual_seed above never reaches them — forward the
+        # seed on the wire instead (sidecars that don't use it ignore unknown
+        # frame keys). In-process adapters have fixed signatures and their own
+        # seed semantics, so only SubprocessBackend instances get the kwarg.
+        if used_seed is not None:
+            from services.subprocess_backend import SubprocessBackend
+            if isinstance(backend, SubprocessBackend):
+                gen_kwargs["seed"] = int(used_seed)
         sr = backend.sample_rate
 
         # Inline [pause Nms] markers (issue #276) work for every engine — the
