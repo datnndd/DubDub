@@ -29,6 +29,21 @@ const fmt = (s) => {
   return `${m}:${String(sec).padStart(2, '0')}`;
 };
 
+// Peaks cache — WaveSurfer fetches the WHOLE media file just to draw the
+// waveform, so every remount of a row (history rail toggle, filter change,
+// HMR swap) used to re-download tens of MB, and any in-flight refetch that
+// got torn down surfaced as "TypeError: Failed to fetch". Caching
+// {peaks, duration} per URL lets remounts render instantly with zero
+// network. Blob URLs are never cached (they die with their mount).
+const PEAKS_CACHE = new Map();
+const PEAKS_CACHE_MAX = 12;
+function cachePeaks(url, peaks, duration) {
+  if (PEAKS_CACHE.size >= PEAKS_CACHE_MAX) {
+    PEAKS_CACHE.delete(PEAKS_CACHE.keys().next().value);
+  }
+  PEAKS_CACHE.set(url, { peaks, duration });
+}
+
 export default function WaveformPlayer({
   src,
   source = 'output', // global-playback-manager label
@@ -47,6 +62,20 @@ export default function WaveformPlayer({
   useEffect(() => {
     autoPlayRef.current = autoPlay;
   }, [autoPlay]);
+  // `finish` callback via ref: parents often pass inline arrows, and having
+  // onEnded in the create-effect deps used to tear down + re-create the
+  // player (re-FETCHING the whole media file) on every parent re-render.
+  const onEndedRef = useRef(onEnded);
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
+  // One quiet retry for transient fetch failures (backend dev-reload, a
+  // remount racing the first fetch) before degrading to the native player.
+  const [fetchAttempt, setFetchAttempt] = useState(0);
+  const fetchRetriedRef = useRef(false);
+  useEffect(() => {
+    fetchRetriedRef.current = false;
+  }, [resolvedUrl]);
 
   const [resolvedUrl, setResolvedUrl] = useState(null);
   const [, setReady] = useState(false);
@@ -159,6 +188,15 @@ export default function WaveformPlayer({
         // and never assigns it to the element, leaving play() with nothing
         // to play (waveform drew, click did nothing).
         media: mediaRef.current,
+        // Pre-rendered peaks from a previous mount → WaveSurfer skips the
+        // full-file fetch/decode entirely; the <audio> element streams
+        // playback on its own, so remounts redraw instantly.
+        ...(resolvedUrl && PEAKS_CACHE.has(resolvedUrl)
+          ? {
+              peaks: PEAKS_CACHE.get(resolvedUrl).peaks,
+              length: PEAKS_CACHE.get(resolvedUrl).duration,
+            }
+          : {}),
       });
     } catch (initErr) {
       console.warn('WaveformPlayer: WaveSurfer init failed, native fallback:', initErr);
@@ -178,6 +216,19 @@ export default function WaveformPlayer({
       setDuration(ws.getDuration());
       setReady(true);
       if (autoPlayRef.current) ws.play().catch(() => {});
+      // Persist the decoded waveform so future mounts of this URL never
+      // re-fetch the file just to draw peaks. Best-effort, blobs excluded.
+      try {
+        if (
+          resolvedUrl &&
+          !resolvedUrl.startsWith('blob:') &&
+          !PEAKS_CACHE.has(resolvedUrl)
+        ) {
+          cachePeaks(resolvedUrl, ws.exportPeaks(), ws.getDuration());
+        }
+      } catch {
+        /* peaks caching is best-effort */
+      }
     });
     ws.on('timeupdate', (t) => {
       if (!stale) setCurrentTime(t);
@@ -211,9 +262,12 @@ export default function WaveformPlayer({
         releaseRef.current();
         releaseRef.current = null;
       }
-      if (onEnded) onEnded();
+      onEndedRef.current?.();
     });
     ws.on('error', (err) => {
+      // A fetch aborted by our own teardown (HMR swap, unmount mid-fetch)
+      // surfaces as a generic "Failed to fetch" — expected, never warn.
+      if (stale) return;
       const msg = (typeof err === 'string' ? err : err?.message || '').toLowerCase();
       if (err?.name === 'AbortError' || msg.includes('abort')) return; // React cleanup aborts
       if (/\b40[34]\b|not found/.test(msg)) {
@@ -221,6 +275,12 @@ export default function WaveformPlayer({
         // A native fallback would just re-request and 404 again — render an
         // inert "missing" notice instead and stop retrying.
         setMissing(true);
+        return;
+      }
+      // Transient network failure → one quiet retry before the fallback.
+      if (!fetchRetriedRef.current) {
+        fetchRetriedRef.current = true;
+        setFetchAttempt((a) => a + 1);
         return;
       }
       console.warn('WaveformPlayer: WaveSurfer error, native fallback:', err);
@@ -249,7 +309,7 @@ export default function WaveformPlayer({
       }
       wsRef.current = null;
     };
-  }, [resolvedUrl, failed, height, source, onEnded]);
+  }, [resolvedUrl, failed, height, source, fetchAttempt]);
 
   const togglePlay = async () => {
     // Browser autoplay policy (Linux FF/Chrome, Android Chrome): WaveSurfer's
