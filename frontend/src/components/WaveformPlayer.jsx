@@ -71,11 +71,11 @@ export default function WaveformPlayer({
   }, [onEnded]);
   // One quiet retry for transient fetch failures (backend dev-reload, a
   // remount racing the first fetch) before degrading to the native player.
+  // NOTE: the reset effect below reads `resolvedUrl` in its deps — it must
+  // stay AFTER the useState declarations (a TDZ ReferenceError here crashed
+  // every WaveformPlayer mount — the whole voice-management UI — #found 2/9).
   const [fetchAttempt, setFetchAttempt] = useState(0);
   const fetchRetriedRef = useRef(false);
-  useEffect(() => {
-    fetchRetriedRef.current = false;
-  }, [resolvedUrl]);
 
   const [resolvedUrl, setResolvedUrl] = useState(null);
   const [, setReady] = useState(false);
@@ -84,6 +84,10 @@ export default function WaveformPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    fetchRetriedRef.current = false;
+  }, [resolvedUrl]);
 
   // Opt-in dictate-over-playback AEC (parity Action 8): while this player is
   // actually playing AND the pref is on, tap its decoded output as the echo
