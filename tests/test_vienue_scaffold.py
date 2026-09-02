@@ -115,6 +115,19 @@ def test_generate_forwards_clone_kwargs(monkeypatch):
     }]
 
 
+def test_generate_rejects_unsupported_language_before_spawning(monkeypatch):
+    """language=en on a vi-only engine → ValueError parent-side (so
+    _language_rejection_or rewrites it with the engine name + the way out)
+    and NOTHING reaches the sidecar — previously the request spawned the
+    sidecar, died opaquely, and the user saw the generic 'Generation failed'."""
+    import pytest
+
+    calls, backend = _capture_generate(monkeypatch)
+    with pytest.raises(ValueError, match="language not supported"):
+        backend.generate("Hello world", language="en")
+    assert calls == []
+
+
 def test_generate_ignores_unsupported_params_without_ref(monkeypatch):
     """No ref → no ref_audio/ref_text on the wire; unsupported params dropped
     (never crash the request); plain text still synthesizes."""

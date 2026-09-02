@@ -170,6 +170,21 @@ class VieNueBackend(SubprocessBackend):
 
         language = kw.get("language")
         if language:
+            lang = str(language).strip().lower()
+            # Reject BEFORE the sidecar spawns, with the phrasing
+            # _language_rejection_or() matches ("language not supported") so
+            # the rewritten error names this engine + the way out. Raising a
+            # bare RuntimeError from the sidecar used to die as the generic
+            # "Generation failed. Check the selected engine and try again."
+            # with zero context (found 2/9 — the engine only speaks what
+            # supported_languages declares).
+            if lang and lang != "auto" and lang.split("-")[0] not in self.supported_languages:
+                raise ValueError(
+                    f"language not supported: '{language}' — VieNeu-TTS speaks "
+                    f"{', '.join(self.supported_languages)}. Switch engines in "
+                    "Model Catalogue → Engines (OmniVoice covers 600+ "
+                    "languages), or generate Vietnamese text."
+                )
             forwarded["language"] = str(language)
 
         seed = kw.get("seed")

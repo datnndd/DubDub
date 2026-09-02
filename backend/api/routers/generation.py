@@ -1916,10 +1916,21 @@ async def generate_speech(
                 failure = stream_failure("generation_busy")
                 failure["retry_after"] = getattr(e, "retry_after", 30)
                 yield _line({"type": "error", **failure})
-            except ValueError:
+            except ValueError as e:
                 logger.error("Streaming generation request rejected")
                 from core.public_errors import stream_failure
-                yield _line({"type": "error", **stream_failure("invalid_request")})
+                from core.scrub import scrub_provider_error
+                failure = stream_failure("invalid_request")
+                # ValueErrors on this path are deliberately user-facing
+                # validation failures (engine language rejection #1257-class,
+                # invalid params) — surface the real message instead of the
+                # generic "could not be processed" (found 2/9: a vienue
+                # language rejection reached the user as the generic
+                # "Generation failed" with zero context).
+                detail = scrub_provider_error(str(e)).strip()
+                if detail:
+                    failure["detail"] = detail
+                yield _line({"type": "error", **failure})
             except Exception:
                 logger.error("Streaming generation failed unexpectedly")
                 from core.public_errors import stream_failure
