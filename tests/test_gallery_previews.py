@@ -236,16 +236,13 @@ def sandbox(tmp_path, monkeypatch, signer, _live_gallery):
 
 # ── The key in the binary ────────────────────────────────────────────────────
 
-def test_pubkey_matches_the_shipped_updater_key():
-    """The gallery's trust root IS the updater's — not a copy that can drift.
+def test_shipped_updater_key_is_a_valid_minisign_pubkey():
+    """The gallery's trust root is the (now-retired) Tauri updater key.
 
-    If the release key is ever rotated in tauri.conf.json, this fails here
-    rather than as "gallery quietly stopped updating" months later.
+    The Tauri shell was removed (2/9/2026), so equality-with-config can no
+    longer be checked — this only proves the shipped blob still decodes to a
+    real minisign Ed25519 pubkey the client can verify signatures with.
     """
-    conf = json.loads((_REPO / "frontend" / "src-tauri" / "tauri.conf.json").read_text())
-    assert gallery.UPDATER_PUBKEY == conf["plugins"]["updater"]["pubkey"]
-    # …and is a key this client can actually use — equality alone would still
-    # pass with a truncated or re-encoded blob on both sides.
     algorithm, _key_id, raw = gallery._decode_minisign_pubkey(gallery.UPDATER_PUBKEY)
     assert algorithm in (b"Ed", b"ED") and len(raw) == 32
 
