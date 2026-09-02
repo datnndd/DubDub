@@ -28,6 +28,7 @@ import json
 import os
 import struct
 import sys
+import threading
 import traceback
 
 
@@ -97,7 +98,13 @@ _tts = None
 
 
 def _load_tts(stdout):
-    """Cold-construct the VieNeu engine."""
+    """Cold-construct the VieNeu engine.
+
+    The construction (weights check + backbone/codec init) is opaque and can
+    run for MINUTES on an 8 GB-RAM machine — longer than the parent's
+    per-frame recv watchdog. Build it on a thread and emit a heartbeat
+    progress frame every ~15 s so the parent's read never starves; the
+    parent-side recv_timeout_s (15 min) stays the hard backstop."""
     global _tts
     if _tts is not None:
         return _tts
@@ -112,9 +119,28 @@ def _load_tts(stdout):
 
     _send(stdout, {"op": "progress", "stage": "loading_model", "percent": 50})
 
-    _tts = Vieneu(mode=mode, backbone_repo=model, device=device)
+    result: dict = {}
+
+    def _build() -> None:
+        try:
+            result["tts"] = Vieneu(mode=mode, backbone_repo=model, device=device)
+        except BaseException as exc:  # noqa: BLE001 — re-raised on the main thread
+            result["err"] = exc
+
+    builder = threading.Thread(target=_build, name="vieneu-load", daemon=True)
+    builder.start()
+    while builder.is_alive():
+        builder.join(timeout=15.0)
+        if builder.is_alive():
+            # Heartbeat: resets the parent's per-frame recv watchdog.
+            _send(stdout, {"op": "progress", "stage": "loading_model",
+                           "percent": 50, "heartbeat": True})
 
     _send(stdout, {"op": "progress", "stage": "loading_model", "percent": 100})
+
+    if "err" in result:
+        raise result["err"]
+    _tts = result["tts"]
     return _tts
 
 

@@ -70,6 +70,12 @@ class VieNueBackend(SubprocessBackend):
     display_name = "VieNeu-TTS (Vietnamese instant voice clone, CPU/GPU, 48 kHz)"
     supports_voice_design = False  # no description-driven voice design surface
     supports_cloning = True  # explicit: the whole voice-management UI gates on this
+    # Cold first-generate loads the 0.5B backbone + codec (disk → RAM/VRAM),
+    # which on an 8 GB-RAM box can run for minutes — far beyond the default
+    # 60 s recv watchdog (subprocess_backend.RECV_TIMEOUT_S). The sidecar also
+    # streams loading_model heartbeats every ~15 s, so this is the hard
+    # backstop for a genuinely wedged load, not the usual pacing mechanism.
+    recv_timeout_s = 900.0
     # v3-Turbo emits 48 kHz (verified from the vieneu SDK: sample_rate = 48_000).
     _DEFAULT_SAMPLE_RATE = 48000
     gpu_compat = ("cuda", "cpu")
