@@ -49,6 +49,8 @@ export default function DubTab(props) {
     handleDubStop,
     handleDubGenerate,
     handleDubImportSrt,
+    handleHardsubExtract,
+    hardsubRunning,
     handleDubDownload,
     handleDubAudioDownload,
     handleAudioExport,
