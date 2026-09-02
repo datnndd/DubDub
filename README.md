@@ -3,7 +3,7 @@
   <h1>VoiceStudio</h1>
   <p><sub><em>previously OmniVoice-Studio</em></sub></p>
   <h3>Make voices. Tell stories. Keep the files. ♡</h3>
-  <p>Clone, design, dub, dictate, and build audiobooks in one open-source desktop studio.<br/><b>Local-first by default.</b> No subscription or usage meter. Optional online services stay opt-in.</p>
+  <p>Clone, design, dub, dictate, and build audiobooks in one open-source web studio.<br/><b>Local-first by default.</b> No subscription or usage meter. Optional online services stay opt-in.</p>
 
   <p>
     <a href="#quickstart">Quickstart</a> ·

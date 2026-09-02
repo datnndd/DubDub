@@ -8,6 +8,10 @@ the frozen-backend fallback mirror it for their toolchains.
 
 ## [Unreleased]
 
+### Removed
+
+- **The Tauri desktop shell.** VoiceStudio is now web-first: `bun run dev` (or the kept `bun run desktop` alias) starts the backend on `:3900` and the web UI on `:3901`. `frontend/src-tauri/`, the desktop dev/prod scripts and the desktop release pipeline are gone; dormant Tauri-guarded frontend branches remain in place and never execute in the browser.
+
 ### Added
 
 - **Extract subtitles already in the video** for dubbing: soft-sub streams are detected and extracted directly, burned-in (hardsub) subtitles are OCR'd frame-by-frame (RapidOCR, the ONNX build of PaddleOCR's PP-OCR models) and folded into the transcript — one button in the Dub workspace, progress in the task stream.
