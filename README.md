@@ -299,15 +299,11 @@ another machine, set `OMNIVOICE_GPTSOVITS_URL` to its credential-free
 
 ## 🏗️ Architecture
 
-A **Tauri v2** desktop shell (Rust) wraps a **React** UI and a bundled **Python/FastAPI** backend that runs as a local sidecar on `localhost:3900`. Every layer runs on your machine by default; the only network paths are the ones you opt into (remote GPU workers, a remote backend, or an OpenAI-compatible ASR endpoint).
+A **React** web UI talks to a **Python/FastAPI** backend that runs locally on `localhost:3900` — open `http://localhost:3901` in any browser. Every layer runs on your machine by default; the only network paths are the ones you opt into (remote GPU workers, a remote backend, or an OpenAI-compatible ASR endpoint).
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│  Tauri v2 shell — Rust                                             │
-│  window state · global dictation hotkey · system tray ·           │
-│  signed auto-updater (stable/preview) · single-instance ·         │
-│  first-run bootstrap (installs uv + Python venv) · blank guard    │
-├────────────────────────────────────────────────────────────────────┤
+│  Frontend — React + Vite (browser @ localhost:3901)  — runs in any │
 │  Frontend — React + Vite                                          │
 │  Studio · Dub · Stories · Audiobook · Gallery · Catalogue ·       │
 │  Dictation · Batch · Diagnostics    —   Zustand store · WS bus    │
