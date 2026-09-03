@@ -16,7 +16,8 @@ the frozen-backend fallback mirror it for their toolchains.
 
 - **Extract subtitles already in the video** for dubbing: soft-sub streams are detected and extracted directly, burned-in (hardsub) subtitles are OCR'd frame-by-frame (RapidOCR, the ONNX build of PaddleOCR's PP-OCR models) and folded into the transcript — one button in the Dub workspace, progress in the task stream.
 - A new opt-in TTS engine for Vietnamese: **VieNeu-TTS** (a Vietnamese fine-tune of NeuTTS Air) with instant voice cloning from a short reference clip ? 48 kHz, runs on CPU (ONNX Runtime) or GPU, Windows included. All existing voice-management features (profiles, lock, gallery, personas, history, dub cloning) work with it out of the box. License care: Apache-2.0 variants only. Seeded generation now reaches subprocess-isolated engines too.
-- The Dub workspace can show its work before translating: preview the LLM translation brief (theme + terminology) for the target language, edit it, and only then start the translation — the reviewed brief replaces the hidden auto-extraction (`POST /dub/translate-context`, `translation_context` on `/dub/translate`).
+- The Dub workspace can show its work before 
+- **Engine-aware TTS preload at boot.** `preload_tts` (auto/always/never, env `OMNIVOICE_PRELOAD_TTS`): `auto` only warms OmniVoice when it is the active engine and RAM has headroom ? the Deepgram/RapidOCR/LLM/VieNeu flow no longer holds ~3 GB of VRAM from boot for a model that gets evicted at the first non-OmniVoice generate.translating: preview the LLM translation brief (theme + terminology) for the target language, edit it, and only then start the translation — the reviewed brief replaces the hidden auto-extraction (`POST /dub/translate-context`, `translation_context` on `/dub/translate`).
 
 ### Changed
 
