@@ -11,7 +11,7 @@ spark identifies creation. The product voice is clear, calm, and direct.
 | README mark | `docs/logo.png` and `docs/logo-256.png` |
 | Browser icon | `frontend/public/favicon.svg` |
 | In-app mark | `frontend/src/components/brand/VoiceStudioMark.jsx` |
-| Desktop/platform icons | `frontend/src-tauri/icons/` |
+| (Desktop/platform icons — removed with the Tauri shell) |
 
 Regenerate every desktop icon from the canonical vector after changing the
 mark:

@@ -39,7 +39,6 @@ VoiceStudio/
 │   │   ├── store/               Zustand slices
 │   │   ├── hooks/               custom React hooks
 │   │   └── utils/
-│   ├── src-tauri/               Rust desktop shell
 │   └── public/
 │
 ├── omnivoice/                   ⟵ the underlying TTS model package
@@ -63,7 +62,6 @@ VoiceStudio/
 │   ├── install.sh               universal installer
 │   ├── run.sh                   universal launcher
 │   ├── smoke-test.sh            end-to-end validation
-│   └── desktop-prod.sh          production desktop build
 │
 ├── deploy/                      ⟵ Docker deployment configs
 │   ├── Dockerfile               single-stage CUDA image
@@ -147,7 +145,6 @@ VoiceStudio/
 ├── apps/
 │   ├── api/                 ← was backend/
 │   ├── web/                 ← was frontend/
-│   └── desktop/             ← could extract src-tauri/ here later
 ├── packages/
 │   ├── omnivoice-model/     ← was omnivoice/
 │   └── tts-adapters/        ← new; the pluggable TTS interface from ROADMAP phase 3
@@ -163,7 +160,6 @@ VoiceStudio/
 - `package.json` workspaces and scripts
 - `turbo.json`, `Dockerfile`, `docker-compose.yml` paths
 - `backend.spec` (`['backend/main.py']`, `pathex=['.']`)
-- `frontend/src-tauri/tauri.*.conf.json` sidecar paths
 - every import that reads `from backend.main import …` (tests, scripts)
 
 Migrate when adding the second `apps/*` or the second `packages/*`. Not before.

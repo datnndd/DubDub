@@ -90,12 +90,8 @@ def _from_pyproject() -> Optional[str]:
 
 
 def _resolve() -> str:
-    """Pick the Tauri config URL first, then fall back to pyproject."""
-    return (
-        _from_tauri()
-        or _from_pyproject()
-        or "https://github.com/debpalash/VoiceStudio"
-    )
+    """pyproject Repository URL, with a hardcoded upstream last resort."""
+    return _from_pyproject() or "https://github.com/debpalash/VoiceStudio"
 
 
 PROJECT_REPO_URL: str = _resolve()

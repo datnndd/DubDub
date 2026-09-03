@@ -35,27 +35,12 @@ def test_project_repo_blob_main_derives_from_url():
     assert links.PROJECT_REPO_BLOB_MAIN == links.PROJECT_REPO_URL + "/blob/main"
 
 
-def test_prefers_tauri_config_when_present(monkeypatch, tmp_path):
-    """With a fake `tauri.conf.json` containing the desktop fork URL in the
-    updater endpoint, `PROJECT_REPO_URL` resolves to that fork (NOT the
-    pyproject upstream)."""
-    fake_conf = {
-        "plugins": {
-            "updater": {
-                "endpoints": [
-                    "https://github.com/debpalash/VoiceStudio/releases/latest/download/latest.json"
-                ]
-            }
-        }
-    }
-    # Reload the module first to pick up the original constants, then exercise
-    # the resolver helpers directly.
+def test_resolves_from_pyproject_repository():
+    """pyproject `[project.urls].Repository` is the only source now that the
+    Tauri shell (and its updater-endpoint config) is removed."""
     links = _fresh_links_module()
-    monkeypatch.setattr(links, "_TAURI_CONF", tmp_path / "tauri.conf.json")
-    import json
-    (tmp_path / "tauri.conf.json").write_text(json.dumps(fake_conf), encoding="utf-8")
-    url = links._from_tauri()
-    assert url == "https://github.com/debpalash/VoiceStudio"
+    url = links._resolve()
+    assert url.startswith("https://github.com/")
 
 
 def test_falls_back_to_pyproject_when_tauri_unreadable(monkeypatch, tmp_path):
