@@ -38,6 +38,24 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("omnivoice.vienue")
 
+#: Display names and regional spellings that map onto a canonical ISO code.
+#: The Voice studio's language picker sends DISPLAY NAMES ("Vietnamese"),
+#: other surfaces send codes ("vi", "vi-VN") — every shape must resolve.
+_LANGUAGE_ALIASES = {
+    "vi": ("vi", "vie", "vi-vn", "vn", "vietnamese"),
+    "en": ("en", "eng", "english", "en-us", "en-gb"),
+}
+
+
+def _resolve_lang_code(value: str) -> str:
+    """Normalize a language value (code or display name) to its ISO base code."""
+    v = str(value).strip().lower().replace("_", "-")
+    base = v.split("-")[0]
+    for code, aliases in _LANGUAGE_ALIASES.items():
+        if v in aliases or base in aliases:
+            return code
+    return base
+
 
 class VieNueBackend(SubprocessBackend):
     """VieNeu-TTS — Vietnamese instant voice cloning, 48 kHz, CPU/GPU.
@@ -176,7 +194,12 @@ class VieNueBackend(SubprocessBackend):
 
         language = kw.get("language")
         if language:
-            lang = str(language).strip().lower()
+            # Resolve aliases + display names FIRST ("Vietnamese", "vi-VN",
+            # "english"…) — the studio picker sends display names, and a raw
+            # string compare against supported_languages rejected them with
+            # the generic failure (found 3/9). Reject only on the resolved
+            # code, and forward the canonical code downstream.
+            code = _resolve_lang_code(language)
             # Reject BEFORE the sidecar spawns, with the phrasing
             # _language_rejection_or() matches ("language not supported") so
             # the rewritten error names this engine + the way out. Raising a
@@ -184,14 +207,14 @@ class VieNueBackend(SubprocessBackend):
             # "Generation failed. Check the selected engine and try again."
             # with zero context (found 2/9 — the engine only speaks what
             # supported_languages declares).
-            if lang and lang != "auto" and lang.split("-")[0] not in self.supported_languages:
+            if code != "auto" and code not in self.supported_languages:
                 raise ValueError(
                     f"language not supported: '{language}' — VieNeu-TTS speaks "
                     f"{', '.join(self.supported_languages)}. Switch engines in "
                     "Model Catalogue → Engines (OmniVoice covers 600+ "
                     "languages), or generate Vietnamese text."
                 )
-            forwarded["language"] = str(language)
+            forwarded["language"] = code
 
         seed = kw.get("seed")
         if seed is not None:

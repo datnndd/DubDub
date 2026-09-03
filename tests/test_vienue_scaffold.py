@@ -115,6 +115,26 @@ def test_generate_forwards_clone_kwargs(monkeypatch):
     }]
 
 
+def test_generate_accepts_display_name_language(monkeypatch):
+    """The studio picker sends DISPLAY NAMES ('Vietnamese') — they must
+    resolve to the ISO code and ride to the sidecar normalized (found 3/9:
+    the raw string compare rejected them as unsupported)."""
+    calls, backend = _capture_generate(monkeypatch)
+    backend.generate("Xin chào", language="Vietnamese")
+    assert calls == [{"text": "Xin chào", "language": "vi"}]
+
+
+def test_generate_still_rejects_truly_unsupported_language(monkeypatch):
+    """A code the engine genuinely can't speak (e.g. 'ja' on v3-Turbo) still
+    raises the actionable rejection."""
+    import pytest
+
+    calls, backend = _capture_generate(monkeypatch)
+    with pytest.raises(ValueError, match="language not supported"):
+        backend.generate("こんにちは", language="ja")
+    assert calls == []
+
+
 def test_generate_rejects_unsupported_language_before_spawning(monkeypatch):
     """language=en on a vi-only engine → ValueError parent-side (so
     _language_rejection_or rewrites it with the engine name + the way out)

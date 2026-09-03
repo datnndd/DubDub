@@ -309,6 +309,8 @@
     "save": "Save",
     "cancel": "Cancel",
     "synthesize": "Synthesize Audio",
+    "engine_chip": "Engine: {{engine}}",
+    "engine_chip_title": "Active TTS engine: {{engine}}",
     "stop_playback": "Stop playback",
     "synthesizing": "Synthesizing… ({{seconds}}s)",
     "drop_audio": "Drop audio here — or click. WAV, MP3, M4A…",

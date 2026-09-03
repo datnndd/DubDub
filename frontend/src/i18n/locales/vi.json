@@ -516,6 +516,8 @@
     "save": "Lưu",
     "cancel": "Hủy bỏ",
     "synthesize": "Tổng hợp âm thanh",
+    "engine_chip": "Engine: {{engine}}",
+    "engine_chip_title": "Engine TTS đang dùng: {{engine}}",
     "synthesizing": "Đang tổng hợp… ({{seconds}}s)",
     "drop_audio": "Thả âm thanh vào đây — hoặc nhấp vào. WAV, MP3, M4A… 🎤",
     "record": "Ghi lại",

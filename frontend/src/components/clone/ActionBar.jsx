@@ -48,6 +48,7 @@ export default function ActionBar({
   outputPlaying,
   isGenerating,
   handleGenerate,
+  engineName,
   generationTime,
   wasGeneratingRef,
 }) {
@@ -225,6 +226,14 @@ export default function ActionBar({
         </button>
       </div>
 
+      {engineName && (
+        <div
+          className="mb-[6px] px-[8px] py-[3px] text-center text-[0.65rem] text-[var(--chrome-fg-muted)] bg-[var(--chrome-hover-bg)] rounded-[var(--chrome-radius-pill)]"
+          title={t('clone.engine_chip_title', { engine: engineName })}
+        >
+          {t('clone.engine_chip', { engine: engineName })}
+        </div>
+      )}
       {showHearDemo ? (
         <>
           <Button

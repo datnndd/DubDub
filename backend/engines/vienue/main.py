@@ -172,6 +172,24 @@ def _load_tts(stdout):
     return _tts
 
 
+#: Mirror of engines.vienue._LANGUAGE_ALIASES (the sidecar runs as a
+#: standalone script and cannot import the parent package) — keep both in
+#: sync when adding a language.
+_LANGUAGE_ALIASES = {
+    "vi": ("vi", "vie", "vi-vn", "vn", "vietnamese"),
+    "en": ("en", "eng", "english", "en-us", "en-gb"),
+}
+
+
+def _resolve_lang_code(value: str) -> str:
+    v = str(value).strip().lower().replace("_", "-")
+    base = v.split("-")[0]
+    for code, aliases in _LANGUAGE_ALIASES.items():
+        if v in aliases or base in aliases:
+            return code
+    return base
+
+
 def _allowed_languages() -> set:
     raw = os.environ.get(_LANGUAGES_ENV, "")
     langs = {s.strip().lower() for s in raw.split(",") if s.strip()}
@@ -183,11 +201,11 @@ def _check_language(raw) -> None:
     engine and the way out (issue #1257 class — a bare code list helps nobody)."""
     if not raw or not isinstance(raw, str):
         return
-    lang = raw.strip().lower()
+    lang = _resolve_lang_code(raw)
     if not lang or lang == "auto":
         return
     allowed = _allowed_languages()
-    if lang not in allowed and lang.split("-")[0] not in allowed:
+    if lang not in allowed:
         raise ValueError(
             f"VieNeu-TTS speaks {', '.join(sorted(allowed))} — language "
             f"'{raw}' is not supported by this engine. Switch engines in the "

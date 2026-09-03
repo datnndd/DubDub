@@ -180,6 +180,11 @@ export default function CloneDesignTab(props) {
   // local snapshot or a second poller.
   const { data: enginesData } = useEngines();
   const anyTtsReady = !!(enginesData?.tts?.backends || []).some((b) => b.available);
+  // Engine chip: tên engine TTS đang hoạt động — luôn rõ đang dùng model nào.
+  const activeTtsEngine = enginesData?.tts?.backends?.find(
+    (engine) => engine.id === enginesData?.tts?.active,
+  );
+  const activeEngineName = activeTtsEngine?.display_name;
 
   // Demo coach-mark: when the user is on the "From audio" method with the
   // bundled demo profile (demo0001) freshly selected and the textarea is empty,
@@ -410,6 +415,7 @@ export default function CloneDesignTab(props) {
 
       {/* ═══ ACTION BAR — pinned to the column bottom ═══ */}
       <ActionBar
+          engineName={activeEngineName}
         t={t}
         showOverrides={showOverrides}
         setShowOverrides={setShowOverrides}
