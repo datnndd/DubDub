@@ -2450,16 +2450,58 @@ def _headless_worker() -> bool:
     return worker_mode_enabled()
 
 
+def _ram_available_bytes() -> "int | None":
+    """Bytes of available RAM, or ``None`` when it can't be measured (psutil
+    missing) — ``None`` means "warm anyway" (the load path has its own
+    release handling)."""
+    try:
+        import psutil
+        return psutil.virtual_memory().available
+    except Exception:  # noqa: BLE001 — measurement is best-effort
+        return None
+
+
+def _tts_preload_mode() -> str:
+    """``auto | always | never`` — how eagerly the TTS model warms at boot.
+
+    ``auto`` (default): only when the ACTIVE TTS engine is OmniVoice and the
+    box has memory headroom — a user running the Deepgram/RapidOCR/LLM/VieNeu
+    flow gets nothing warmed, which on an 8 GB box previously held ~3 GB of
+    VRAM from boot and forced an engine-memory eviction at the first non-
+    OmniVoice generate (observed 2/9: "freed ['omnivoice'] (keeping vienue)").
+    ``always``: the old behaviour regardless of engine. ``never``: first use.
+    prefs → env → auto (env wins, same precedence as the engine selector).
+    """
+    try:
+        from core import prefs
+        mode = prefs.resolve("preload_tts", env="OMNIVOICE_PRELOAD_TTS", default="auto")
+    except Exception:  # noqa: BLE001 — a prefs read failure must not break boot
+        return "auto"
+    mode = str(mode).strip().lower()
+    return mode if mode in ("auto", "always", "never") else "auto"
+
+
 async def preload_model():
     """Background model warm-up — call from lifespan startup.
 
     Loads the TTS model on the GPU pool thread so the first /generate
     call is near-instant instead of waiting 4-6s for weight loading.
     Non-blocking: if models aren't installed yet, silently exits.
+
+    Gated (in order) by: already-loaded → ``preload_tts=never`` →
+    headless worker → active-engine (auto mode: only OmniVoice warms) →
+    free-RAM guard (auto mode: <4 GB available skips) → checkpoint-on-disk.
     """
     global model, _last_used
     if model is not None:
         return  # already loaded
+
+    mode = _tts_preload_mode()
+    if mode == "never":
+        logger.info(
+            "Preload disabled (preload_tts=never); the TTS model loads on first use."
+        )
+        return
 
     # A machine lending its GPU has no local user to warm the model FOR. This
     # preload exists to make the first /generate feel instant for the person
@@ -2477,6 +2519,38 @@ async def preload_model():
             "model loads on first request and is released when it goes idle."
         )
         return
+
+    # Engine-aware gate (auto mode): the warm-up exists for the person about
+    # to hit /generate with the ACTIVE engine. When that engine is not
+    # OmniVoice (vienue, mlx-audio, a remote/cloud flow…), several GB of VRAM
+    # held from boot are pure cost — engine_memory evicts this model at the
+    # first non-OmniVoice generate anyway (observed: "freed ['omnivoice']
+    # (keeping vienue)"). Lazy import: tts_backend pulls engine_memory, which
+    # pulls this module — a module-level import would be circular.
+    if mode == "auto":
+        try:
+            from services.tts_backend import active_backend_id
+            active = active_backend_id()
+        except Exception:  # noqa: BLE001 — a selection failure must not break boot
+            logger.debug("preload: could not resolve the active engine", exc_info=True)
+            active = "omnivoice"
+        if active != "omnivoice":
+            logger.info(
+                "Preload skipped: active TTS engine is '%s' — OmniVoice loads "
+                "on first use. (OMNIVOICE_PRELOAD_TTS=always overrides.)",
+                active,
+            )
+            return
+        # RAM guard (auto mode only — an explicit `always` is the user's call):
+        # mirror the capture-ASR guard; if free memory can't be measured, warm
+        # anyway (the load path has its own release handling).
+        available = _ram_available_bytes()
+        if available is not None and available < 4 * 1024**3:
+            logger.info(
+                "Preload skipped: <4 GB free RAM; the TTS model will load "
+                "on first use (preload_tts=always overrides)."
+            )
+            return
     try:
         # Warm-up is gated on LOCAL availability only — never a Hub API
         # probe. The old `model_info(checkpoint)` probe proved the repo

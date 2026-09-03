@@ -132,6 +132,7 @@ def test_preload_never_loads_uninstalled_checkpoint(model_manager, monkeypatch):
 def test_preload_warms_up_locally_installed_checkpoint(model_manager, monkeypatch):
     """The counterpart guard: a locally present checkpoint must still warm up
     (skipping it would make the first /generate eat the full weight load)."""
+    monkeypatch.setattr(model_manager, "_ram_available_bytes", lambda: 16 * 1024**3)
     monkeypatch.setattr(model_manager, "_checkpoint_in_local_cache", lambda c: True)
 
     loaded = SimpleNamespace(llm=object())
@@ -143,3 +144,91 @@ def test_preload_warms_up_locally_installed_checkpoint(model_manager, monkeypatc
     asyncio.run(model_manager.preload_model())
 
     assert model_manager.model is loaded
+
+
+# ── Engine-aware preload gate (3/9) ──────────────────────────────────────────
+
+
+def test_preload_skips_when_active_engine_is_not_omnivoice(model_manager, monkeypatch):
+    """auto mode + active engine 'vienue' → OmniVoice must NOT warm: on an
+    8 GB box the warm-up held ~3 GB of VRAM from boot and engine_memory
+    evicted it at the first non-OmniVoice generate anyway."""
+    import services.tts_backend as tts_backend
+
+    monkeypatch.setattr(tts_backend, "active_backend_id", lambda: "vienue")
+    monkeypatch.setattr(model_manager, "_checkpoint_in_local_cache", lambda c: True)
+
+    loads = []
+
+    async def _record_load():
+        loads.append(True)
+        return SimpleNamespace(llm=object())
+
+    monkeypatch.setattr(model_manager, "_load_model_with_timeout", _record_load)
+    asyncio.run(model_manager.preload_model())
+
+    assert loads == []
+    assert model_manager.model is None
+
+
+def test_preload_always_mode_overrides_engine_gate(model_manager, monkeypatch):
+    """`always` is the user explicitly paying the VRAM cost — the engine gate
+    must not apply."""
+    monkeypatch.setenv("OMNIVOICE_PRELOAD_TTS", "always")
+    import services.tts_backend as tts_backend
+
+    monkeypatch.setattr(tts_backend, "active_backend_id", lambda: "vienue")
+    monkeypatch.setattr(model_manager, "_checkpoint_in_local_cache", lambda c: True)
+
+    loaded = SimpleNamespace(llm=object())
+
+    async def _fake_load():
+        return loaded
+
+    monkeypatch.setattr(model_manager, "_load_model_with_timeout", _fake_load)
+    asyncio.run(model_manager.preload_model())
+
+    assert model_manager.model is loaded
+
+
+def test_preload_ram_guard_skips_in_auto_mode(model_manager, monkeypatch):
+    """auto mode + <4 GB available → skip (mirror of the capture-ASR RAM
+    guard); the load path's own release handling stays responsible for the
+    rest."""
+    import psutil
+    import services.tts_backend as tts_backend
+
+    import services.tts_backend as tts_backend  # noqa: F811 — re-import ok
+
+    monkeypatch.setattr(tts_backend, "active_backend_id", lambda: "omnivoice")
+    monkeypatch.setattr(model_manager, "_checkpoint_in_local_cache", lambda c: True)
+    monkeypatch.setattr(model_manager, "_ram_available_bytes", lambda: 1 * 1024**3)
+
+    loads = []
+
+    async def _record_load():
+        loads.append(True)
+        return SimpleNamespace(llm=object())
+
+    monkeypatch.setattr(model_manager, "_load_model_with_timeout", _record_load)
+    asyncio.run(model_manager.preload_model())
+
+    assert loads == []
+    assert model_manager.model is None
+
+
+def test_preload_never_mode_skips_immediately(model_manager, monkeypatch):
+    monkeypatch.setenv("OMNIVOICE_PRELOAD_TTS", "never")
+    monkeypatch.setattr(model_manager, "_checkpoint_in_local_cache", lambda c: True)
+
+    loads = []
+
+    async def _record_load():
+        loads.append(True)
+        return SimpleNamespace(llm=object())
+
+    monkeypatch.setattr(model_manager, "_load_model_with_timeout", _record_load)
+    asyncio.run(model_manager.preload_model())
+
+    assert loads == []
+    assert model_manager.model is None
