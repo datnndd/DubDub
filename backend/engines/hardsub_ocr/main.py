@@ -120,6 +120,90 @@ def group_frames_to_cues(frames: list, fps: float, similarity: float = 0.8) -> l
 # ── frame extraction + OCR (heavy imports inside) ─────────────────────────
 
 
+def _auto_detect_band(video_path: str) -> "dict | None":
+    """Đề xuất vùng phụ đề bằng mật độ cạnh dọc trên nửa dưới khung.
+
+    Phase 3.1 của kế hoạch hardsub v2: thay dải cố định 55% bằng vùng được
+    đo từ video — sample ~90 khung trải đều (tối đa 10 phút đầu), tính
+    edge-energy theo hàng (gradient dọc = viền ngang của chữ), chọn cửa sổ
+    trượt 8 hàng có năng lượng đậm đặc nhất. Trả rect chuẩn hoá {left: 0,
+    top, right: 1, bottom} hoặc None khi đo thất bại (caller dùng dải
+    mặc định). Thuần numpy trên stream rawvideo — không OCR, không file tạm.
+    """
+    import numpy as np  # noqa: F811 — shadowing an toàn nếu caller đã có
+
+    SAMPLES_CAP = 90          # số khung phân tích tối đa
+    BAND_SCAN = 0.5           # chỉ quét nửa dưới khung (0.5 → 1.0)
+    SCAN_ROWS = 45            # độ phân giải hàng của vùng quét
+    WINDOW_ROWS = 14  # chieu cao cua so de xuat (~31% chieu cao — du cho 2 dong)
+    MIN_ENERGY_RATIO = 0.18   # đỉnh cửa sổ / tổng — dưới ngưỡng này coi như
+                              # không tìm thấy vùng phụ đề rõ → dùng mặc định
+
+    vf = (
+        f"fps={SAMPLES_CAP / 60:.3f},crop=iw:ih*{BAND_SCAN}:0:ih*{BAND_SCAN},"
+        f"scale={_REFINE_SCALE_W}:{SCAN_ROWS},format=gray"
+    )
+    try:
+        proc = subprocess.Popen(
+            ["ffmpeg", "-v", "error", "-i", video_path, "-vf", vf,
+             "-frames:v", str(SAMPLES_CAP), "-f", "rawvideo",
+             "-pix_fmt", "gray", "-"],
+            stdout=subprocess.PIPE,
+        )
+    except OSError:
+        return None
+    w, h = _REFINE_SCALE_W, SCAN_ROWS
+    frame_bytes = w * h
+    rows = np.zeros(h, dtype=np.float64)
+    n = 0
+    try:
+        assert proc.stdout is not None
+        while n < SAMPLES_CAP:
+            chunk = proc.stdout.read(frame_bytes)
+            if not chunk or len(chunk) < frame_bytes:
+                break
+            img = np.frombuffer(chunk, dtype=np.uint8).reshape(h, w).astype(np.float32)
+            # gradient dọc: viền ngang của chữ có độ tương phản mạnh theo hàng
+            rows[: h - 1] += np.abs(np.diff(img, axis=0)).mean(axis=1)
+            n += 1
+    except Exception:  # noqa: BLE001 — sampling fail → dùng mặc định
+        proc.kill()
+        return None
+    finally:
+        try:
+            proc.stdout.close()
+            proc.wait(timeout=30)
+        except Exception:  # noqa: BLE001
+            proc.kill()
+
+    if n < max(3, SAMPLES_CAP // 10):
+        return None
+
+    energy = rows / max(rows.sum(), 1e-6)
+    # cửa sổ trượt 8 hàng trong vùng quét — chọn cửa sổ có tổng năng lượng cao nhất
+    best_lo, best_sum = 0, -1.0
+    for lo in range(0, h - WINDOW_ROWS + 1):
+        s = float(energy[lo : lo + WINDOW_ROWS].sum())
+        if s > best_sum:
+            best_sum, best_lo = s, lo
+    if best_sum < MIN_ENERGY_RATIO:
+        return None
+    # mo rong thich nghi: nuot hang ke cuon con nang luong dang ke (≤3 hang moi phia)
+    lo = max(0, best_lo - 1)
+    hi = min(h, best_lo + WINDOW_ROWS + 1)
+    row_max = max(float(energy.max()), 1e-6)
+    lo, hi = best_lo, best_lo + WINDOW_ROWS
+    for _ in range(3):
+        if lo > 0 and energy[lo - 1] >= 0.03 * row_max:
+            lo -= 1
+        if hi < h and energy[hi] >= 0.03 * row_max:
+            hi += 1
+    top = BAND_SCAN + (lo / h) * (1.0 - BAND_SCAN)
+    bottom = BAND_SCAN + (hi / h) * (1.0 - BAND_SCAN)
+    return {"left": 0.0, "top": round(max(0.05, top), 3),
+            "right": 1.0, "bottom": round(min(1.0, bottom), 3)}
+
+
 def _crop_from(msg: dict) -> dict:
     """Normalized crop rect {left, top, right, bottom} from the request.
 
@@ -309,9 +393,24 @@ def _handle_ocr_video(msg: dict, stdout) -> None:
     if not video_path or not os.path.isfile(video_path):
         raise ValueError(f"ocr_video: video not found: {video_path!r}")
     fps = float(msg.get("fps") or 2.0)
-    crop = _crop_from(msg)
     text_score = float(msg.get("text_score") or 0.5)
     refine_fps = max(4.0, min(float(msg.get("refine_fps") or 10.0), 30.0))
+    # Vùng quét: user vẽ (crop) > auto-suggest theo mật độ cạnh > dải dưới
+    # mặc định 55%. Auto-suggest chỉ chạy khi user KHÔNG gửi band_top tùy
+    # chỉnh (đặt band_top phi mặc định = chủ ý dùng dải cố định).
+    if isinstance(msg.get("crop"), dict):
+        crop = _crop_from(msg)
+        _log(stdout, "crop: user-drawn region")
+    elif "band_top" not in msg:
+        suggested = _auto_detect_band(video_path)
+        if suggested is not None:
+            crop = suggested
+            _log(stdout, f"crop: auto-detected subtitle band {suggested}")
+        else:
+            crop = _crop_from(msg)
+            _log(stdout, "crop: auto-detect found no clear band — default bottom strip")
+    else:
+        crop = _crop_from(msg)
 
     out_dir = tempfile.mkdtemp(prefix="hardsub_ocr_")
     try:

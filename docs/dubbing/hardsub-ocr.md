@@ -43,6 +43,28 @@ RapidOCR thay vì paddlepaddle native (đo 2026-08-28 trên Windows CPU):
 thể thiếu (CER ~6% trên fixture 640×360). Cải thiện dự kiến: dùng model
 PP-OCRv5/v6 multilingual cho tiếng Việt khi tích hợp sâu hơn.
 
+## V2 — chọn vùng quét + timing chính xác + file SRT
+
+Kể từ bản hardsub v2:
+
+1. Bấm "OCR phụ đề" → mở **dialog chọn vùng**: preview video (tua được),
+   kéo hình chữ nhật phủ vùng phụ đề, hoặc bấm "Dải dưới mặc định".
+2. "Bắt đầu quét" chạy 2 lớp:
+   - **Pass 1 (OCR, 2 fps)**: nhận diện text từng khung;
+   - **Pass 2 (timing refine, 10 fps, không OCR)**: aHash từng khung dải phụ
+     đề, mở rộng/thu biên mỗi cue tới khung thực sự hiển thị phụ đề —
+     độ chính xác ±0.1s thay vì ±0.5s của v1. Fail-soft: refinement lỗi →
+     giữ biên coarse.
+3. Khi user không vẽ vùng: hệ thống **tự đề xuất dải phụ đề** bằng mật độ
+   cạnh dọc (edge-density) trên nửa dưới khung (sample ~90 khung trải đều,
+   tối đa 10 phút đầu); không dò được → dải mặc định.
+4. Kết quả: transcript thay bằng text OCR **+ file `hardsub.srt`** lưu trong
+   job dir — tải tại `GET /dub/hardsub-srt/{job_id}` hoặc nút "Tải .srt"
+   trong dialog.
+
+Tham số request mở rộng: `crop {left, top, right, bottom}` (0..1, tuỳ chọn),
+`refine_fps` (mặc định 10, 4–30). `band_top` vẫn tương thích ngược.
+
 ## Giới hạn
 
 - Timing chính xác ±(1/fps) —fps cao hơn = chính xác hơn nhưng chậm hơn.

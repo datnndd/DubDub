@@ -14,6 +14,8 @@ the frozen-backend fallback mirror it for their toolchains.
 
 ### Added
 
+- **Hardsub OCR v2 — region + timing:** draw the OCR region on a video preview before scanning, two-pass boundary refinement (aHash at 10 fps, no extra OCR) snaps cue timing to ±0.1 s, and every scan saves a downloadable `hardsub.srt` in the job folder (`GET /dub/hardsub-srt/{job_id}`). Auto-suggests the subtitle band from edge density when no region is drawn.
+
 - **Extract subtitles already in the video** for dubbing: soft-sub streams are detected and extracted directly, burned-in (hardsub) subtitles are OCR'd frame-by-frame (RapidOCR, the ONNX build of PaddleOCR's PP-OCR models) and folded into the transcript — one button in the Dub workspace, progress in the task stream.
 - A new opt-in TTS engine for Vietnamese: **VieNeu-TTS** (a Vietnamese fine-tune of NeuTTS Air) with instant voice cloning from a short reference clip ? 48 kHz, runs on CPU (ONNX Runtime) or GPU, Windows included. All existing voice-management features (profiles, lock, gallery, personas, history, dub cloning) work with it out of the box. License care: Apache-2.0 variants only. Seeded generation now reaches subprocess-isolated engines too.
 - The Dub workspace can show its work before 
