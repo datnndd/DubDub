@@ -88,6 +88,136 @@ def test_build_srt_skips_empty_cues():
     assert srt.count("-->") == 1
 
 
+# ── v2: crop đa vùng + boundary refinement ─────────────────────────────────
+
+
+def test_crop_filter_generalizes_band():
+    from engines.hardsub_ocr.main import _crop_filter
+
+    crop = {"left": 0.1, "top": 0.5, "right": 0.9, "bottom": 1.0}
+    assert _crop_filter(crop) == (
+        "crop=trunc(iw*0.8000):trunc(ih*0.5000):trunc(iw*0.1000):trunc(ih*0.5000)"
+    )
+
+
+def test_crop_from_request_prefers_user_rect_and_clamps():
+    from engines.hardsub_ocr.main import _crop_from
+
+    msg = {"band_top": 0.55, "crop": {"left": 0.05, "top": -0.2, "right": 1.4, "bottom": 0.8}}
+    crop = _crop_from(msg)
+    assert crop == {"left": 0.05, "top": 0.0, "right": 1.0, "bottom": 0.8}
+    # không gửi crop → dải dưới v1 nguyên vẹn
+    assert _crop_from({"band_top": 0.6}) == {"left": 0.0, "top": 0.6, "right": 1.0, "bottom": 1.0}
+
+
+def test_refine_boundaries_snap_to_real_subtitle_interval():
+    """Coarse biên lệch (1.0–3.0) so với phụ đề thật (1.0–3.2): refinement
+    phải kéo end ra 3.2 bằng aHash, không cần OCR thêm."""
+    from engines.hardsub_ocr.main import refine_cue_boundaries
+
+    H_GAP, H_SUB = 0x0000, 0xFFFF
+    hashes = []
+    for i in range(101):  # 0.0 → 10.0 bước 0.1
+        t = i / 10.0
+        h = H_SUB if 1.0 <= t <= 3.19 else H_GAP
+        hashes.append((round(t, 3), h))
+    cues = [{"start": 1.0, "end": 3.0, "text": "Xin chào"}]
+    refined = refine_cue_boundaries(cues, hashes, refine_fps=10.0)
+    assert refined[0]["start"] == pytest.approx(1.0, abs=0.11)
+    assert refined[0]["end"] == pytest.approx(3.2, abs=0.11)
+
+
+def test_refine_falls_back_to_coarse_when_no_hashes():
+    from engines.hardsub_ocr.main import refine_cue_boundaries
+
+    cues = [{"start": 1.0, "end": 2.0, "text": "x"}]
+    assert refine_cue_boundaries(cues, [], 10.0) == cues
+
+
+def test_refined_cues_never_overlap():
+    from engines.hardsub_ocr.main import refine_cue_boundaries
+
+    # hai phụ đề liền kề — refinement không được làm chúng chồng nhau
+    H1, H2, H_GAP = 0x1111, 0x2222, 0x0000
+    hashes = []
+    for i in range(60):  # 0 → 6.0
+        t = i / 10.0
+        h = H1 if 1.0 <= t <= 2.0 else (H2 if 2.1 <= t <= 4.0 else H_GAP)
+        hashes.append((round(t, 3), h))
+    cues = [
+        {"start": 1.0, "end": 2.0, "text": "A"},
+        {"start": 2.0, "end": 4.0, "text": "B"},
+    ]
+    refined = refine_cue_boundaries(cues, hashes, refine_fps=10.0)
+    for a, b in zip(refined, refined[1:]):
+        assert a["end"] <= b["start"] + 1e-9
+
+
+# ── v2: crop đa vùng + boundary refinement ─────────────────────────────────
+
+
+def test_crop_filter_generalizes_band():
+    from engines.hardsub_ocr.main import _crop_filter
+
+    crop = {"left": 0.1, "top": 0.5, "right": 0.9, "bottom": 1.0}
+    assert _crop_filter(crop) == (
+        "crop=trunc(iw*0.8000):trunc(ih*0.5000):trunc(iw*0.1000):trunc(ih*0.5000)"
+    )
+
+
+def test_crop_from_request_prefers_user_rect_and_clamps():
+    from engines.hardsub_ocr.main import _crop_from
+
+    msg = {"band_top": 0.55, "crop": {"left": 0.05, "top": -0.2, "right": 1.4, "bottom": 0.8}}
+    crop = _crop_from(msg)
+    assert crop == {"left": 0.05, "top": 0.0, "right": 1.0, "bottom": 0.8}
+    # không gửi crop → dải dưới v1 nguyên vẹn
+    assert _crop_from({"band_top": 0.6}) == {"left": 0.0, "top": 0.6, "right": 1.0, "bottom": 1.0}
+
+
+def test_refine_boundaries_snap_to_real_subtitle_interval():
+    """Coarse biên lệch (1.0–3.0) so với phụ đề thật (1.0–3.2): refinement
+    phải kéo end ra 3.2 bằng aHash, không cần OCR thêm."""
+    from engines.hardsub_ocr.main import refine_cue_boundaries
+
+    H_GAP, H_SUB = 0x0000, 0xFFFF
+    hashes = []
+    for i in range(101):  # 0.0 → 10.0 bước 0.1
+        t = i / 10.0
+        h = H_SUB if 1.0 <= t <= 3.19 else H_GAP
+        hashes.append((round(t, 3), h))
+    cues = [{"start": 1.0, "end": 3.0, "text": "Xin chào"}]
+    refined = refine_cue_boundaries(cues, hashes, refine_fps=10.0)
+    assert refined[0]["start"] == pytest.approx(1.0, abs=0.11)
+    assert refined[0]["end"] == pytest.approx(3.2, abs=0.11)
+
+
+def test_refine_falls_back_to_coarse_when_no_hashes():
+    from engines.hardsub_ocr.main import refine_cue_boundaries
+
+    cues = [{"start": 1.0, "end": 2.0, "text": "x"}]
+    assert refine_cue_boundaries(cues, [], 10.0) == cues
+
+
+def test_refined_cues_never_overlap():
+    from engines.hardsub_ocr.main import refine_cue_boundaries
+
+    # hai phụ đề liền kề — refinement không được làm chúng chồng nhau
+    H1, H2, H_GAP = 0x1111, 0x2222, 0x0000
+    hashes = []
+    for i in range(60):  # 0 → 6.0
+        t = i / 10.0
+        h = H1 if 1.0 <= t <= 2.0 else (H2 if 2.1 <= t <= 4.0 else H_GAP)
+        hashes.append((round(t, 3), h))
+    cues = [
+        {"start": 1.0, "end": 2.0, "text": "A"},
+        {"start": 2.0, "end": 4.0, "text": "B"},
+    ]
+    refined = refine_cue_boundaries(cues, hashes, refine_fps=10.0)
+    for a, b in zip(refined, refined[1:]):
+        assert a["end"] <= b["start"] + 1e-9
+
+
 # ── soft-sub detection (real tiny container) ────────────────────────────────
 
 

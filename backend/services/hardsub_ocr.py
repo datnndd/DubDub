@@ -96,8 +96,9 @@ def run_ocr_client(
     *,
     fps: float = 2.0,
     band_top: float = 0.55,
+    crop: Optional[dict] = None,
+    refine_fps: float = 10.0,
     text_score: float = DEFAULT_TEXT_SCORE,
-    progress_cb: Optional[Callable[[dict], None]] = None,
 ) -> list[dict]:
     """Run the OCR sidecar over one video; return [{start, end, text}].
 
@@ -134,7 +135,8 @@ def run_ocr_client(
         if not ready or ready.get("op") != "ready":
             raise RuntimeError("hardsub OCR sidecar failed its handshake")
         send({"op": "ocr_video", "video_path": video_path, "fps": fps,
-              "band_top": band_top, "text_score": text_score})
+              "band_top": band_top, "text_score": text_score,
+              "crop": crop, "refine_fps": refine_fps})
         while True:
             msg = recv()
             if msg is None:

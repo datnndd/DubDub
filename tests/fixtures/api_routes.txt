@@ -67,6 +67,7 @@ GET /dub/download/{job_id}
 GET /dub/download/{job_id}/{filename}
 GET /dub/export-segments/{job_id}
 GET /dub/export-stems/{job_id}
+GET /dub/hardsub-srt/{job_id}
 GET /dub/history
 GET /dub/media/{job_id}
 GET /dub/onsets/{job_id}

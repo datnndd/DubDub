@@ -334,7 +334,10 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
                     )
                 srt_text = None
             if srt_text:
-                return _apply(srt_text)
+                result = _apply(srt_text)
+                with open(os.path.join(job_dir, "hardsub.srt"), "w", encoding="utf-8-sig") as _f:
+                    _f.write(srt_text)
+                return result
         if req.mode == "soft":
             raise HTTPException(
                 status_code=400,
@@ -362,15 +365,40 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
         cues = await asyncio.to_thread(
             hso.run_ocr_client, video_path,
             fps=req.fps, band_top=req.band_top, text_score=req.text_score,
+            crop=req.crop, refine_fps=req.refine_fps,
             progress_cb=_progress,
         )
         srt_text = hso.build_srt(cues)
         result = _apply(srt_text)
+        # Đầu ra SRT độc lập: artifact trong job dir cho endpoint tải xuống.
+        with open(os.path.join(job_dir, "hardsub.srt"), "w", encoding="utf-8-sig") as _f:
+            _f.write(srt_text)
         yield prep_event("hardsub_done", **result)
         return
 
     await task_manager.add_task(task_id, "hardsub", _hardsub_gen)
     return {"task_id": task_id}
+
+
+@router.get("/dub/hardsub-srt/{job_id}")
+async def dub_hardsub_srt(job_id: str):
+    """Download the .srt produced by the hardsub/soft-sub extraction."""
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    srt_path = os.path.join(_safe_job_dir(job_id), "hardsub.srt")
+    if not os.path.isfile(srt_path):
+        raise HTTPException(status_code=404, detail="No extracted subtitle file for this job yet.")
+    from fastapi.responses import Response
+
+    with open(srt_path, encoding="utf-8-sig") as _f:
+        content = _f.read()
+    return Response(
+        content=content,
+        media_type="application/x-subrip",
+        headers={"Content-Disposition": 'attachment; filename="hardsub.srt"',
+                 "Access-Control-Expose-Headers": "Content-Disposition"},
+    )
 
 
 @router.post("/dub/cleanup-segments/{job_id}")
