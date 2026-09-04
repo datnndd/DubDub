@@ -839,6 +839,8 @@ export default function useDubWorkflow({
         const data = await dubHardsubExtract(dubJobId, {
           mode: opts.mode || 'auto',
           fps: opts.fps || undefined,
+          crop: opts.crop || undefined,
+          refine_fps: opts.refine_fps || undefined,
         });
         const res = await _waitForHardsub(data.task_id, ctrl);
         const segs = (res && res.segments) || [];
@@ -853,6 +855,7 @@ export default function useDubWorkflow({
           duration: 6000,
         });
         loadProjects();
+        return res;
       } catch (err) {
         if (err.name === 'AbortError') {
           toast(t('dub.hardsub_cancelled'));

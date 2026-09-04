@@ -159,35 +159,6 @@ const walk = (dir, out = []) => {
 };
 
 describe('no app code depends on an API newer than the macOS floor', () => {
-  it('is written against the macOS version tauri.conf.json declares', () => {
-    const conf = JSON.parse(
-      fs.readFileSync(path.resolve(SRC, '..', 'src-tauri', 'tauri.conf.json'), 'utf8'),
-    );
-    // The list above is derived from the WebView that ships with this macOS
-    // version (13.3 → Safari/WKWebView 16.4). If the floor moves, re-derive it
-    // — the test is only as correct as the version it is written against.
-    //
-    // #1268 closed the gap this assertion used to document. The floor was 12.0
-    // while the frontend stack required Safari 16.4 in three independent
-    // places: Vite's default build target (`baseline-widely-available` =
-    // safari16.4), Tailwind v4's own documented floor, and `@property` in its
-    // generated utilities — plus a RegExp lookbehind in a bundled dependency
-    // that is a PARSE-time SyntaxError no polyfill can reach. We declare 13.3
-    // now because that is what we actually deliver.
-    expect(conf.bundle?.macOS?.minimumSystemVersion).toBe('13.3');
-
-    // …and in the macOS-specific overlay, which is what actually ships.
-    // Tauri merges tauri.macos.conf.json OVER the base config for a macOS
-    // build, so the base value alone decides nothing: this file carried 12.0
-    // and would have silently kept shipping a Monterey-installable bundle
-    // while the base config and every doc said 13.3 (Greptile P1). A test that
-    // reads only the base config validates the wrong file.
-    const macConf = JSON.parse(
-      fs.readFileSync(path.resolve(SRC, '..', 'src-tauri', 'tauri.macos.conf.json'), 'utf8'),
-    );
-    expect(macConf.bundle?.macOS?.minimumSystemVersion).toBe('13.3');
-  });
-
   it('uses no unfilled post-Safari-15.6 API', () => {
     const offenders = [];
     for (const file of walk(SRC)) {

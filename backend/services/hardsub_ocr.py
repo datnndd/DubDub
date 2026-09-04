@@ -99,6 +99,7 @@ def run_ocr_client(
     crop: Optional[dict] = None,
     refine_fps: float = 10.0,
     text_score: float = DEFAULT_TEXT_SCORE,
+    progress_cb: Optional[Callable[[dict], None]] = None,
 ) -> list[dict]:
     """Run the OCR sidecar over one video; return [{start, end, text}].
 

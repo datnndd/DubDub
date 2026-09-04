@@ -14,6 +14,7 @@ import {
   ArrowRightLeft,
 } from 'lucide-react';
 import { Button, Segmented, Progress } from '../../ui';
+import HardsubRegionDialog from './HardsubRegionDialog';
 import { useAppStore } from '../../store';
 import WaveformTimeline from '../WaveformTimeline';
 import MultiLangPicker from '../MultiLangPicker';
@@ -57,7 +58,7 @@ function SettingsActions({
   t,
   onTranslate,
   onCleanup,
-  onHardsubExtract,
+  onOpenHardsubDialog,
   hardsubRunning,
   canHardsub,
   translating,
@@ -91,13 +92,11 @@ function SettingsActions({
       {t('dub.clean_up')}
     </Button>
   );
-  const hardsubBtn = onHardsubExtract ? (
+  const hardsubBtn = onOpenHardsubDialog ? (
     <Button
       variant="subtle"
       size="sm"
-      onClick={() => {
-        if (window.confirm(t('dub.hardsub_confirm'))) onHardsubExtract();
-      }}
+      onClick={onOpenHardsubDialog}
       disabled={hardsubRunning || !canHardsub}
       loading={hardsubRunning}
       leading={!hardsubRunning && <Languages size={10} />}
@@ -183,6 +182,8 @@ export default function DubLeftColumn({
   multiLangProgress,
   editSegments,
 }) {
+  const [ocrDialogOpen, setOcrDialogOpen] = useState(false);
+  const [ocrResult, setOcrResult] = useState(null);
   // Two-stage LLM translation quality — only meaningful (and only rendered)
   // when the LLM engine is the active translator. Persisted prefs.
   const autoGlossary = useAppStore((s) => s.autoGlossary);
@@ -312,6 +313,21 @@ export default function DubLeftColumn({
 
   return (
     <div className="studio-panel dub-panel-col">
+      {/* Hardsub OCR — vẽ vùng phụ đề trên video rồi quét */}
+      <HardsubRegionDialog
+        open={ocrDialogOpen}
+        onClose={() => setOcrDialogOpen(false)}
+        jobId={dubJobId}
+        running={hardsubRunning}
+        result={ocrResult}
+        onExtract={async (opts) => {
+          setOcrResult(null);
+          const res = await onHardsubExtract?.(opts);
+          if (res && res.segments) setOcrResult({ ok: true, count: res.segments.length });
+          else if (res === undefined) setOcrResult({ error: t('dub_workflow.hardsub_failed') });
+          return res;
+        }}
+      />
       {hasDubbedTrack && (
         <div
           className="dub-lang-switch"
@@ -518,7 +534,7 @@ export default function DubLeftColumn({
           </button>
           <SettingsActions
             t={t}
-            onHardsubExtract={onHardsubExtract}
+            onOpenHardsubDialog={() => setOcrDialogOpen(true)}
             hardsubRunning={hardsubRunning}
             canHardsub={!!dubJobId}
             onTranslate={handleTranslateAll}
@@ -849,7 +865,7 @@ export default function DubLeftColumn({
             </Button>
             <SettingsActions
               t={t}
-              onHardsubExtract={onHardsubExtract}
+              onOpenHardsubDialog={() => setOcrDialogOpen(true)}
               hardsubRunning={hardsubRunning}
               canHardsub={!!dubJobId}
               cleanupFirst

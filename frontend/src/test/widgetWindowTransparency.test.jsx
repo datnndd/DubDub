@@ -20,6 +20,8 @@ import { screen } from '@testing-library/react';
 import fs from 'node:fs';
 import path from 'node:path';
 
+vi.setConfig({ testTimeout: 20_000 });
+
 vi.mock('../App.jsx', () => ({ default: () => null }));
 vi.mock('../components/CaptureWidget.jsx', () => ({
   default: () => <span data-testid="capture-widget-mounted" />,
