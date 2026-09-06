@@ -757,11 +757,12 @@ export default function DubTab(props) {
         open={ocrDialogOpen}
         onClose={() => setOcrDialogOpen(false)}
         jobId={dubJobId}
+        videoUrl={dubLocalBlobUrl?.videoUrl}
         running={hardsubRunning}
         result={ocrResult}
         onExtract={async (opts) => {
           setOcrResult(null);
-          const res = await handleHardsubExtract?.(opts);
+          const res = await handleHardsubExtract?.({ ...opts, file: dubVideoFile });
           if (res && res.segments) setOcrResult({ ok: true, count: res.segments.length });
           else if (res === undefined) setOcrResult({ error: t('dub_workflow.hardsub_failed') });
           return res;

@@ -18,6 +18,7 @@ export default function HardsubRegionDialog({
   open,
   onClose,
   jobId,
+  videoUrl,
   running = false,
   result = null, // { ok: true, count } | { error } — từ useDubWorkflow
   onExtract,
@@ -103,7 +104,7 @@ export default function HardsubRegionDialog({
 
         <div className="relative select-none">
           <video
-            src={jobId ? `${API}/dub/media/${jobId}` : undefined}
+            src={videoUrl || (jobId ? `${API}/dub/media/${jobId}` : undefined)}
             controls
             muted
             playsInline

@@ -1101,6 +1101,7 @@
     "auto_clone_voice_title": "Tự động trích xuất và sao chép giọng nói gốc từ video cho từng người nói",
     "source_language": "Ngôn ngữ gốc",
     "hardsub_btn": "OCR phụ đề",
+    "hardsub_upload_hint": "Video đã có phụ đề gắn sẵn? Tải lên rồi dùng OCR phụ đề — không cần ASR.",
     "hardsub_title": "Trích phụ đề cứng từ video bằng OCR",
     "hardsub_confirm": "Thay transcript hiện tại bằng phụ đề trích từ video?",
     "hardsub_cancelled": "Đã hủy OCR",

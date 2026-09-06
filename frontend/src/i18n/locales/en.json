@@ -1366,6 +1366,7 @@
     "auto_clone_voice_title": "Extract and clone original voices from media for each speaker",
     "source_language": "Source Audio",
     "hardsub_btn": "OCR subtitles",
+    "hardsub_upload_hint": "Video already has burned-in subtitles? Upload it, then use OCR subtitles — no ASR needed.",
     "hardsub_title": "Extract burned-in subtitles from the video (OCR)",
     "hardsub_confirm": "Replace the current transcript with subtitles extracted from the video?",
     "hardsub_cancelled": "OCR cancelled",

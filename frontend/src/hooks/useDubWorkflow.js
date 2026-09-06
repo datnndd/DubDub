@@ -830,13 +830,36 @@ export default function useDubWorkflow({
 
   const handleHardsubExtract = useCallback(
     async (opts = {}) => {
-      if (!dubJobId) return;
       const ctrl = new AbortController();
       dubAbortCtrlRef.current = ctrl;
       setHardsubRunning(true);
       setDubError('');
       try {
-        const data = await dubHardsubExtract(dubJobId, {
+        // OCR-first: the user picked a file but has not run ASR yet. Upload
+        // creates the job without starting transcription, so OCR acts as an
+        // alternative transcript source next to the Transcribe button.
+        let jobId = dubJobId;
+        if (!jobId) {
+          const file = opts.file || null;
+          if (!file) return;
+          const clientJobId = Math.random().toString(36).slice(2, 10);
+          dubClientJobIdRef.current = clientJobId;
+          setDubJobId(clientJobId);
+          const inputType = useAppStore.getState().dubInputType || 'video';
+          useAppStore
+            .getState()
+            .showPill('loading-model', t('dub_workflow.preparing_video'), {
+              cancellable: true,
+              homeMode: 'dub',
+            });
+          const up = await dubUpload(file, clientJobId, { signal: ctrl.signal, inputType });
+          jobId = up.job_id;
+          setDubJobId(up.job_id);
+          if (up.filename) setDubFilename(up.filename);
+          setDubTaskId(up.task_id);
+          useAppStore.getState().dismissPill();
+        }
+        const data = await dubHardsubExtract(jobId, {
           mode: opts.mode || 'auto',
           fps: opts.fps || undefined,
           crop: opts.crop || undefined,
@@ -868,7 +891,17 @@ export default function useDubWorkflow({
         dubAbortCtrlRef.current = null;
       }
     },
-    [dubJobId, setDubError, setDubSegments, setDubStep, loadProjects, t],
+    [
+      dubJobId,
+      setDubError,
+      setDubSegments,
+      setDubStep,
+      setDubJobId,
+      setDubFilename,
+      setDubTaskId,
+      loadProjects,
+      t,
+    ],
   );
 
   const handleDubImportSrt = useCallback(

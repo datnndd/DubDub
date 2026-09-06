@@ -354,20 +354,20 @@ export default function IdleSkeleton({
                           }}
                         />
                       </label>
-                  {dubJobId && onOpenHardsubDialog && (
+                    </>
+                  )}
+                  {onOpenHardsubDialog && (
                     <Button
                       variant="subtle"
                       size="sm"
                       onClick={onOpenHardsubDialog}
-                      disabled={hardsubRunning}
+                      disabled={hardsubRunning || dubStep !== 'idle'}
                       loading={hardsubRunning}
                       leading={!hardsubRunning && <FileText size={13} />}
                       title={t('dub.hardsub_title')}
                     >
                       {t('dub.hardsub_btn')}
                     </Button>
-                  )}
-                    </>
                   )}
                   <Button
                     variant="primary"
@@ -463,6 +463,10 @@ export default function IdleSkeleton({
                     {t('dub.drop_here')}
                   </div>
                   <div className="text-[0.7rem] text-[#665c54]">{t('dub.supported_formats')}</div>
+                </div>
+                <div className="flex items-center gap-[6px] text-[0.62rem] text-fg-muted">
+                  <FileText size={11} />
+                  <span>{t('dub.hardsub_upload_hint')}</span>
                 </div>
                 <div
                   className="flex gap-[6px] items-center px-[10px] py-[6px] mt-[10px] bg-[rgba(255,255,255,0.02)] [border:1px_solid_rgba(255,255,255,0.06)] rounded-[6px] w-[min(420px,80%)]"
