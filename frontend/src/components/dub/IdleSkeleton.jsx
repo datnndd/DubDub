@@ -73,6 +73,8 @@ export default function IdleSkeleton({
   handleInstallMissingAsr,
   handleDubRetryTranscribe,
   handleDubImportSrt,
+  onOpenHardsubDialog,
+  hardsubRunning,
   dubLocalBlobUrl,
   dubPrepStage,
   dubPrepProgress,
@@ -190,25 +192,40 @@ export default function IdleSkeleton({
             </Button>
           )}
           {handleDubImportSrt && (
-            <label
-              htmlFor="srt-import-banner-input"
-              className="flex items-center gap-[6px] px-[12px] py-[6px] bg-[rgba(255,255,255,0.05)] [border:1px_solid_rgba(255,255,255,0.1)] rounded-[6px] cursor-pointer text-[0.8rem] text-fg-muted"
-              title={t('dub.import_srt')}
-              style={{ cursor: 'pointer' }}
-            >
-              <FileText size={11} /> {t('dub.import_srt_alt')}
-              <input
-                id="srt-import-banner-input"
-                type="file"
-                accept=".srt,text/srt,text/plain"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleDubImportSrt(f);
-                  e.target.value = '';
-                }}
-              />
-            </label>
+            <>
+              <label
+                htmlFor="srt-import-banner-input"
+                className="flex items-center gap-[6px] px-[12px] py-[6px] bg-[rgba(255,255,255,0.05)] [border:1px_solid_rgba(255,255,255,0.1)] rounded-[6px] cursor-pointer text-[0.8rem] text-fg-muted"
+                title={t('dub.import_srt')}
+                style={{ cursor: 'pointer' }}
+              >
+                <FileText size={11} /> {t('dub.import_srt_alt')}
+                <input
+                  id="srt-import-banner-input"
+                  type="file"
+                  accept=".srt,text/srt,text/plain"
+                  hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleDubImportSrt(f);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {dubJobId && onOpenHardsubDialog && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  onClick={onOpenHardsubDialog}
+                  disabled={hardsubRunning}
+                  loading={hardsubRunning}
+                  leading={!hardsubRunning && <FileText size={11} />}
+                  title={t('dub.hardsub_title')}
+                >
+                  {t('dub.hardsub_btn')}
+                </Button>
+              )}
+            </>
           )}
         </div>
       )}
@@ -317,25 +334,40 @@ export default function IdleSkeleton({
                     <Film size={13} /> {t('dub.change_file')}
                   </label>
                   {dubJobId && handleDubImportSrt && (
-                    <label
-                      htmlFor="srt-import-input"
-                      className="flex items-center gap-[6px] px-[12px] py-[6px] bg-[rgba(255,255,255,0.05)] [border:1px_solid_rgba(255,255,255,0.1)] rounded-[6px] cursor-pointer text-[0.8rem] text-fg-muted hover:bg-[rgba(255,255,255,0.08)]"
-                      title={t('dub.import_srt')}
-                      style={{ cursor: 'pointer' }}
+                    <>
+                      <label
+                        htmlFor="srt-import-input"
+                        className="flex items-center gap-[6px] px-[12px] py-[6px] bg-[rgba(255,255,255,0.05)] [border:1px_solid_rgba(255,255,255,0.1)] rounded-[6px] cursor-pointer text-[0.8rem] text-fg-muted hover:bg-[rgba(255,255,255,0.08)]"
+                        title={t('dub.import_srt')}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <FileText size={13} /> {t('dub.import_srt')}
+                        <input
+                          id="srt-import-input"
+                          type="file"
+                          accept=".srt,text/srt,text/plain"
+                          hidden
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleDubImportSrt(f);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                  {dubJobId && onOpenHardsubDialog && (
+                    <Button
+                      variant="subtle"
+                      size="sm"
+                      onClick={onOpenHardsubDialog}
+                      disabled={hardsubRunning}
+                      loading={hardsubRunning}
+                      leading={!hardsubRunning && <FileText size={13} />}
+                      title={t('dub.hardsub_title')}
                     >
-                      <FileText size={13} /> {t('dub.import_srt')}
-                      <input
-                        id="srt-import-input"
-                        type="file"
-                        accept=".srt,text/srt,text/plain"
-                        hidden
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleDubImportSrt(f);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
+                      {t('dub.hardsub_btn')}
+                    </Button>
+                  )}
+                    </>
                   )}
                   <Button
                     variant="primary"

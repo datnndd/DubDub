@@ -1364,7 +1364,18 @@
     "languages_pending": "Pending",
     "auto_clone_voice": "Clone original voice",
     "auto_clone_voice_title": "Extract and clone original voices from media for each speaker",
-    "source_language": "Source Audio"
+    "source_language": "Source Audio",
+    "hardsub_btn": "OCR subtitles",
+    "hardsub_title": "Extract burned-in subtitles from the video (OCR)",
+    "hardsub_confirm": "Replace the current transcript with subtitles extracted from the video?",
+    "hardsub_cancelled": "OCR cancelled",
+    "hardsub_dialog_title": "Extract subtitles from the video (OCR)",
+    "hardsub_pick_hint": "Scrub the video to a moment where the subtitle is visible, then drag a rectangle over it.",
+    "hardsub_start": "Start scan",
+    "hardsub_band_preset": "Default bottom band",
+    "hardsub_running_hint": "Scanning the video — this can take a few minutes.",
+    "hardsub_result_done": "Imported {{count}} cue(s). The transcript has been replaced.",
+    "hardsub_download": "Download .srt"
   },
   "glossary": {
     "title": "Glossary",
@@ -2766,7 +2777,9 @@
     "delete_history_confirm": "Delete this history item?",
     "history_deleted": "History item deleted",
     "restored_state": "Restored previous generation state",
-    "upgrading_preview": "Upgrading {{count}} preview-quality segment(s) to full quality…"
+    "upgrading_preview": "Upgrading {{count}} preview-quality segment(s) to full quality…",
+    "hardsub_done": "Imported {{count}} cue(s) from the video's burned-in subtitles",
+    "hardsub_failed": "Hardsub OCR failed"
   },
   "tts_errors": {
     "enter_text": "Please enter text",

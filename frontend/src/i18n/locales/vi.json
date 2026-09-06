@@ -1099,7 +1099,18 @@
     "languages_pending": "Đang chờ",
     "auto_clone_voice": "Sao chép giọng gốc",
     "auto_clone_voice_title": "Tự động trích xuất và sao chép giọng nói gốc từ video cho từng người nói",
-    "source_language": "Ngôn ngữ gốc"
+    "source_language": "Ngôn ngữ gốc",
+    "hardsub_btn": "OCR phụ đề",
+    "hardsub_title": "Trích phụ đề cứng từ video bằng OCR",
+    "hardsub_confirm": "Thay transcript hiện tại bằng phụ đề trích từ video?",
+    "hardsub_cancelled": "Đã hủy OCR",
+    "hardsub_dialog_title": "Trích xuất phụ đề từ video (OCR)",
+    "hardsub_pick_hint": "Tua video đến lúc phụ đề hiện rõ, rồi kéo khung chọn vùng phụ đề.",
+    "hardsub_start": "Bắt đầu quét",
+    "hardsub_band_preset": "Dải dưới mặc định",
+    "hardsub_running_hint": "Đang quét video — có thể mất vài phút.",
+    "hardsub_result_done": "Đã nhập {{count}} dòng phụ đề. Transcript đã được thay.",
+    "hardsub_download": "Tải .srt"
   },
   "glossary": {
     "title": "Thuật ngữ",
@@ -2094,7 +2105,9 @@
     "history_deleted": "Mục lịch sử đã bị xóa",
     "restored_state": "Đã khôi phục trạng thái thế hệ trước",
     "upgrading_preview": "Đang nâng cấp {{count}} phân đoạn chất lượng xem trước lên chất lượng đầy đủ…",
-    "session_expired": "Phiên lồng tiếng này đã hết hạn hoặc đã bị xóa - hãy tải lại video của bạn lên để bắt đầu một video mới."
+    "session_expired": "Phiên lồng tiếng này đã hết hạn hoặc đã bị xóa - hãy tải lại video của bạn lên để bắt đầu một video mới.",
+    "hardsub_done": "Đã nhập {{count}} dòng phụ đề cứng từ video",
+    "hardsub_failed": "Trích phụ đề OCR thất bại"
   },
   "tts_errors": {
     "enter_text": "Vui lòng nhập văn bản",

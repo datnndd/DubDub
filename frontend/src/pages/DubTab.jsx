@@ -10,6 +10,7 @@ import useTimelineOnsets from '../hooks/useTimelineOnsets';
 import ExportModal from '../components/ExportModal';
 import DubPipelineStepper from '../components/dub/DubPipelineStepper';
 import IdleSkeleton from '../components/dub/IdleSkeleton';
+import HardsubRegionDialog from '../components/dub/HardsubRegionDialog';
 import DubHeader from '../components/dub/DubHeader';
 import DubLeftColumn from '../components/dub/DubLeftColumn';
 import DubRightColumn from '../components/dub/DubRightColumn';
@@ -141,6 +142,9 @@ export default function DubTab(props) {
     dubJobId &&
     (dubStep === 'editing' || dubStep === 'generating' || dubStep === 'done')
   );
+  // Hardsub OCR dialog — dùng chung Landing/Prepare và Editing.
+  const [ocrDialogOpen, setOcrDialogOpen] = useState(false);
+  const [ocrResult, setOcrResult] = useState(null);
   // Imperative handle to the post-job waveform so the transcript table can
   // seek the player when the user clicks a row.
   const waveformRef = useRef(null);
@@ -710,6 +714,8 @@ export default function DubTab(props) {
           handleInstallMissingAsr={handleInstallMissingAsr}
           handleDubRetryTranscribe={handleDubRetryTranscribe}
           handleDubImportSrt={handleDubImportSrt}
+          onOpenHardsubDialog={() => setOcrDialogOpen(true)}
+          hardsubRunning={hardsubRunning}
           dubLocalBlobUrl={dubLocalBlobUrl}
           dubPrepStage={dubPrepStage}
           dubPrepProgress={dubPrepProgress}
@@ -745,6 +751,22 @@ export default function DubTab(props) {
           setAutoVoiceClone={setAutoVoiceClone}
         />
       )}
+
+      {/* Hardsub OCR — vẽ vùng phụ đề trên video rồi quét */}
+      <HardsubRegionDialog
+        open={ocrDialogOpen}
+        onClose={() => setOcrDialogOpen(false)}
+        jobId={dubJobId}
+        running={hardsubRunning}
+        result={ocrResult}
+        onExtract={async (opts) => {
+          setOcrResult(null);
+          const res = await handleHardsubExtract?.(opts);
+          if (res && res.segments) setOcrResult({ ok: true, count: res.segments.length });
+          else if (res === undefined) setOcrResult({ error: t('dub_workflow.hardsub_failed') });
+          return res;
+        }}
+      />
 
       {/* ── After transcription: side-by-side editor ── */}
       {dubJobId && (dubStep === 'editing' || dubStep === 'generating' || dubStep === 'done') && (
@@ -808,7 +830,7 @@ export default function DubTab(props) {
               dubInstruct={dubInstruct}
               setDubInstruct={setDubInstruct}
               handleTranslateAll={onTranslateClick}
-          onHardsubExtract={handleHardsubExtract}
+          onOpenHardsubDialog={onOpenHardsubDialog}
           hardsubRunning={hardsubRunning}
               isTranslating={isTranslating}
               hasAnyTranslation={hasAnyTranslation}
