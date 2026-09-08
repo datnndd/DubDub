@@ -11,34 +11,12 @@
     <a href="#why-voicestudio">Why VoiceStudio</a> ·
     <a href="#tts-engines">Engines</a> ·
     <a href="#openai-api">API</a> ·
-    <a href="#sponsor--donate">Donate</a> ·
     <a href="#contributing">Contributing</a> ·
-    <a href="https://voicestudio.sh">Website</a> ·
-    <a href="https://voicestudio.sh/docs">Docs</a> ·
-    <a href="https://status.voicestudio.sh">Status</a> ·
-    <a href="https://discord.gg/bzQavDfVV9">Discord</a> ·
-    <a href="https://x.com/idebpalash">X</a> ·
-    <a href="README_CN.md"><strong>简体中文</strong></a>
+    <a href="#license">License</a>
   </p>
 
   <p>
-    <a href="https://github.com/debpalash/VoiceStudio/stargazers"><img src="https://img.shields.io/github/stars/debpalash/VoiceStudio?style=flat-square&color=f59e0b" alt="Stars" /></a>
-    <a href="https://github.com/debpalash/VoiceStudio/releases"><img src="https://img.shields.io/github/downloads/debpalash/VoiceStudio/total?style=flat-square&color=8b5cf6&label=downloads" alt="Total downloads" /></a>
-    <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/github/v/release/debpalash/VoiceStudio?style=flat-square&color=10b981" alt="Release" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="License" /></a>
-    <a href="https://github.com/debpalash/VoiceStudio/issues"><img src="https://img.shields.io/github/issues/debpalash/VoiceStudio?style=flat-square&color=ef4444" alt="Issues" /></a>
-    <a href="https://discord.gg/bzQavDfVV9"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
-    <a href="https://x.com/idebpalash"><img src="https://img.shields.io/badge/X-Follow_for_updates-000000?style=flat-square&logo=x&logoColor=white" alt="Follow on X" /></a>
-    <a href="https://ko-fi.com/debpalash"><img src="https://img.shields.io/badge/Ko--fi-Support_Us-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi" /></a>
-    <a href="https://paypal.me/palashCoder"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?style=flat-square&logo=paypal&logoColor=white" alt="PayPal" /></a>
-  </p>
-
-  <p>
-    <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/⬇_Download-macOS_·_Windows_·_Linux-10b981?style=for-the-badge" alt="Download the latest release" /></a>
-  </p>
-
-  <p>
-    <a href="https://trendshift.io/repositories/28176?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-28176" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/28176/daily?language=Python" alt="debpalash%2FVoiceStudio | Trendshift" width="250" height="55"/></a>
   </p>
 </div>
 
@@ -51,13 +29,13 @@
 > **Your voice is personal. Your studio should feel personal too.** VoiceStudio keeps its core workflow on your hardware: clone, design, dub, dictate, and publish in 646 languages without a subscription or usage meter. Network-backed engines and services are optional, visible choices—not hidden requirements.
 
 > [!WARNING]
-> **Active beta.** Things may break between releases — for the newest fixes, run from source. Bug reports and PRs are very welcome: [open an issue](https://github.com/debpalash/VoiceStudio/issues) or [join Discord](https://discord.gg/bzQavDfVV9).
+> **Active beta.** Things may break between releases — for the newest fixes, run from source. Bug reports and PRs are very welcome.
 
 <a id="whats-new"></a>
 
 ## 🆕 What's new in 0.5.0
 
-The rename release — full notes: [v0.5.0 release](https://github.com/debpalash/VoiceStudio/releases/tag/v0.5.0) · [CHANGELOG](CHANGELOG.md).
+The rename release — full notes: [CHANGELOG](CHANGELOG.md).
 
 - 🏷️ **A new name** — VoiceStudio (previously OmniVoice-Studio): one waveform-and-spark identity across app, docs, and installers. Your data folder, settings, and Docker image paths stay put.
 - 📚 **Model Catalogue** — engines and models in one workspace: every TTS, ASR, and LLM engine with its device routing and install state; pick defaults, install or remove weights.
@@ -141,11 +119,7 @@ Three flagships, five more headliners, and a dozen under the fold.
 ## ⚡ Quickstart
 
 <div align="center">
-  <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/macOS-DMG_(Apple_Silicon)-000?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS DMG" /></a>
-  <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/Windows-MSI_(x64)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows MSI" /></a>
-  <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage_(x64)-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux AppImage" /></a>
-  <br/>
-  <sub><b>macOS:</b> first launch needs a one-time approval — right-click → <b>Open</b> (or System Settings → Privacy &amp; Security → <b>"Open Anyway"</b> on macOS 15). No Terminal needed. <a href="docs/install/macos.md#gatekeeper-quarantine">Why?</a> · <b>Intel Macs:</b> local backend unsupported (<a href="https://github.com/debpalash/VoiceStudio/issues/889">#889</a>) — <a href="docs/install/macos.md">details</a>.</sub>
+  <sub><b>macOS:</b> first launch needs a one-time approval — right-click → <b>Open</b> (or System Settings → Privacy &amp; Security → <b>"Open Anyway"</b> on macOS 15). No Terminal needed. <a href="docs/install/macos.md#gatekeeper-quarantine">Why?</a> · <b>Intel Macs:</b> local backend unsupported — <a href="docs/install/macos.md">details</a>.</sub>
 </div>
 
 **Install guide:** [🍎 macOS](docs/install/macos.md) · [🪟 Windows](docs/install/windows.md) · [🐧 Linux](docs/install/linux.md) · [🐳 Docker](docs/install/docker.md)
@@ -189,7 +163,7 @@ Cloud voice tools are convenient, but they put your workflow behind an account, 
 | **Self-check** | ❌ | ✅ Diagnostics suite, error journal, scrubbed debug bundles |
 | **Customizable** | ❌ Closed | ✅ Fork it, extend it, ship it |
 
-Professional-grade voice AI, minus the subscription and the cloud. Convinced? [Come build with us.](https://discord.gg/bzQavDfVV9)
+Professional-grade voice AI, minus the subscription and the cloud.
 
 ---
 
@@ -205,7 +179,7 @@ Professional-grade voice AI, minus the subscription and the cloud. Convinced? [C
 | **GPU** | Optional — CPU works | NVIDIA CUDA · Apple Silicon MPS · AMD ROCm (Linux only) |
 
 > [!NOTE]
-> **A GPU is optional** — the whole pipeline runs on CPU (just slower), and on ≤8 GB VRAM, TTS auto-offloads to CPU. Caveats: **AMD ROCm** is Linux-only + opt-in ([Linux](docs/install/linux.md#amd-gpu-rocm)) — Windows AMD/Ryzen AI is CPU-only ([Windows](docs/install/windows.md#gpu-support)); **macOS Intel** can't run the local backend, so point it at a remote one ([#889](https://github.com/debpalash/VoiceStudio/issues/889) · [macOS](docs/install/macos.md)).
+> **A GPU is optional** — the whole pipeline runs on CPU (just slower), and on ≤8 GB VRAM, TTS auto-offloads to CPU. Caveats: **AMD ROCm** is Linux-only + opt-in ([Linux](docs/install/linux.md#amd-gpu-rocm)) — Windows AMD/Ryzen AI is CPU-only ([Windows](docs/install/windows.md#gpu-support)); **macOS Intel** can't run the local backend, so point it at a remote one ([macOS](docs/install/macos.md)).
 
 <a id="tts-engines"></a>
 
@@ -367,16 +341,15 @@ Calling the backend from **another machine** (LAN, Tailscale, behind a proxy)? I
 
 ### 📓 Run on Google Colab
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/debpalash/VoiceStudio/blob/main/notebooks/OmniVoice_Studio_Colab.ipynb)
-
-No local GPU? The [official notebook](notebooks/OmniVoice_Studio_Colab.ipynb) boots the full app — web UI included — on a free Colab T4, then walks the whole feature surface as a guided tour with inline playback. No tunnels, no API keys.
+No local GPU? The [notebook](notebooks/OmniVoice_Studio_Colab.ipynb) boots the full app — web UI included — on a free Colab T4, then walks the whole feature surface as a guided tour with inline playback. No tunnels, no API keys.
 
 ### 🤝 Agent Skills
 
 Teach your coding agent to speak and listen through your local VoiceStudio — one command, works with **Claude Code, Codex, Cursor, Grok, Kimi, opencode**, and any [skills.sh](https://skills.sh)-compatible agent:
 
 ```sh
-npx skills add debpalash/omnivoice-studio
+# Add skills from your repository or locally:
+npx skills add <your-username>/omnivoice-studio
 ```
 
 Ships two skills: **`omnivoice`** — generate speech (including your cloned voices) and transcribe audio from any agent, free and fully offline — and **`oss-maintainer`** — the maintainer methodology this project is run with.
@@ -391,58 +364,11 @@ What's up next (lip-sync v2, hosted demo, plugin marketplace, real-time voice ch
 
 ---
 
-<a id="sponsor--donate"></a>
-
-## 💜 Sponsor / Donate
-
-One developer, real AI-agent bills. If VoiceStudio is useful to you, chipping in keeps development full-time — every dollar goes straight to the bills.
-
-<div align="center">
-
-<img src="https://img.shields.io/badge/raised_%2410_of_%24200-5%25-EAB308?style=for-the-badge" alt="This month's agent-bill fund: $10 / $200" />
-
-<br/><br/>
-
-<a href="https://ko-fi.com/debpalash"><img src="https://img.shields.io/badge/Ko--fi-Support_❤️-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi" /></a>
-&nbsp;&nbsp;
-<a href="https://paypal.me/palashCoder"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="PayPal" /></a>
-
-</div>
-
-<a id="sponsors"></a>
-
-### 🌟 Sponsors
-
-VoiceStudio is **free** and **AGPL-3.0** — no paid tier, no SaaS revenue. Sponsors keep development going, and in return get a logo slot here, in the app, and (for top tiers) on the project website. It's a thank-you, never a paywall. **[See tiers & become a sponsor →](SPONSORS.md)**
-
-<div align="center">
-
-<!-- SPONSORS:START — logo slots are filled here as sponsors come aboard; see SPONSORS.md -->
-
-**Your logo here** — [become a sponsor](SPONSORS.md)
-
-<!-- SPONSORS:END -->
-
-</div>
-
----
-
-## 💬 Community
-
-<div align="center">
-  <a href="https://discord.gg/bzQavDfVV9"><img src="https://img.shields.io/badge/💬_Discord-Join_Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord" /></a>
-  <a href="https://x.com/idebpalash"><img src="https://img.shields.io/badge/𝕏_Follow-for_updates-000000?style=for-the-badge&logo=x&logoColor=white" alt="Follow on X" /></a>
-  <br/>
-  <sub>Release news, setup help, GPU troubleshooting, feature votes, and showing off your dubs. We respond to setup questions within hours, not days.</sub>
-</div>
-
----
-
 <a id="contributing"></a>
 
 ## 🤝 Contributing
 
-Yes please — bug fixes, new TTS engine adapters, UI improvements, docs, translations. All of it. Start with the **[Contributing Guide](.github/CONTRIBUTING.md)** (setup, code style, PR workflow), browse [good first issues](https://github.com/debpalash/VoiceStudio/labels/good%20first%20issue), or ask in [Discord](https://discord.gg/bzQavDfVV9).
+Bug fixes, new TTS engine adapters, UI improvements, docs, and translations are welcome. See the **[Contributing Guide](.github/CONTRIBUTING.md)** for setup, code style, and development guidelines.
 
 ---
 
@@ -451,7 +377,7 @@ Yes please — bug fixes, new TTS engine adapters, UI improvements, docs, transl
 <details>
 <summary><b>Does it work on Apple Silicon (M1/M2/M3/M4)?</b></summary>
 <br/>
-Yes. MPS acceleration is auto-detected. MLX-optimized Whisper models are available for faster transcription on Apple hardware. <b>Intel Macs are not supported</b>: the app UI installs, but the local Python backend cannot run because PyTorch no longer ships Intel-Mac wheels (<a href="https://github.com/debpalash/VoiceStudio/issues/889">#889</a>) — an Intel Mac can only be used with a remote backend.
+Yes. MPS acceleration is auto-detected. MLX-optimized Whisper models are available for faster transcription on Apple hardware. <b>Intel Macs are not supported</b>: the app UI installs, but the local Python backend cannot run because PyTorch no longer ships Intel-Mac wheels — an Intel Mac can only be used with a remote backend.
 </details>
 
 <details>
@@ -508,40 +434,10 @@ VoiceStudio is free and open-source software under the [**GNU Affero General Pub
 
 **Free for any use — including commercial and internal business use.** Run it, sell the audio you produce with it, dub your own or clients' videos, roll it out across your team — all free, no license needed. As a **network copyleft** license, AGPL adds one obligation: if you **modify** VoiceStudio and offer that modified version to others over a network, you must make the complete corresponding source of your modified version available to them under the same AGPL-3.0 terms.
 
-A **commercial license** is available for organizations that want to embed VoiceStudio in a **closed-source or proprietary** product or service without the AGPL-3.0 copyleft obligations. **Pricing tiers coming soon.** Inquiries: **VoiceStudio@palash.dev**.
-
-The bundled `omnivoice/` TTS model by Han Zhu remains Apache-2.0 upstream. See [`LICENSE`](LICENSE) for the full, binding terms, and [`LICENSE-NOTICE.md`](LICENSE-NOTICE.md) for the plain-language summary and scope.
+The bundled `omnivoice/` TTS model by Han Zhu remains Apache-2.0 upstream. See [`LICENSE`](LICENSE) for the full, binding terms.
 
 ---
 
 ## 🙏 Acknowledgments
 
 VoiceStudio stands on exceptional open-source work: [OmniVoice (k2-fsa)](https://github.com/k2-fsa/OmniVoice) — the core zero-shot TTS model · [WhisperX](https://github.com/m-bain/whisperX) · [Demucs](https://github.com/facebookresearch/demucs) · [Pyannote](https://github.com/pyannote/pyannote-audio) · [CTranslate2](https://github.com/OpenNMT/CTranslate2) · [AudioSeal](https://github.com/facebookresearch/audioseal) · [Tauri](https://tauri.app) · [Supertonic](https://huggingface.co/Supertone/supertonic-3) · [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) · [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) · [Kyutai PocketTTS](https://kyutai.org) — thank you.
-
-<a id="more-from-the-maker"></a>
-
-### 🧰 More local open-source from the maker
-
-[**Opal** 💠](https://github.com/debpalash/Opal) — play everything: the media player for the AI era · [**memxt** 🧠](https://github.com/debpalash/memxt) — local long-term memory for coding agents. Same rule: **your data stays on your machine.**
-
----
-
-<div align="center">
-
-<br/>
-
-If you read this far, you're our kind of person.<br/>
-**[⭐ Star this repo](https://github.com/debpalash/VoiceStudio)** so others can find it too.<br/>
-**[💬 Join the Discord](https://discord.gg/bzQavDfVV9)** to share what you build.<br/>
-**[❤️ Support development](https://ko-fi.com/debpalash)** — fund the AI agent bills that keep VoiceStudio shipping.
-
-<br/>
-
-  <a href="https://star-history.com/#debpalash/VoiceStudio&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=debpalash/VoiceStudio&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=debpalash/VoiceStudio&type=Date" />
-      <img alt="Star History" src="https://api.star-history.com/svg?repos=debpalash/VoiceStudio&type=Date&theme=dark" width="600" />
-    </picture>
-  </a>
-</div>

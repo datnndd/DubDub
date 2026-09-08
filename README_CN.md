@@ -13,24 +13,13 @@
     <a href="#why-voicestudio">为什么选择 VoiceStudio</a> ·
     <a href="#tts-engines">引擎</a> ·
     <a href="#openai-api">API</a> ·
-    <a href="#sponsor--donate">捐赠</a> ·
     <a href="#contributing">参与贡献</a> ·
-    <a href="https://discord.gg/bzQavDfVV9">Discord</a> ·
+    <a href="#license">许可证</a> ·
     <a href="README.md"><strong>English</strong></a>
   </p>
 
   <p>
-    <a href="https://github.com/debpalash/VoiceStudio/stargazers"><img src="https://img.shields.io/github/stars/debpalash/VoiceStudio?style=flat-square&color=f59e0b" alt="Star 数" /></a>
-    <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/github/v/release/debpalash/VoiceStudio?style=flat-square&color=10b981" alt="版本" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="许可证" /></a>
-    <a href="https://github.com/debpalash/VoiceStudio/issues"><img src="https://img.shields.io/github/issues/debpalash/VoiceStudio?style=flat-square&color=ef4444" alt="Issues" /></a>
-    <a href="https://discord.gg/bzQavDfVV9"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
-    <a href="https://ko-fi.com/debpalash"><img src="https://img.shields.io/badge/Ko--fi-Support_Us-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white" alt="Ko-fi" /></a>
-    <a href="https://paypal.me/palashCoder"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?style=flat-square&logo=paypal&logoColor=white" alt="PayPal" /></a>
-  </p>
-
-  <p>
-    <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/⬇_Download-macOS_·_Windows_·_Linux-10b981?style=for-the-badge" alt="下载最新版本" /></a>
   </p>
 </div>
 
@@ -43,7 +32,7 @@
 > **声音很私人，创作空间也应该真正属于你。** VoiceStudio 的核心流程运行在你的硬件上：克隆、设计、配音、听写，并以 646 种语言创作，不需要订阅，也没有用量计费。联网引擎和服务始终是清晰可见的可选项，而不是隐藏依赖。
 
 > [!WARNING]
-> **活跃 Beta 阶段。** 各版本之间可能出现故障——如需最新修复，请从源码运行。非常欢迎 Bug 报告和 PR：[提交 Issue](https://github.com/debpalash/VoiceStudio/issues) 或 [加入 Discord](https://discord.gg/bzQavDfVV9)。
+> **活跃 Beta 阶段。** 各版本之间可能出现故障——如需最新修复，请从源码运行。非常欢迎 Bug 报告和 PR。
 
 <a id="features"></a>
 
@@ -117,11 +106,7 @@
 ## ⚡ 快速开始
 
 <div align="center">
-  <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/macOS-DMG_(Apple_Silicon)-000?style=for-the-badge&logo=apple&logoColor=white" alt="下载 macOS DMG" /></a>
-  <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/Windows-MSI_(x64)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="下载 Windows MSI" /></a>
-  <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/Linux-AppImage_(x64)-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="下载 Linux AppImage" /></a>
-  <br/>
-  <sub><b>macOS：</b>首次启动需要一次性批准——右键点击 → <b>打开</b>（macOS 15 上为 系统设置 → 隐私与安全性 → <b>“仍要打开”</b>）。无需终端。<a href="docs/install/macos.md#gatekeeper-quarantine">为什么？</a> · <b>Intel Mac：</b>不支持本地后端（<a href="https://github.com/debpalash/VoiceStudio/issues/889">#889</a>）——<a href="docs/install/macos.md">详情</a>。</sub>
+  <sub><b>macOS：</b>首次启动需要一次性批准——右键点击 → <b>打开</b>（macOS 15 上为 系统设置 → 隐私与安全性 → <b>“仍要打开”</b>）。无需终端。<a href="docs/install/macos.md#gatekeeper-quarantine">为什么？</a> · <b>Intel Mac：</b>不支持本地后端——<a href="docs/install/macos.md">详情</a>。</sub>
 </div>
 
 选择你的操作系统，按指南从头到尾操作：
@@ -129,7 +114,7 @@
 - 🍎 **macOS** — [docs/install/macos.md](docs/install/macos.md)
 - 🪟 **Windows** — [docs/install/windows.md](docs/install/windows.md)
 - 🐧 **Linux** — [docs/install/linux.md](docs/install/linux.md)
-- 🐳 **Docker** — [docs/install/docker.md](docs/install/docker.md) · [Docker Hub: `palashdeb/omnivoice-studio`](https://hub.docker.com/r/palashdeb/omnivoice-studio)
+- 🐳 **Docker** — [docs/install/docker.md](docs/install/docker.md)
 
 觉得慢？[docs/performance.md](docs/performance.md) 讲清了生成时间到底花在哪里、有哪些调优开关，以及“它变慢了”的三个经典原因。
 
@@ -181,13 +166,6 @@ Hugging Face Token 的配置见
 
 专业级语音 AI，去掉订阅，也去掉云端。
 
-<div align="center">
-  <br/>
-  <b>心动了？来和我们一起构建吧。</b><br/>
-  <a href="https://discord.gg/bzQavDfVV9"><img src="https://img.shields.io/badge/Join_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入 Discord" /></a>
-  <br/><br/>
-</div>
-
 ---
 
 ## 🖥️ 系统要求
@@ -205,10 +183,10 @@ Hugging Face Token 的配置见
 > 对于显存 **≤8 GB** 的 GPU，VoiceStudio 会在转录期间自动将 TTS 卸载到 CPU——无需配置。不需要专用 GPU；整条流水线都可以在 CPU 上运行（只是慢一些）。
 
 > [!NOTE]
-> **AMD GPU：** ROCm 加速**仅限 Linux 且需手动开启**——在首次运行的设置界面选择 **“AMD GPU (ROCm)”**，或设置 `OMNIVOICE_TORCH_VARIANT=rocm`（[docs/install/linux.md](docs/install/linux.md#amd-gpu-rocm)）。在 **Docker/Podman** 中请改用专门的 ROCm 镜像：`ghcr.io/debpalash/omnivoice-studio:rocm`（[docs/install/docker.md](docs/install/docker.md#pull-and-run-amd-gpu--rocm)）。**在 Windows 上，AMD GPU（含 Ryzen AI 核显）只能以 CPU 运行**：PyTorch 没有 Windows 版 ROCm 轮子，因此 Windows 上的 GPU 加速仅限 NVIDIA/CUDA（[docs/install/windows.md](docs/install/windows.md#gpu-support)）。
+> **AMD GPU：** ROCm 加速**仅限 Linux 且需手动开启**——在首次运行的设置界面选择 **“AMD GPU (ROCm)”**，或设置 `OMNIVOICE_TORCH_VARIANT=rocm`（[docs/install/linux.md](docs/install/linux.md#amd-gpu-rocm)）。在 **Docker/Podman** 中请参见 [docs/install/docker.md](docs/install/docker.md)。**在 Windows 上，AMD GPU（含 Ryzen AI 核显）只能以 CPU 运行**：PyTorch 没有 Windows 版 ROCm 轮子，因此 Windows 上的 GPU 加速仅限 NVIDIA/CUDA（[docs/install/windows.md](docs/install/windows.md#gpu-support)）。
 
 > [!IMPORTANT]
-> **macOS Intel（x86_64）不支持本地后端：** 应用 UI 可以安装，但 Python 后端无法运行，因为 PyTorch 已不再发布 Intel Mac 轮子（[#889](https://github.com/debpalash/VoiceStudio/issues/889)）。Intel Mac 用户仍可让 UI 指向另一台机器上的远程后端——参见 [docs/install/macos.md](docs/install/macos.md)。
+> **macOS Intel（x86_64）不支持本地后端：** 应用 UI 可以安装，但 Python 后端无法运行，因为 PyTorch 已不再发布 Intel Mac 轮子。Intel Mac 用户仍可让 UI 指向另一台机器上的远程后端——参见 [docs/install/macos.md](docs/install/macos.md)。
 
 <a id="tts-engines"></a>
 
@@ -331,16 +309,15 @@ print(result.text)
 
 ### 📓 在 Google Colab 上运行
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/debpalash/VoiceStudio/blob/main/notebooks/VoiceStudio_Studio_Colab.ipynb)
-
-没有本地 GPU？官方笔记本（[notebooks/VoiceStudio_Studio_Colab.ipynb](notebooks/VoiceStudio_Studio_Colab.ipynb)）可在免费的 Colab T4 上启动完整应用（包含 Web 界面）：在笔记本内直接构建前端，用 uv 安装后端（复用 Colab 预装的 CUDA PyTorch），并通过 Colab 内置端口代理打开界面。无需第三方隧道，也无需任何 API 密钥。随后还有一套覆盖全部主要功能的 API 导览，全部可在笔记本内直接播放：多语言 TTS、声音克隆与声音设计、已保存的声音档案、语音转写、AI 水印检测、OpenAI 兼容 API、多角色故事、带章节的 m4b 有声书，以及一个附带人声分离音轨的迷你视频配音。
+没有本地 GPU？笔记本（[notebooks/VoiceStudio_Studio_Colab.ipynb](notebooks/VoiceStudio_Studio_Colab.ipynb)）可在免费的 Colab T4 上启动完整应用（包含 Web 界面）：在笔记本内直接构建前端，用 uv 安装后端（复用 Colab 预装的 CUDA PyTorch），并通过 Colab 内置端口代理打开界面。无需第三方隧道，也无需任何 API 密钥。随后还有一套覆盖全部主要功能的 API 导览，全部可在笔记本内直接播放：多语言 TTS、声音克隆与声音设计、已保存的声音档案、语音转写、AI 水印检测、OpenAI 兼容 API、多角色故事、带章节的 m4b 有声书，以及一个附带人声分离音轨的迷你视频配音。
 
 ### 🤝 智能体技能（Agent Skills）
 
 用一条命令教会你的 AI 智能体（Claude Code、Cursor、Codex 等）使用 VoiceStudio：
 
 ```sh
-npx skills add debpalash/omnivoice-studio
+# 从你的仓库或本地添加技能：
+npx skills add <your-username>/omnivoice-studio
 ```
 
 内含两个 [skills](https://skills.sh)：**`omnivoice`**——让任何智能体通过你的本地安装进行语音合成与转录（包括你克隆的声音），免费且离线；以及 **`oss-maintainer`**——本项目所遵循的维护者方法论，适合任何用智能体运营自己开源项目的人。
@@ -387,82 +364,6 @@ npx skills add debpalash/omnivoice-studio
 
 ---
 
-<a id="sponsor--donate"></a>
-
-## 💜 赞助 / 捐赠
-
-VoiceStudio 由一位开发者使用 Claude Code 和 AI 智能体独立打造——而智能体账单是实打实的（过去三个月花了数千美元）。如果 VoiceStudio 为你创造了价值，帮忙分担一小部分账单，就能让开发保持全职推进。
-
-<div align="center">
-
-**本月智能体账单基金**
-
-<img src="https://img.shields.io/badge/raised_%2410_of_%24200-5%25-EAB308?style=for-the-badge" alt="已筹 $10 / $200" />
-
-<br/><br/>
-
-<a href="https://ko-fi.com/debpalash"><img src="https://img.shields.io/badge/Ko--fi-Support_❤️-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi" /></a>
-&nbsp;&nbsp;
-<a href="https://paypal.me/palashCoder"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="PayPal" /></a>
-
-<br/>
-<sub>每一美元都直接用于支付智能体账单——让 VoiceStudio 的开发持续不断。</sub>
-
-<br/><br/>
-
-<sub><b>来自 VoiceStudio 作者的更多应用</b>——同样的本地优先理念：
-<a href="https://github.com/debpalash/Opal"><b>Opal</b> 💠</a>（播放一切——AI 时代的媒体播放器）·
-<a href="https://github.com/debpalash/memxt"><b>memxt</b> 🧠</a>（Claude Code 与编码智能体的本地记忆）。
-给它们点个 ⭐ 也是一种支持 → <a href="#more-from-the-maker">详见下文</a>。</sub>
-
-</div>
-
-<a id="sponsors"></a>
-
-### 🌟 赞助商
-
-VoiceStudio **免费**且采用 **AGPL-3.0** 许可——没有付费版，没有 SaaS 收入。赞助商让开发得以持续，作为回报，可以在这里、在应用内（顶级档位还包括项目官网）获得一个徽标位。这是一份感谢，绝不是付费墙。**[查看档位并成为赞助商 →](SPONSORS.md)**
-
-<div align="center">
-
-<!-- SPONSORS:START — logo slots are filled here as sponsors come aboard; see SPONSORS.md -->
-
-**这里可以是你的徽标** — [成为赞助商](SPONSORS.md)
-
-<!-- SPONSORS:END -->
-
-</div>
-
-<sub>💡 GitHub 也会在本仓库顶部显示一个 **Sponsor** 按钮，经由 <a href=".github/FUNDING.yml"><code>.github/FUNDING.yml</code></a> 指向相同的链接。</sub>
-
----
-
-## 💬 社区
-
-<div align="center">
-  <a href="https://discord.gg/bzQavDfVV9"><img src="https://img.shields.io/badge/💬_Discord-Join_Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="加入 Discord" /></a>
-  <br/>
-  <sub>设置类问题我们几小时内就会回复，而不是几天。</sub>
-</div>
-
-<details>
-<summary><b>里面都在聊什么</b></summary>
-
-<br/>
-
-| 频道 | 那里发生什么 |
-|---------|--------------------|
-| `#announcements` | 发布消息与重大时刻——新版本最先在这里公布 |
-| `#releases` + `#changelog` | 每一个构建，以及里面究竟有什么 |
-| `#issues` | 以论坛帖子形式提交的 Bug 报告——直接分诊进 GitHub Issues |
-| `#ideas` | 功能请求，供讨论与投票 |
-| `#discuss-ideas` | 动手之前的设计讨论 |
-| `#general` | 安装帮助、GPU 疑难排查，以及晒你的配音成果 |
-
-</details>
-
----
-
 <a id="contributing"></a>
 
 ## 🤝 参与贡献
@@ -470,8 +371,6 @@ VoiceStudio **免费**且采用 **AGPL-3.0** 许可——没有付费版，没�
 非常欢迎——Bug 修复、新的 TTS 引擎适配器、UI 改进、文档、翻译。统统欢迎。
 
 - 📖 阅读 **[贡献指南](.github/CONTRIBUTING.md)** 了解环境搭建、代码风格和 PR 工作流
-- 🐛 浏览 [good first issues](https://github.com/debpalash/VoiceStudio/labels/good%20first%20issue)
-- 💬 加入我们的 [Discord](https://discord.gg/bzQavDfVV9) 讨论想法或寻求帮助
 
 ---
 
@@ -494,7 +393,7 @@ VoiceStudio **免费**且采用 **AGPL-3.0** 许可——没有付费版，没�
 <details>
 <summary><b>能在 Apple Silicon（M1/M2/M3/M4）上运行吗？</b></summary>
 <br/>
-可以。MPS 加速会被自动检测。在 Apple 硬件上，MLX 优化的 Whisper 模型可提供更快的转录速度。<b>不支持 Intel Mac</b>：应用 UI 可以安装，但本地 Python 后端无法运行，因为 PyTorch 已不再发布 Intel Mac 轮子（<a href="https://github.com/debpalash/VoiceStudio/issues/889">#889</a>）——Intel Mac 只能配合远程后端使用。
+可以。MPS 加速会被自动检测。在 Apple 硬件上，MLX 优化的 Whisper 模型可提供更快的转录速度。<b>不支持 Intel Mac</b>：应用 UI 可以安装，但本地 Python 后端无法运行，因为 PyTorch 已不再发布 Intel Mac 轮子——Intel Mac 只能配合远程后端使用。
 </details>
 
 <details>
@@ -545,8 +444,6 @@ VoiceStudio 是基于 [**GNU Affero 通用公共许可证 v3.0（AGPL-3.0）**](
 
 **可免费用于任何用途——包括商业和企业内部用途。** 运行它、出售用它生成的音频、为自己或客户的视频配音、在团队中推广——全部免费，无需许可证。作为一份**网络著佐权（copyleft）**许可证，AGPL 增加了一项义务：如果你**修改**了 VoiceStudio 并通过网络向他人提供该修改版本，你必须依据相同的 AGPL-3.0 条款向他们提供该修改版本的完整对应源代码。
 
-希望将 VoiceStudio 嵌入**闭源或专有**产品或服务、又不受 AGPL-3.0 著佐权义务约束的组织，可获取**商业许可证**。**定价方案即将推出。** 咨询：**VoiceStudio@palash.dev**。
-
 捆绑的 `omnivoice/` TTS 模型（作者 Han Zhu）在上游仍为 Apache-2.0 许可。完整且具约束力的条款请参见 [`LICENSE`](LICENSE)。
 
 ---
@@ -567,60 +464,3 @@ VoiceStudio 站在这些杰出开源工作的肩膀上：
 | [**Supertone / Supertonic 3**](https://huggingface.co/Supertone/supertonic-3) | ONNX TTS 引擎——31 种语言，CPU 高效 |
 | [**Sherpa-ONNX**](https://github.com/k2-fsa/sherpa-onnx) | 支持 WASM 的通用 TTS/ASR 运行时 |
 | [**GPT-SoVITS**](https://github.com/RVC-Boss/GPT-SoVITS) | 零样本 TTS 引擎——5 种语言，RTF 0.014 |
-
----
-
-<a id="more-from-the-maker"></a>
-
-## 🧰 来自同一作者的更多本地开源项目
-
-喜欢这种本地优先的理念？它是一脉相承的——同一位作者，同一条准则：**你的数据只留在你的设备上。**
-
-<table>
-<tr>
-<td align="center" width="50%" valign="top">
-  <br/>
-  <a href="https://github.com/debpalash/Opal"><img src="https://raw.githubusercontent.com/debpalash/Opal/main/assets/opal_logo.png" width="96" alt="Opal 徽标"/></a>
-  <h3><a href="https://github.com/debpalash/Opal">Opal 💠</a></h3>
-  <p><b>播放一切。</b>AI 时代的媒体播放器。</p>
-  <p><sub>视频、动漫、漫画、种子、Jellyfin 和 Plex——一个播放器全部搞定，并内置本地 AI 记忆与上下文。使用 Zig 编写，支持 macOS 和 Windows。</sub></p>
-  <p>
-    <a href="https://github.com/debpalash/Opal/stargazers"><img src="https://img.shields.io/github/stars/debpalash/Opal?style=flat-square&color=f59e0b" alt="Opal Star 数"/></a>
-    <a href="https://palash.dev/opal"><img src="https://img.shields.io/badge/site-palash.dev%2Fopal-8b5cf6?style=flat-square" alt="Opal 官网"/></a>
-  </p>
-</td>
-<td align="center" width="50%" valign="top">
-  <br/>
-  <a href="https://github.com/debpalash/memxt"><img src="https://raw.githubusercontent.com/debpalash/memxt/main/assets/logo-mark.svg" width="96" alt="memxt 徽标"/></a>
-  <h3><a href="https://github.com/debpalash/memxt">memxt 🧠</a></h3>
-  <p><b>经基准测试验证的最快开源 AI 记忆系统。</b></p>
-  <p><sub>为 Claude Code 和编码智能体提供本地长期记忆——基于 SQLite + 嵌入向量的 MCP 服务器，100% 在你的设备上运行。你的智能体终于能记住昨天了。</sub></p>
-  <p>
-    <a href="https://github.com/debpalash/memxt/stargazers"><img src="https://img.shields.io/github/stars/debpalash/memxt?style=flat-square&color=f59e0b" alt="memxt Star 数"/></a>
-    <a href="https://github.com/debpalash/memxt#readme"><img src="https://img.shields.io/badge/docs-README-10b981?style=flat-square" alt="memxt 文档"/></a>
-  </p>
-</td>
-</tr>
-</table>
-
----
-
-<div align="center">
-
-<br/>
-
-如果你读到了这里，你就是我们的同路人。<br/>
-**[⭐ 给这个仓库点个 Star](https://github.com/debpalash/VoiceStudio)**，让更多人能找到它。<br/>
-**[💬 加入 Discord](https://discord.gg/bzQavDfVV9)**，分享你的作品。<br/>
-**[❤️ 支持开发](https://ko-fi.com/debpalash)**——资助让 VoiceStudio 持续发布的 AI 智能体账单。
-
-<br/>
-
-  <a href="https://star-history.com/#debpalash/VoiceStudio&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=debpalash/VoiceStudio&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=debpalash/VoiceStudio&type=Date" />
-      <img alt="Star 历史" src="https://api.star-history.com/svg?repos=debpalash/VoiceStudio&type=Date&theme=dark" width="600" />
-    </picture>
-  </a>
-</div>

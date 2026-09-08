@@ -1,9 +1,7 @@
 # These are supported funding model platforms
-# GitHub Sponsors isn't set up for this account — fund via Ko-fi or PayPal.
+# Set your own funding channels here if desired.
 
-ko_fi: debpalash
-custom:
-  - "https://paypal.me/palashCoder"
-  - "https://github.com/debpalash/VoiceStudio/blob/main/SPONSORS.md"
-# github: [debpalash]            # not available
-# open_collective: omnivoice-studio
+# github: [your-username]
+# ko_fi: your-kofi-id
+# custom:
+#   - "https://your-donation-link"
