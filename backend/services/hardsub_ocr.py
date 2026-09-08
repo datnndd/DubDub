@@ -15,9 +15,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import struct
 import subprocess
 import sys
+import tempfile
+import threading
 from typing import Callable, Optional
 
 logger = logging.getLogger("omnivoice.hardsub_ocr")
@@ -98,8 +101,12 @@ def run_ocr_client(
     band_top: float = 0.55,
     crop: Optional[dict] = None,
     refine_fps: float = 10.0,
+    refine: bool = False,
     text_score: float = DEFAULT_TEXT_SCORE,
     progress_cb: Optional[Callable[[dict], None]] = None,
+    cancelled: Optional[Callable[[], bool]] = None,
+    model_id: str = "rapidocr",
+    checkpoint_path: Optional[str] = None,
 ) -> list[dict]:
     """Run the OCR sidecar over one video; return [{start, end, text}].
 
@@ -109,15 +116,58 @@ def run_ocr_client(
     from engines.hardsub_ocr.bootstrap import (
         HARDSUB_OCR_SIDECAR_SCRIPT,
         resolve_hardsub_ocr_venv,
+        resolve_paddle_ocr_venv,
     )
 
-    python = str(resolve_hardsub_ocr_venv())
+    if model_id not in ("rapidocr", "paddleocr"):
+        raise ValueError(f"Unsupported OCR model: {model_id}")
+    if cancelled and cancelled():
+        raise RuntimeError("hardsub OCR cancelled")
+    if progress_cb:
+        progress_cb({"stage": "bootstrap", "percent": None, "model_id": model_id})
+    python = str(resolve_paddle_ocr_venv() if model_id == "paddleocr" else resolve_hardsub_ocr_venv())
+    if cancelled and cancelled():
+        raise RuntimeError("hardsub OCR cancelled")
     script = str(HARDSUB_OCR_SIDECAR_SCRIPT)
     proc = subprocess.Popen(
         [python, script],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
+    finished = threading.Event()
+    work_dir = None
+
+    def terminate_tree():
+        # ffmpeg sampling/refinement is a child of the sidecar. Reap it too
+        # so cancelling a long scan cannot leave frame extraction running.
+        import psutil
+
+        try:
+            children = psutil.Process(proc.pid).children(recursive=True)
+        except psutil.Error:
+            children = []
+        for child in reversed(children):
+            try:
+                child.kill()
+            except psutil.Error:
+                pass
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+        psutil.wait_procs(children, timeout=5)
+
+    def stop_on_cancel():
+        while not finished.wait(0.1):
+            if cancelled():
+                terminate_tree()
+                return
+
+    watcher = None
+    if cancelled is not None:
+        watcher = threading.Thread(target=stop_on_cancel, daemon=True)
+        watcher.start()
     try:
         send = lambda obj: (  # noqa: E731
             proc.stdin.write(struct.pack("!I", len(json.dumps(obj, separators=(",", ":")).encode()))),
@@ -127,6 +177,8 @@ def run_ocr_client(
 
         def recv():
             header = proc.stdout.read(4)
+            if cancelled is not None and cancelled():
+                raise RuntimeError("hardsub OCR cancelled")
             if len(header) < 4:
                 return None
             (n,) = struct.unpack("!I", header)
@@ -135,9 +187,12 @@ def run_ocr_client(
         ready = recv()
         if not ready or ready.get("op") != "ready":
             raise RuntimeError("hardsub OCR sidecar failed its handshake")
+        work_dir = tempfile.mkdtemp(prefix="hardsub_ocr_")
         send({"op": "ocr_video", "video_path": video_path, "fps": fps,
               "band_top": band_top, "text_score": text_score,
-              "crop": crop, "refine_fps": refine_fps})
+              "crop": crop, "refine_fps": refine_fps, "refine": refine,
+              "out_dir": work_dir, "model_id": model_id,
+              "checkpoint_path": checkpoint_path})
         while True:
             msg = recv()
             if msg is None:
@@ -153,6 +208,9 @@ def run_ocr_client(
                     f"hardsub OCR failed ({msg.get('stage')}): {msg.get('message')}"
                 )
     finally:
+        finished.set()
+        if watcher is not None:
+            watcher.join(timeout=6)
         try:
             proc.stdin.write(struct.pack("!I", len(b'{"op":"shutdown"}')) + b'{"op":"shutdown"}')
             proc.stdin.flush()
@@ -161,7 +219,16 @@ def run_ocr_client(
         try:
             proc.wait(timeout=10)
         except Exception:
+            terminate_tree()
             proc.kill()
+            proc.wait(timeout=10)
+        for pipe in (proc.stdin, proc.stdout):
+            try:
+                pipe.close()
+            except OSError:
+                pass  # A terminated Windows pipe can fail its final flush.
+        if work_dir is not None:
+            shutil.rmtree(work_dir, ignore_errors=True)
 
 
 __all__ = [

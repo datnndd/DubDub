@@ -575,6 +575,7 @@ function App() {
     handleDubImportSrt,
   handleHardsubExtract,
   hardsubRunning,
+  hardsubProgress,
   } = useDubWorkflow({
     loadProjects,
     loadProfiles,
@@ -1636,6 +1637,7 @@ function App() {
                     handleDubImportSrt={handleDubImportSrt}
               handleHardsubExtract={handleHardsubExtract}
               hardsubRunning={hardsubRunning}
+              hardsubProgress={hardsubProgress}
                     triggerDownload={triggerDownload}
                     fileToMediaUrl={fileToMediaUrl}
                     editSegments={editSegments}

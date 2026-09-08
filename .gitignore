@@ -155,6 +155,10 @@ playwright-report/
 # probe — generated HTML reports
 tests/probe/reports/
 
+# OCR benchmark and test scratch (generated locally; results are summarized in docs)
+/.ocr-*/
+/.pytest-ocr-*/
+
 # Local architecture/planning scratch (goal docs, review briefs, council
 # reports). Working notes for whoever is driving a change, not a repo artifact.
 /remote/

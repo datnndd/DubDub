@@ -131,6 +131,8 @@ _unregister_proc   = dub_pipeline.unregister_proc
 _kill_job_procs    = dub_pipeline.kill_job_procs
 _get_job           = dub_pipeline.get_job
 _save_job          = dub_pipeline.save_job
+prep_event         = dub_pipeline.prep_event
+_prep_event        = dub_pipeline.prep_event
 
 # Pasted subtitle text is a transcript, not a media file: a feature-length
 # film's .srt is ~150 KB. 2 MB of characters is ~13x the worst realistic case
@@ -258,6 +260,13 @@ async def dub_import_srt(job_id: str, file: UploadFile = File(...)):
     }
 
 
+@router.get("/dub/hardsub-models")
+def dub_hardsub_models():
+    from engines.hardsub_ocr.bootstrap import describe_ocr_models
+
+    return {"models": describe_ocr_models()}
+
+
 @router.post("/dub/hardsub-extract/{job_id}")
 async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
     """Extract subtitles already present in the job's video (soft-sub or
@@ -270,9 +279,26 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
     ``/tasks/stream/{task_id}``, final event ``hardsub_done`` carrying the
     new segments)."""
     job = _get_job(job_id)
+    job_dir = _safe_job_dir(job_id)
+    if not job and job_dir and os.path.isdir(job_dir):
+        video_path = next(
+            (os.path.join(job_dir, f) for f in os.listdir(job_dir)
+             if f.startswith("original.")),
+            None,
+        )
+        if video_path:
+            job = {
+                "video_path": video_path,
+                "filename": os.path.basename(video_path),
+                "duration": 0.0,
+                "segments": None,
+                "dubbed_tracks": {},
+            }
+            _save_job(job_id, job)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    job_dir = _safe_job_dir(job_id)
+    if not job_dir or not os.path.isdir(job_dir):
+        raise HTTPException(status_code=404, detail="Job directory not found")
     video_path = next(
         (os.path.join(job_dir, f) for f in os.listdir(job_dir)
          if f.startswith("original.")),
@@ -290,11 +316,9 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
         from services.srt_parser import parse_srt
         result = parse_srt(srt_text)
         if not result.segments:
-            raise HTTPException(
-                status_code=400,
-                detail="No usable subtitle cues were found in this video.",
-            )
-        duration = float(job.get("duration") or 0.0)
+            raise RuntimeError("No usable subtitle cues were found in this video.")
+        latest_job = _get_job(job_id) or job
+        duration = float(latest_job.get("duration") or 0.0)
         clamped = 0
         kept = []
         for seg in result.segments:
@@ -305,8 +329,10 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
                 clamped += 1
             kept.append(seg)
         segments = [{**s, "id": i} for i, s in enumerate(kept)]
-        job["segments"] = segments
-        _save_job(job_id, job)
+        if not segments:
+            raise RuntimeError("No usable subtitle cues were found in this video.")
+        latest_job["segments"] = segments
+        _save_job(job_id, latest_job)
         logger.info(
             "hardsub-extract: %d cue(s) for job %s (clamped=%d)",
             len(segments), log_safe(job_id), clamped,
@@ -322,10 +348,11 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
             subs = []
         if subs:
             idx = req.soft_index if req.soft_index is not None else 0
-            if idx >= len(subs):
+            if idx < 0 or idx >= len(subs):
                 idx = 0
             try:
-                srt_text = hso.extract_soft_subtitle(video_path, subs[idx]["index"])
+                # The service maps 0:s:N (subtitle ordinal), not 0:N.
+                srt_text = hso.extract_soft_subtitle(video_path, idx)
             except Exception as e:
                 if req.mode == "soft":
                     raise HTTPException(
@@ -336,7 +363,7 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
             if srt_text:
                 result = _apply(srt_text)
                 with open(os.path.join(job_dir, "hardsub.srt"), "w", encoding="utf-8-sig") as _f:
-                    _f.write(srt_text)
+                    _f.write(hso.build_srt(result["segments"]))
                 return result
         if req.mode == "soft":
             raise HTTPException(
@@ -349,31 +376,87 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
     task_id = f"hardsub_{job_id}"
     loop = asyncio.get_running_loop()
 
-    async def _hardsub_gen() -> "AsyncIterator[str]":
+    async def _hardsub_gen():
+        import threading
+
         queue: asyncio.Queue = asyncio.Queue()
+        cancel_event = threading.Event()
+        ocr_task = None
 
         def _progress(msg: dict) -> None:
             loop.call_soon_threadsafe(
                 queue.put_nowait,
-                prep_event("hardsub_progress",
-                           frames_done=msg.get("frames_done"),
-                           frames_total=msg.get("frames_total"),
-                           percent=msg.get("percent")),
+                _prep_event("hardsub_progress",
+                            stage=msg.get("stage", "ocr"),
+                            frames_done=msg.get("frames_done"),
+                            frames_total=msg.get("frames_total"),
+                            percent=msg.get("percent"),
+                            elapsed_seconds=msg.get("elapsed_seconds"),
+                            eta_seconds=msg.get("eta_seconds"),
+                            video_time=msg.get("video_time"),
+                            current_text=msg.get("current_text"),
+                            ocr_calls=msg.get("ocr_calls"),
+                            decoded_frames=msg.get("decoded_frames"),
+                            skipped_frames=msg.get("skipped_frames"),
+                            cache_hits=msg.get("cache_hits"),
+                            model_id=req.model_id),
             )
 
-        yield prep_event("hardsub_start", fps=req.fps, mode="ocr")
-        cues = await asyncio.to_thread(
-            hso.run_ocr_client, video_path,
-            fps=req.fps, band_top=req.band_top, text_score=req.text_score,
-            crop=req.crop, refine_fps=req.refine_fps,
-            progress_cb=_progress,
-        )
-        srt_text = hso.build_srt(cues)
-        result = _apply(srt_text)
-        # Đầu ra SRT độc lập: artifact trong job dir cho endpoint tải xuống.
-        with open(os.path.join(job_dir, "hardsub.srt"), "w", encoding="utf-8-sig") as _f:
-            _f.write(srt_text)
-        yield prep_event("hardsub_done", **result)
+        yield _prep_event("hardsub_start", fps=req.fps, mode="ocr", model_id=req.model_id)
+        try:
+            ocr_future = asyncio.to_thread(
+                hso.run_ocr_client, video_path,
+                fps=req.fps, band_top=req.band_top, text_score=req.text_score,
+                crop=req.crop, refine_fps=req.refine_fps, refine=req.refine,
+                model_id=req.model_id,
+                checkpoint_path=os.path.join(os.path.dirname(video_path), "hardsub_ocr.checkpoint.json"),
+                progress_cb=_progress,
+                cancelled=lambda: cancel_event.is_set() or task_manager.is_cancelled(task_id),
+            )
+            ocr_task = asyncio.create_task(ocr_future)
+
+            while not ocr_task.done():
+                if task_manager.is_cancelled(task_id):
+                    cancel_event.set()
+                    yield _prep_event("cancelled")
+                    return
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=0.25)
+                    yield event
+                except asyncio.TimeoutError:
+                    continue
+
+            # Drain any remaining progress events
+            while not queue.empty():
+                yield queue.get_nowait()
+
+            cues = await ocr_task
+            if task_manager.is_cancelled(task_id):
+                yield _prep_event("cancelled")
+                return
+            srt_text = hso.build_srt(cues)
+            yield _prep_event("hardsub_progress", stage="saving", percent=None)
+            if task_manager.is_cancelled(task_id):
+                yield _prep_event("cancelled")
+                return
+            result = _apply(srt_text)
+            # Đầu ra SRT độc lập: artifact trong job dir cho endpoint tải xuống.
+            with open(os.path.join(job_dir, "hardsub.srt"), "w", encoding="utf-8-sig") as _f:
+                _f.write(hso.build_srt(result["segments"]))
+            yield _prep_event("hardsub_done", **result)
+        except Exception as e:
+            if task_manager.is_cancelled(task_id):
+                yield _prep_event("cancelled")
+                return
+            logger.error("hardsub OCR error for job %s: %s", log_safe(job_id), log_safe(e))
+            yield _prep_event("error", message=str(e), reason=str(e))
+        finally:
+            cancel_event.set()
+            if ocr_task is not None:
+                if not ocr_task.done():
+                    ocr_task.cancel()
+                # Consume completion even when the generator is closed early.
+                await asyncio.gather(ocr_task, return_exceptions=True)
         return
 
     await task_manager.add_task(task_id, "hardsub", _hardsub_gen)
@@ -599,6 +682,16 @@ async def dub_upload(
         f.write(await video.read())
 
     filename = video.filename or f"video{ext}"
+    initial_job = {
+        "video_path": video_path,
+        "filename": filename,
+        "input_type": input_type,
+        "duration": 0.0,
+        "segments": None,
+        "dubbed_tracks": {},
+    }
+    _save_job(job_id, initial_job)
+
     task_id = f"prep_{job_id}"
     await task_manager.add_task(
         task_id, "prep",

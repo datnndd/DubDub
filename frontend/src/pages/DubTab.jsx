@@ -11,6 +11,7 @@ import ExportModal from '../components/ExportModal';
 import DubPipelineStepper from '../components/dub/DubPipelineStepper';
 import IdleSkeleton from '../components/dub/IdleSkeleton';
 import HardsubRegionDialog from '../components/dub/HardsubRegionDialog';
+import OcrPrepareReview from '../components/dub/OcrPrepareReview';
 import DubHeader from '../components/dub/DubHeader';
 import DubLeftColumn from '../components/dub/DubLeftColumn';
 import DubRightColumn from '../components/dub/DubRightColumn';
@@ -138,13 +139,15 @@ export default function DubTab(props) {
   const autoVoiceClone = useAppStore((s) => s.autoVoiceClone);
   const setAutoVoiceClone = useAppStore((s) => s.setAutoVoiceClone);
 
+  const [ocrReview, setOcrReview] = useState(null);
   const showIdleSkeleton = !(
     dubJobId &&
-    (dubStep === 'editing' || dubStep === 'generating' || dubStep === 'done')
+    (dubStep === 'prepare' || dubStep === 'editing' || dubStep === 'generating' || dubStep === 'done')
   );
   // Hardsub OCR dialog — dùng chung Landing/Prepare và Editing.
   const [ocrDialogOpen, setOcrDialogOpen] = useState(false);
   const [ocrResult, setOcrResult] = useState(null);
+  const handleOpenOcrDialog = useCallback(() => setOcrDialogOpen(true), []);
   // Imperative handle to the post-job waveform so the transcript table can
   // seek the player when the user clicks a row.
   const waveformRef = useRef(null);
@@ -714,7 +717,7 @@ export default function DubTab(props) {
           handleInstallMissingAsr={handleInstallMissingAsr}
           handleDubRetryTranscribe={handleDubRetryTranscribe}
           handleDubImportSrt={handleDubImportSrt}
-          onOpenHardsubDialog={() => setOcrDialogOpen(true)}
+          onOpenHardsubDialog={handleOpenOcrDialog}
           hardsubRunning={hardsubRunning}
           dubLocalBlobUrl={dubLocalBlobUrl}
           dubPrepStage={dubPrepStage}
@@ -759,15 +762,39 @@ export default function DubTab(props) {
         jobId={dubJobId}
         videoUrl={dubLocalBlobUrl?.videoUrl}
         running={hardsubRunning}
+        progress={props.hardsubProgress}
+        hasExistingSegments={Boolean(dubSegments && dubSegments.length > 0)}
         result={ocrResult}
         onExtract={async (opts) => {
           setOcrResult(null);
-          const res = await handleHardsubExtract?.({ ...opts, file: dubVideoFile });
-          if (res && res.segments) setOcrResult({ ok: true, count: res.segments.length });
-          else if (res === undefined) setOcrResult({ error: t('dub_workflow.hardsub_failed') });
+          const res = await handleHardsubExtract?.({ ...opts, file: dubVideoFile, prepareReview: true });
+          if (res && res.segments) {
+            setOcrReview({ segments: res.segments, videoUrl: dubLocalBlobUrl?.videoUrl });
+            setOcrResult({ ok: true, count: res.segments.length });
+            setOcrDialogOpen(false);
+          } else if (res === undefined) {
+            setOcrResult({ error: t('dub_workflow.hardsub_failed') });
+          }
           return res;
         }}
+        onCancel={handleDubAbort}
       />
+
+      {dubStep === 'prepare' && ocrReview && (
+        <OcrPrepareReview
+          videoUrl={ocrReview.videoUrl || (dubJobId ? `${API}/dub/media/${dubJobId}` : undefined)}
+          segments={ocrReview.segments}
+          onContinue={(segments) => {
+            setDubSegments(segments);
+            setOcrReview(null);
+            setDubStep('editing');
+          }}
+          onRescan={() => {
+            setOcrReview(null);
+            setOcrDialogOpen(true);
+          }}
+        />
+      )}
 
       {/* ── After transcription: side-by-side editor ── */}
       {dubJobId && (dubStep === 'editing' || dubStep === 'generating' || dubStep === 'done') && (
@@ -831,8 +858,8 @@ export default function DubTab(props) {
               dubInstruct={dubInstruct}
               setDubInstruct={setDubInstruct}
               handleTranslateAll={onTranslateClick}
-          onOpenHardsubDialog={onOpenHardsubDialog}
-          hardsubRunning={hardsubRunning}
+              onOpenHardsubDialog={handleOpenOcrDialog}
+              hardsubRunning={hardsubRunning}
               isTranslating={isTranslating}
               hasAnyTranslation={hasAnyTranslation}
               handleCleanupSegments={handleCleanupSegments}

@@ -183,8 +183,11 @@ export async function dubGenerate(jobId: string, body: Record<string, unknown>):
 export async function dubHardsubExtract(
   jobId: string,
   body: Record<string, unknown>,
-): Promise<{ task_id: string }> {
-  return apiPost<{ task_id: string }>(`/dub/hardsub-extract/${jobId}`, body);
+): Promise<
+  | { task_id: string }
+  | { segments: Array<{ id: number; start: number; end: number; text: string }>; stats: { imported: number; clamped: number } }
+> {
+  return apiPost(`/dub/hardsub-extract/${jobId}`, body);
 }
 
 export function tasksStreamUrl(taskId: string): string {

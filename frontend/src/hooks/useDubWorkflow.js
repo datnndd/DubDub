@@ -572,7 +572,7 @@ export default function useDubWorkflow({
         });
         await _waitForTranscribe(data.job_id, ctrl);
         setTranscribeStart(null);
-        setDubStep('editing');
+        setDubStep(opts.prepareReview ? 'prepare' : 'editing');
         useAppStore.getState().completePill(t('dub_workflow.transcription_complete'));
         loadProjects();
         loadProfiles();
@@ -785,16 +785,24 @@ export default function useDubWorkflow({
   const _waitForHardsub = useCallback(
     (taskId, ctrl) =>
       new Promise((resolve, reject) => {
-        const evt = new EventSource(tasksStreamUrl(taskId));
+        const onAbort = () => {
+          close();
+          Promise.resolve(tasksCancel(taskId)).catch(() => {});
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        };
+        let evt;
         const close = () => {
+          ctrl.signal.removeEventListener('abort', onAbort);
           try {
-            evt.close();
+            evt?.close();
           } catch {}
         };
-        ctrl.signal.addEventListener('abort', () => {
-          close();
-          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
-        }, { once: true });
+        if (ctrl.signal.aborted) {
+          onAbort();
+          return;
+        }
+        evt = new EventSource(tasksStreamUrl(taskId));
+        ctrl.signal.addEventListener('abort', onAbort, { once: true });
         evt.onmessage = (e) => {
           if (!e.data) return;
           let m;
@@ -804,11 +812,22 @@ export default function useDubWorkflow({
             return;
           }
           if (m.type === 'hardsub_progress') {
-            setHardsubProgress({
+            setHardsubProgress((prev) => ({
+              startedAt: prev?.startedAt,
+              stage: m.stage || 'ocr',
               framesDone: m.frames_done ?? null,
               framesTotal: m.frames_total ?? null,
               percent: typeof m.percent === 'number' ? m.percent : null,
-            });
+              elapsedSeconds: m.elapsed_seconds ?? null,
+              etaSeconds: m.eta_seconds ?? null,
+              videoTime: m.video_time ?? null,
+              currentText: m.current_text ?? '',
+              ocrCalls: m.ocr_calls ?? null,
+              decodedFrames: m.decoded_frames ?? null,
+              skippedFrames: m.skipped_frames ?? null,
+              cacheHits: m.cache_hits ?? null,
+              modelId: m.model_id ?? prev?.modelId,
+            }));
           } else if (m.type === 'hardsub_done') {
             close();
             resolve(m);
@@ -833,18 +852,30 @@ export default function useDubWorkflow({
       const ctrl = new AbortController();
       dubAbortCtrlRef.current = ctrl;
       setHardsubRunning(true);
+      setHardsubProgress({ stage: 'uploading', startedAt: Date.now(), modelId: opts.model_id || 'rapidocr' });
       setDubError('');
       try {
-        // OCR-first: the user picked a file but has not run ASR yet. Upload
-        // creates the job without starting transcription, so OCR acts as an
-        // alternative transcript source next to the Transcribe button.
-        let jobId = dubJobId;
-        if (!jobId) {
-          const file = opts.file || null;
-          if (!file) return;
+        const file = opts.file || null;
+        const currentStep = useAppStore.getState().dubStep;
+        const currentJobId = useAppStore.getState().dubJobId;
+        const currentSegments = useAppStore.getState().dubSegments;
+
+        // If at idle step, or no jobId, or a file is passed and we don't have segments yet:
+        // upload the video first so backend creates the job folder and prepares media.
+        const isIdle = currentStep === 'idle';
+        const needsUpload = isIdle || !currentJobId || (file && (!currentSegments || currentSegments.length === 0));
+
+        let jobId = currentJobId;
+
+        if (needsUpload) {
+          if (!file) {
+            toast.error(t('waveform.source_missing'));
+            return;
+          }
           const clientJobId = Math.random().toString(36).slice(2, 10);
           dubClientJobIdRef.current = clientJobId;
           setDubJobId(clientJobId);
+          setDubStep('uploading');
           const inputType = useAppStore.getState().dubInputType || 'video';
           useAppStore
             .getState()
@@ -857,50 +888,122 @@ export default function useDubWorkflow({
           setDubJobId(up.job_id);
           if (up.filename) setDubFilename(up.filename);
           setDubTaskId(up.task_id);
-          useAppStore.getState().dismissPill();
+          setDubPrepStage('extract');
+          useAppStore
+            .getState()
+            .showPill('loading-model', t('dub_workflow.extracting_audio_scenes'), {
+              cancellable: true,
+              homeMode: 'dub',
+            });
+          setHardsubProgress((prev) => ({ ...prev, stage: 'preparing' }));
+          const ready = await _waitForPrep(up.task_id, ctrl);
+          if (ready?.duration) setDubDuration(ready.duration);
+          setDubPrepStage(null);
         }
-        const data = await dubHardsubExtract(jobId, {
-          mode: opts.mode || 'auto',
-          fps: opts.fps || undefined,
-          crop: opts.crop || undefined,
-          refine_fps: opts.refine_fps || undefined,
-        });
-        const res = await _waitForHardsub(data.task_id, ctrl);
+
+        setDubStep('transcribing');
+        useAppStore
+          .getState()
+          .showPill('transcribing', t('dub.hardsub_running_hint'), {
+            cancellable: true,
+            homeMode: 'dub',
+          });
+
+        let data;
+        setHardsubProgress((prev) => ({ ...prev, stage: 'bootstrap' }));
+        try {
+          data = await dubHardsubExtract(jobId, {
+            mode: opts.mode || 'ocr',
+            fps: opts.fps || 2.0,
+            crop: opts.crop || undefined,
+            refine_fps: opts.refine_fps || undefined,
+            refine: opts.refine ?? false,
+            model_id: opts.model_id || 'rapidocr',
+          });
+        } catch (extractErr) {
+          // If 404 (e.g. stale jobId from restored state) and we have a local file, upload and retry
+          if (
+            (extractErr?.status === 404 ||
+              extractErr?.message?.includes('404') ||
+              extractErr?.message?.toLowerCase().includes('not found')) &&
+            file
+          ) {
+            const clientJobId = Math.random().toString(36).slice(2, 10);
+            dubClientJobIdRef.current = clientJobId;
+            setDubJobId(clientJobId);
+            setDubStep('uploading');
+            const inputType = useAppStore.getState().dubInputType || 'video';
+            const up = await dubUpload(file, clientJobId, { signal: ctrl.signal, inputType });
+            jobId = up.job_id;
+            setDubJobId(up.job_id);
+            if (up.filename) setDubFilename(up.filename);
+            setDubTaskId(up.task_id);
+            await _waitForPrep(up.task_id, ctrl);
+            setDubPrepStage(null);
+            setDubStep('transcribing');
+            data = await dubHardsubExtract(jobId, {
+              mode: opts.mode || 'ocr',
+              fps: opts.fps || 2.0,
+              crop: opts.crop || undefined,
+              refine_fps: opts.refine_fps || undefined,
+              refine: opts.refine ?? false,
+              model_id: opts.model_id || 'rapidocr',
+            });
+          } else {
+            throw extractErr;
+          }
+        }
+
+        let res = data;
+        if (data.task_id) {
+          setDubTaskId(data.task_id);
+          res = await _waitForHardsub(data.task_id, ctrl);
+        }
         const segs = (res && res.segments) || [];
-        setDubSegments(
-          segs.map((s) => ({
-            ...s,
-            id: s.id != null ? String(s.id) : String(Math.random()),
-          })),
-        );
-        setDubStep('editing');
+        const normalizedSegments = segs.map((s) => ({
+          ...s,
+          id: s.id != null ? String(s.id) : String(Math.random()),
+        }));
+        if (!opts.prepareReview) setDubSegments(normalizedSegments);
+        setDubStep(opts.prepareReview ? 'prepare' : 'editing');
+        useAppStore.getState().completePill(t('dub_workflow.hardsub_done', { count: segs.length }));
         toast.success(t('dub_workflow.hardsub_done', { count: segs.length }), {
           duration: 6000,
         });
         loadProjects();
-        return res;
+        loadProfiles();
+        return { ...res, segments: normalizedSegments };
       } catch (err) {
+        setDubPrepStage(null);
         if (err.name === 'AbortError') {
           toast(t('dub.hardsub_cancelled'));
+          setDubStep(useAppStore.getState().dubSegments?.length ? 'editing' : 'idle');
+          useAppStore.getState().dismissPill();
         } else {
           setDubError(err?.message || t('dub_workflow.hardsub_failed'));
           toast.error(err?.message || t('dub_workflow.hardsub_failed'));
+          setDubStep(useAppStore.getState().dubSegments?.length ? 'editing' : 'idle');
+          useAppStore.getState().errorPill(err?.message || t('dub_workflow.hardsub_failed'));
         }
       } finally {
         setHardsubRunning(false);
+        setDubTaskId(null);
         dubAbortCtrlRef.current = null;
       }
     },
     [
-      dubJobId,
       setDubError,
       setDubSegments,
       setDubStep,
       setDubJobId,
       setDubFilename,
       setDubTaskId,
+      setDubPrepStage,
+      _waitForPrep,
+      _waitForHardsub,
+      setDubDuration,
       loadProjects,
-      t,
+      loadProfiles,
     ],
   );
 

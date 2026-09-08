@@ -5,6 +5,7 @@ import {
   AlertCircle,
   Sparkles,
   FileText,
+  ScanText,
   Loader,
   Users,
   UploadCloud,
@@ -363,7 +364,7 @@ export default function IdleSkeleton({
                       onClick={onOpenHardsubDialog}
                       disabled={hardsubRunning || dubStep !== 'idle'}
                       loading={hardsubRunning}
-                      leading={!hardsubRunning && <FileText size={13} />}
+                      leading={!hardsubRunning && <ScanText size={13} />}
                       title={t('dub.hardsub_title')}
                     >
                       {t('dub.hardsub_btn')}
@@ -442,6 +443,8 @@ export default function IdleSkeleton({
                       file.type.startsWith('audio/') ||
                       /\.(mp3|wav|flac|m4a|aac|ogg|opus|wma)$/i.test(file.name))
                   ) {
+                    useAppStore.getState().setDubJobId(null);
+                    useAppStore.getState().setDubSegments([]);
                     setDubVideoFile(file);
                     // #119: an audio file → audio-only dubbing (skip video work, output audio).
                     setDubInputType(
@@ -644,6 +647,8 @@ export default function IdleSkeleton({
             onChange={(e) => {
               const file = e.target.files[0];
               if (!file) return;
+              useAppStore.getState().setDubJobId(null);
+              useAppStore.getState().setDubSegments([]);
               setDubVideoFile(file);
               // #119: an audio file → audio-only dubbing (skip video work, output audio).
               setDubInputType(

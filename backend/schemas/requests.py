@@ -216,11 +216,16 @@ class HardsubExtractRequest(BaseModel):
     stream at ``soft_index`` only; ``ocr`` — always OCR (RapidOCR over
     sampled frames)."""
     mode: str = "auto"  # auto | soft | ocr
+    model_id: Literal["rapidocr", "paddleocr"] = "rapidocr"
     # Vùng OCR người dùng vẽ trên preview (0..1): {left, top, right, bottom}.
     # Không gửi → dải dưới mặc định (band_top).
     crop: Optional[dict] = None
+    fps: float = 2.0
+    band_top: float = 0.55
     refine_fps: float = 10.0
+    refine: bool = False
     text_score: float = 0.5
+    soft_index: Optional[int] = None
 
 
 class ParseSubtitleTextRequest(BaseModel):

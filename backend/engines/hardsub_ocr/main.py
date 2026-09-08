@@ -26,17 +26,24 @@ from __future__ import annotations
 import base64
 import difflib
 import json
+import math
 import os
 import shutil
 import struct
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 
 import numpy as np  # sidecar venv dependency (rapidocr pulls it) — hashing pass
 
 MAX_FRAME_BYTES = 64 * 1024 * 1024
+_THUMB_W = 24
+_THUMB_H = 8
+_CHANGE_THRESHOLD = 0.02
+_CONFIRM_EVERY = 4
+_LOW_CONFIDENCE = 0.65
 
 
 # ── wire protocol ─────────────────────────────────────────────────────────
@@ -72,49 +79,106 @@ def _norm_text(text: str) -> str:
     return "".join((text or "").split()).lower()
 
 
-def group_frames_to_cues(frames: list, fps: float, similarity: float = 0.8) -> list:
-    """Collapse per-frame OCR text into timed cues.
+def _clean_for_compare(text: str) -> str:
+    import re
+    t = re.sub(r"[^\w\s]", " ", (text or "").lower(), flags=re.UNICODE)
+    return " ".join(t.split())
 
-    ``frames`` is a list of ``{"i": <frame index>, "text": <str>}`` sorted by
-    index. Consecutive frames whose normalized text is similar (difflib ratio
-    >= ``similarity``) belong to one cue; the cue spans from the first to the
-    LAST matching frame (a subtitle shown for frames i..j ends at (j+1)/fps —
-    the next frame's timestamp — so a cue disappears exactly when the frame
-    that would contradict it appears). Empty-text frames close the current
-    cue (a blank frame means no subtitle on screen).
+
+def is_duplicate_or_similar(t1: str, t2: str, similarity: float = 0.75) -> bool:
+    """Kiểm tra xem 2 dòng transcript ở các giây liên tiếp có trùng lặp không."""
+    c1 = _clean_for_compare(t1)
+    c2 = _clean_for_compare(t2)
+    if not c1 or not c2:
+        return False
+    # Khớp chính xác
+    if c1 == c2:
+        return True
+    # Tỷ lệ tương đồng xâu (difflib)
+    ratio = difflib.SequenceMatcher(None, c1, c2).ratio()
+    if ratio >= similarity:
+        return True
+    # Chứa nhau (karaoke text hoặc OCR từng phần)
+    len1, len2 = len(c1), len(c2)
+    if len1 >= 4 and len2 >= 4:
+        if c1 in c2 or c2 in c1:
+            if min(len1, len2) / max(len1, len2) >= 0.65:
+                return True
+    # Trùng lặp từ vựng (Token Jaccard)
+    w1, w2 = set(c1.split()), set(c2.split())
+    if w1 and w2:
+        jaccard = len(w1 & w2) / len(w1 | w2)
+        if jaccard >= 0.70:
+            return True
+    return False
+
+
+def group_frames_to_cues(frames: list, fps: float, similarity: float = 0.75) -> list:
+    """Gom các khung OCR liên tiếp thành các cue phụ đề có mốc thời gian.
+
+    - Nếu 2 transcript ở các giây/khung liên tiếp trùng nhau (is_duplicate_or_similar):
+      không tạo segment mới, chỉ kéo dài thời gian kết thúc của cue hiện tại.
+    - Nếu không trùng: chốt cue trước và tạo mốc thời gian mới (start time mới).
+    - Khung trống sẽ chốt cue (có bộ đệm 1 khung chống chập chờn khi fps >= 1.8).
     """
     step = 1.0 / max(fps, 0.001)
     cues: list = []
     cur: dict | None = None
-    last_text = ""
+    gap_count = 0
+    max_gap_frames = 1 if fps >= 1.8 else 0
+
     for fr in frames:
         idx = int(fr.get("i") or 0)
         text = (fr.get("text") or "").strip()
         t0 = idx * step
+
         if not text:
             if cur:
-                cues.append(cur)
-                cur = None
-                last_text = ""
+                gap_count += 1
+                if gap_count > max_gap_frames:
+                    cues.append(cur)
+                    cur = None
+                    gap_count = 0
             continue
-        same = cur is not None and (
-            _norm_text(text) == _norm_text(last_text)
-            or difflib.SequenceMatcher(None, _norm_text(text), _norm_text(last_text)).ratio() >= similarity
-        )
-        if same and cur:
+
+        is_dup = False
+        if cur is not None:
+            is_dup = (
+                is_duplicate_or_similar(text, cur.get("_last_text") or "", similarity)
+                or is_duplicate_or_similar(text, cur.get("text") or "", similarity)
+            )
+
+        if is_dup and cur:
             cur["end"] = round((idx + 1) * step, 3)
             cur["_last_i"] = idx
+            cur["_last_text"] = text
+            if len(text) > len(cur["text"]) and is_duplicate_or_similar(text, cur["text"], 0.7):
+                cur["text"] = text
+            gap_count = 0
             continue
+
         if cur:
             cues.append(cur)
-        cur = {"start": round(t0, 3), "end": round((idx + 1) * step, 3),
-               "text": text, "_last_i": idx}
-        last_text = text
+        cur = {
+            "start": round(t0, 3),
+            "end": round((idx + 1) * step, 3),
+            "text": text,
+            "_last_i": idx,
+            "_last_text": text,
+        }
+        gap_count = 0
+
     if cur:
         cues.append(cur)
+
+    out: list = []
     for c in cues:
         c.pop("_last_i", None)
-    return cues
+        c.pop("_last_text", None)
+        if c.get("text") and len(c["text"].strip()) >= 1:
+            out.append(c)
+
+    return out
 
 
 # ── frame extraction + OCR (heavy imports inside) ─────────────────────────
@@ -214,7 +278,7 @@ def _crop_from(msg: dict) -> dict:
     if isinstance(crop, dict):
         try:
             left = max(0.0, min(float(crop.get("left") or 0.0), 0.98))
-            top = max(0.0, min(float(crop.get("top") or band_top), 0.98))
+            top = max(0.0, min(float(crop.get("top", band_top)), 0.98))
             right = max(left + 0.02, min(float(crop.get("right") or 1.0), 1.0))
             bottom = max(top + 0.02, min(float(crop.get("bottom") or 1.0), 1.0))
             return {"left": left, "top": top, "right": right, "bottom": bottom}
@@ -278,38 +342,72 @@ def _ahash(gray) -> int:
     return int.from_bytes(np.packbits(bits).tobytes(), "big")
 
 
+def _frame_thumbnail(path: str):
+    """Read a tiny normalized grayscale thumbnail for pre-inference gating."""
+    try:
+        import cv2
+        image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if image is None or image.size == 0:
+            return None
+        thumb = cv2.resize(image, (_THUMB_W, _THUMB_H), interpolation=cv2.INTER_AREA)
+        lo, hi = float(thumb.min()), float(thumb.max())
+        if hi - lo < 1e-6:
+            return np.zeros((_THUMB_H, _THUMB_W), dtype=np.float32)
+        return (thumb.astype(np.float32) - lo) / (hi - lo)
+    except Exception:
+        # If an image decoder is unavailable, preserve the old correctness path.
+        return None
+
+
+def _thumbnail_delta(previous, current) -> float:
+    if previous is None or current is None:
+        return 1.0
+    return float(np.mean(np.abs(previous - current)))
+
+
 def _hamming(a: int, b: int) -> int:
     return bin(a ^ b).count("1")
 
 
-def _extract_band_hashes(video_path: str, crop: dict, refine_fps: float, send) -> list:
-    """[(t, hash)] của dải crop ở refine_fps — streaming rawvideo, không file."""
+def _extract_band_hashes(video_path: str, crop: dict, refine_fps: float, send, windows=None) -> list:
+    """Return ``(timestamp, hash)`` for refinement windows only.
+
+    ``windows`` is a list of ``(start_s, end_s)`` intervals. Keeping it local
+    avoids the previous full-video high-FPS pass.
+    """
     vf = (
         f"fps={refine_fps},{_crop_filter(crop)},"
         f"scale={_REFINE_SCALE_W}:{_REFINE_SCALE_H},format=gray"
     )
     w, h = _REFINE_SCALE_W, _REFINE_SCALE_H
     frame_bytes = w * h
-    proc = subprocess.Popen(
-        ["ffmpeg", "-v", "error", "-i", video_path, "-vf", vf,
-         "-f", "rawvideo", "-pix_fmt", "gray", "-"],
-        stdout=subprocess.PIPE,
-    )
     hashes: list = []
     step = 1.0 / refine_fps
-    idx = 0
-    assert proc.stdout is not None
-    while True:
-        chunk = proc.stdout.read(frame_bytes)
-        if not chunk or len(chunk) < frame_bytes:
-            break
-        hashes.append((idx * step, _ahash(np.frombuffer(chunk, dtype=np.uint8).reshape(h, w))))
-        idx += 1
-        if idx % max(10, int(refine_fps * 10)) == 0:
-            send({"op": "progress", "stage": "refine", "frames_done": idx,
-                  "percent": -1, "heartbeat": True})
-    proc.stdout.close()
-    proc.wait(timeout=60)
+    intervals = windows or [(0.0, float("inf"))]
+    processed = 0
+    for start_s, end_s in intervals:
+        args = ["ffmpeg", "-v", "error"]
+        if start_s > 0:
+            args += ["-ss", f"{start_s:.3f}"]
+        args += ["-i", video_path]
+        if end_s != float("inf"):
+            args += ["-t", f"{max(0.01, end_s - start_s):.3f}"]
+        args += ["-vf", vf, "-f", "rawvideo", "-pix_fmt", "gray", "-"]
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE)
+        idx = 0
+        assert proc.stdout is not None
+        while True:
+            chunk = proc.stdout.read(frame_bytes)
+            if not chunk or len(chunk) < frame_bytes:
+                break
+            hashes.append((round(start_s + idx * step, 3), _ahash(np.frombuffer(chunk, dtype=np.uint8).reshape(h, w))))
+            idx += 1
+            processed += 1
+            if processed % max(10, int(refine_fps * 2)) == 0:
+                send({"op": "progress", "stage": "refine", "frames_done": processed,
+                      "percent": -1, "heartbeat": True})
+        proc.stdout.close()
+        proc.wait(timeout=60)
     return hashes
 
 
@@ -361,29 +459,150 @@ def refine_cue_boundaries(cues: list, hashes: list, refine_fps: float,
     return out
 
 
-def _run_ocr(out_dir: str, text_score: float, total: int, fps: float, send) -> list:
-    from rapidocr import RapidOCR  # noqa: F401 — heavy import, sidecar venv only
+def _create_ocr_engine(model_id: str):
+    if model_id == "rapidocr":
+        from rapidocr import RapidOCR
 
-    engine = RapidOCR()
+        return RapidOCR()
+    if model_id != "paddleocr":
+        raise ValueError(f"Unsupported OCR model: {model_id}")
+    from importlib.metadata import version
+    if int(version('paddleocr').split('.')[0]) < 3:
+        if __package__:
+            from .ocr._paddle import PaddleOcrProvider
+        else:
+            from ocr._paddle import PaddleOcrProvider
+        provider = PaddleOcrProvider(device='cpu')
+        provider._current_lang = provider.map_language(None)
+        provider._require_engine('cpu')
+        return provider.recognize
+    from paddleocr import PaddleOCR
+    from types import SimpleNamespace
+
+    # Native CPU path is explicit opt-in. Disable the PIR/oneDNN path that
+    # failed on the repository's Windows fixture (docs/dubbing/hardsub-ocr.md).
+    engine = PaddleOCR(
+        ocr_version="PP-OCRv5", device="cpu", enable_mkldnn=False,
+        use_doc_orientation_classify=False, use_doc_unwarping=False,
+        use_textline_orientation=False,
+    )
+
+    def predict(path):
+        texts, scores, boxes = [], [], []
+        for result in engine.predict(path):
+            texts.extend(result.get("rec_texts", []))
+            scores.extend(result.get("rec_scores", []))
+            boxes.extend(result.get("rec_polys", []))
+        return SimpleNamespace(txts=texts, scores=scores, boxes=boxes)
+
+    return predict
+
+
+def _run_ocr(out_dir: str, text_score: float, total: int, fps: float, send,
+             model_id: str = "rapidocr") -> list:
+    send({"op": "progress", "stage": "loading", "percent": None, "model_id": model_id})
+    engine = _create_ocr_engine(model_id)
+    started = time.monotonic()
     files = sorted(
         (f for f in os.listdir(out_dir) if f.endswith(".png")),
         key=lambda n: int(n[2:-4]),
     )
     frames: list = []
+    previous_thumb = None
+    previous_text = ""
+    previous_confidence = 0.0
+    ocr_calls = 0
+    skipped_frames = 0
+    cache_hits = 0
+    signature_cache = {}
     for i, name in enumerate(files):
         path = os.path.join(out_dir, name)
-        res = engine(path)
-        texts = []
-        if res and getattr(res, "txts", None):
-            for txt, score in zip(res.txts, res.scores or []):
-                if float(score or 0.0) >= text_score:
-                    texts.append(txt)
-        frames.append({"i": i, "text": " ".join(texts)})
-        if total > 0 and (i % 5 == 0 or i == len(files) - 1):
+        thumb = _frame_thumbnail(path)
+        signature = None
+        if thumb is not None:
+            signature = _ahash((thumb * 255).astype(np.uint8))
+        delta = _thumbnail_delta(previous_thumb, thumb)
+        needs_ocr = (
+            i == 0
+            or delta > _CHANGE_THRESHOLD
+            or i % _CONFIRM_EVERY == 0
+            or previous_confidence < _LOW_CONFIDENCE
+        )
+        res = None
+        if needs_ocr and signature is not None and signature in signature_cache and signature_cache[signature][1] >= _LOW_CONFIDENCE:
+            previous_text, previous_confidence = signature_cache[signature]
+            cache_hits += 1
+            needs_ocr = False
+        if needs_ocr:
+            res = engine(path)
+            ocr_calls += 1
+        else:
+            skipped_frames += 1
+        box_items = []
+        accepted_scores = []
+        if res is not None:
+            txts = getattr(res, "txts", None)
+            scores = getattr(res, "scores", None)
+            boxes = getattr(res, "boxes", None)
+            contract_lines = getattr(res, 'lines', None)
+            if contract_lines is not None:
+                for line_number, line in enumerate(contract_lines):
+                    score = float(getattr(line, 'confidence', 0) or 0)
+                    text = str(getattr(line, 'text', '') or '').strip()
+                    if score >= text_score and text:
+                        accepted_scores.append(score)
+                        box = getattr(line, 'box', None)
+                        y_pos = float(box[1]) if box is not None else float(line_number)
+                        box_items.append((y_pos, text))
+            elif txts is not None and scores is not None:
+                for idx_b, (txt, score) in enumerate(zip(txts, scores)):
+                    if float(score or 0.0) >= text_score and txt and str(txt).strip():
+                        accepted_scores.append(float(score or 0.0))
+                        y_pos = 0.0
+                        if boxes is not None and idx_b < len(boxes):
+                            try:
+                                y_pos = float(np.mean([pt[1] for pt in boxes[idx_b]]))
+                            except Exception:
+                                y_pos = float(idx_b)
+                        box_items.append((y_pos, str(txt).strip()))
+            elif isinstance(res, (list, tuple)):
+                items = res[0] if (isinstance(res, tuple) and len(res) >= 1 and isinstance(res[0], list)) else res
+                for item in items:
+                    if isinstance(item, (list, tuple)) and len(item) >= 3:
+                        box, txt, score = item[0], item[1], item[2]
+                        if float(score or 0.0) >= text_score and txt and str(txt).strip():
+                            accepted_scores.append(float(score or 0.0))
+                            y_pos = 0.0
+                            try:
+                                y_pos = float(np.mean([pt[1] for pt in box]))
+                            except Exception:
+                                y_pos = 0.0
+                            box_items.append((y_pos, str(txt).strip()))
+        # Sắp xếp các dòng chữ từ trên xuống dưới theo toạ độ Y
+        box_items.sort(key=lambda x: x[0])
+        frame_text = " ".join(item[1] for item in box_items) if res is not None else previous_text
+        if res is not None:
+            previous_text = frame_text
+            previous_confidence = max(accepted_scores, default=0.0)
+            if signature is not None:
+                signature_cache[signature] = (previous_text, previous_confidence)
+        previous_thumb = thumb
+        frames.append({"i": i, "text": frame_text})
+        if total > 0:
+            elapsed = max(0.0, time.monotonic() - started)
             send({
                 "op": "progress", "stage": "ocr", "frames_done": i + 1,
                 "frames_total": total,
                 "percent": int((i + 1) * 100 / max(1, total)),
+                "elapsed_seconds": round(elapsed, 2),
+                "eta_seconds": round(elapsed / (i + 1) * max(0, total - i - 1), 2),
+                "video_time": round(i / fps, 3),
+                "current_text": frame_text,
+                "model_id": model_id,
+                "ocr_calls": ocr_calls,
+                "decoded_frames": i + 1,
+                "skipped_frames": skipped_frames,
+                "cache_hits": cache_hits,
             })
     return group_frames_to_cues(frames, fps)
 
@@ -395,6 +614,8 @@ def _handle_ocr_video(msg: dict, stdout) -> None:
     fps = float(msg.get("fps") or 2.0)
     text_score = float(msg.get("text_score") or 0.5)
     refine_fps = max(4.0, min(float(msg.get("refine_fps") or 10.0), 30.0))
+    do_refine = bool(msg.get("refine", False))
+    checkpoint_path = msg.get("checkpoint_path")
     # Vùng quét: user vẽ (crop) > auto-suggest theo mật độ cạnh > dải dưới
     # mặc định 55%. Auto-suggest chỉ chạy khi user KHÔNG gửi band_top tùy
     # chỉnh (đặt band_top phi mặc định = chủ ý dùng dải cố định).
@@ -412,22 +633,71 @@ def _handle_ocr_video(msg: dict, stdout) -> None:
     else:
         crop = _crop_from(msg)
 
-    out_dir = tempfile.mkdtemp(prefix="hardsub_ocr_")
+    # The parent owns its scratch directory and can clean it after cancellation.
+    out_dir = msg.get("out_dir") or tempfile.mkdtemp(prefix="hardsub_ocr_")
     try:
         _send(stdout, {"op": "progress", "stage": "sampling", "percent": 0})
-        total = _extract_frames(video_path, fps, crop, out_dir)
-        _log(stdout, f"sampling done — {total} frames")
-        cues = _run_ocr(out_dir, text_score, total, fps, lambda o: _send(stdout, o))
-        _log(stdout, f"ocr done — {len(cues)} coarse cues; refining boundaries…")
-        try:
-            hashes = _extract_band_hashes(video_path, crop, refine_fps,
-                                          lambda o: _send(stdout, o))
-            cues = refine_cue_boundaries(cues, hashes, refine_fps)
-        except Exception as exc:  # noqa: BLE001 — refinement là tối ưu, fail-soft
-            _log(stdout, f"boundary refinement skipped ({type(exc).__name__}: {exc})")
+        if os.environ.get('OMNIVOICE_OCR_LEGACY') == '1':
+            total = _extract_frames(video_path, fps, crop, out_dir)
+            cues = _run_ocr(out_dir, text_score, total, fps, lambda o: _send(stdout, o),
+                            model_id=msg.get('model_id', 'rapidocr'))
+        else:
+            if __package__:
+                from .ocr._runtime import scan_video
+            else:
+                from ocr._runtime import scan_video
+            model_id = msg.get('model_id', 'rapidocr')
+            _send(stdout, {'op': 'progress', 'stage': 'loading', 'model_id': model_id})
+            engine = _create_ocr_engine(model_id)
+            if __package__:
+                from .ocr._identity import model_identity
+            else:
+                from ocr._identity import model_identity
+            identity = model_identity(model_id) if checkpoint_path else model_id
+            started = time.monotonic()
+            def report(event):
+                seconds = event['timestamp_ms'] / 1000
+                duration = event['duration_ms'] / 1000
+                elapsed = time.monotonic() - started
+                frames_total = math.ceil(duration * fps)
+                frames_done = min(frames_total, round(seconds * fps) + 1)
+                _send(stdout, dict(op='progress', stage='ocr', model_id=model_id,
+                    frames_done=frames_done,
+                    frames_total=frames_total, percent=100 * frames_done / frames_total if frames_total else 0,
+                    video_time=seconds, elapsed_seconds=elapsed,
+                    eta_seconds=elapsed * max(0, duration - seconds) / seconds if seconds > 0 else None,
+                    current_text=event['latest_text'], ocr_calls=event['ocr_calls'],
+                    decoded_frames=event['decoded_frames'], skipped_frames=event['skipped_frames'],
+                    cache_hits=event['cache_hits']))
+            cues = scan_video(video_path, crop, engine, fps=fps, threshold=text_score,
+                              checkpoint_path=checkpoint_path, model_identity=identity,
+                              on_progress=report, refine=do_refine, refine_fps=refine_fps)
+        _log(stdout, f"ocr done — {len(cues)} cues extracted")
+        if do_refine and os.environ.get('OMNIVOICE_OCR_LEGACY') == '1':
+            try:
+                _log(stdout, "refining cue boundaries…")
+                _send(stdout, {"op": "progress", "stage": "refine", "percent": None})
+                windows = []
+                for cue in cues:
+                    start = max(0.0, float(cue.get("start", 0.0)) - _REFINE_WINDOW_S)
+                    end = float(cue.get("end", start)) + _REFINE_WINDOW_S
+                    windows.append((start, end))
+                windows.sort()
+                merged = []
+                for start, end in windows:
+                    if merged and start <= merged[-1][1]:
+                        merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+                    else:
+                        merged.append((start, end))
+                hashes = _extract_band_hashes(video_path, crop, refine_fps,
+                                              lambda o: _send(stdout, o), windows=merged)
+                cues = refine_cue_boundaries(cues, hashes, refine_fps)
+            except Exception as exc:  # noqa: BLE001 — refinement là tối ưu, fail-soft
+                _log(stdout, f"boundary refinement skipped ({type(exc).__name__}: {exc})")
         _send(stdout, {"op": "cues", "cues": cues})
     finally:
-        shutil.rmtree(out_dir, ignore_errors=True)
+        if not msg.get("out_dir"):
+            shutil.rmtree(out_dir, ignore_errors=True)
 
 
 def _log(stdout, line: str) -> None:
