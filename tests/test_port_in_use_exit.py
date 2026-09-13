@@ -36,13 +36,6 @@ def test_backend_declares_the_exit_code():
     assert f"_EXIT_PORT_IN_USE = {_EXPECTED_EXIT}" in src
 
 
-def test_rust_shell_agrees_on_the_exit_code():
-    """The Rust side reads this code to distinguish a conflict from a crash —
-    a silent divergence would restore the unexplained "exit code 1"."""
-    src = _read("frontend", "src-tauri", "src", "backend.rs")
-    match = re.search(r"pub const EXIT_PORT_IN_USE: i32 = (\d+);", src)
-    assert match, "EXIT_PORT_IN_USE missing from backend.rs"
-    assert int(match.group(1)) == _EXPECTED_EXIT
 
 
 def test_frontend_crash_hint_agrees_on_the_exit_code():

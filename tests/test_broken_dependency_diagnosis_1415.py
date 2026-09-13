@@ -27,11 +27,12 @@ import pytest
 
 
 @pytest.fixture
-def mm():
+def mm(monkeypatch):
     """Resolved at run time, not import time: a module-level import of an app
     module keeps mutable state in sys.modules across test boundaries."""
     import services.model_manager as _mm
 
+    monkeypatch.setattr(_mm, "_ram_available_bytes", lambda: 16 * 1024**3)
     return _mm
 
 

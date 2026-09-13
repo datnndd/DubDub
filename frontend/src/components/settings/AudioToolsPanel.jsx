@@ -3,10 +3,9 @@
  * users never see (the wizard + backend provision them invisibly).
  *
  * One row per tool:
- *   • FFmpeg / FFprobe — version + origin badge (Bundled / System / Custom /
- *     App package) + path; actions: Use system copy (auto-detect),
- *     Choose file… (native picker in Tauri),
- *     Restore bundled (always-safe revert). The section header carries
+ *   • FFmpeg / FFprobe — version + origin badge (Bundled / System /
+ *     App package) + path; actions: Use system copy (auto-detect) and
+ *     restore bundled. The section header carries
  *     "Update bundled build" (one download covers both binaries).
  *   • yt-dlp — module version + Update (fetches the newest wheel into an
  *     update-surviving overlay; applies on restart) + Restore tested version.
@@ -49,8 +48,6 @@ function BinaryRow({ tool, info, onAction, busy }) {
   const { t } = useTranslation();
   const label = tool === 'ffmpeg' ? 'FFmpeg' : 'FFprobe';
 
-  const chooseFile = () => onAction(`/media-tools/${tool}/custom-path`);
-
   return (
     <SettingRow
       align="start"
@@ -90,17 +87,6 @@ function BinaryRow({ tool, info, onAction, busy }) {
           >
             {t('settings.audio_tools_use_system', { defaultValue: 'Use system copy' })}
           </Button>
-          {'__TAURI_INTERNALS__' in window && (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={chooseFile}
-              aria-label={`${label}: ${t('settings.audio_tools_choose_file')}`}
-            >
-              {t('settings.audio_tools_choose_file', { defaultValue: 'Choose file…' })}
-            </Button>
-          )}
           <Button
             size="sm"
             variant="ghost"
@@ -222,24 +208,7 @@ export default function AudioToolsPanel() {
     async (path, body) => {
       let requestBody = body;
       let selectedPath = body?.path;
-      if (path.endsWith('/custom-path')) {
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          const tool = path.includes('/ffprobe/') ? 'ffprobe' : 'ffmpeg';
-          const selection = await invoke('authorize_host_path', { kind: tool });
-          if (!selection) return;
-          requestBody = { authorization: selection.authorization };
-          selectedPath = selection.path;
-        } catch (e) {
-          toast.error(
-            t('settings.audio_tools_path_failed', {
-              message: e.message || String(e),
-              defaultValue: "Couldn't set path: {{message}}",
-            }),
-          );
-          return;
-        }
-      }
+      if (path.endsWith('/custom-path')) return;
       const ok = await post(path, requestBody);
       if (ok && (path.endsWith('/custom-path') || path.endsWith('/use-system'))) {
         toast.success(

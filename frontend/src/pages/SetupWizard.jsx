@@ -6,25 +6,10 @@ import { useSetupStatus, usePreflight } from '../api/hooks';
 import { apiJson } from '../api/client';
 import AnalyticsConsentCard from '../components/AnalyticsConsentCard';
 import WizardLibrary from '../components/WizardLibrary';
-import MediaEngineCard from '../components/MediaEngineCard';
 import MirrorRescue from '../components/MirrorRescue';
-import HfTokenCard from '../components/HfTokenCard';
-import DictationDemo from '../components/DictationDemo';
-import PermissionChecks from '../components/PermissionChecks';
 import { APP_VERSION } from '../utils/appVersion';
 import { Button } from '../ui';
 import UiScaleControl from '../components/UiScaleControl';
-
-// macOS convention: double-click the title-bar drag region to toggle zoom.
-const doubleClickMaximize = async () => {
-  try {
-    if (!('__TAURI_INTERNALS__' in window)) return;
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    getCurrentWindow().toggleMaximize();
-  } catch {
-    /* non-tauri preview — ignore */
-  }
-};
 
 /** Shorten an absolute path for display: /Users/foo/.cache/x → ~/.cache/x */
 function shortenPath(p) {
@@ -36,17 +21,6 @@ function shortenPath(p) {
     /* fallthrough */
   }
   return p;
-}
-
-/** Open a path in the OS file manager (Tauri only, no-op on web). */
-async function revealPath(path) {
-  try {
-    if (!('__TAURI_INTERNALS__' in window)) return;
-    const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
-    await revealItemInDir(path);
-  } catch {
-    /* ignore — probably web preview */
-  }
 }
 
 /** Whisper waveform — the journey's signature, same as setup + install. */
@@ -145,7 +119,7 @@ function PreflightPanel({ report, loading, onRecheck }) {
 function StepperNav({ step, maxUnlockedStep, onStep, stepLabels }) {
   const { t } = useTranslation();
   return (
-    <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" data-tauri-drag-region>
+    <nav className="flex flex-wrap items-center gap-x-4 gap-y-2">
       {stepLabels.map((label, i) => {
         const isActive = step === i;
         const isDone = step > i;
@@ -249,7 +223,7 @@ export default function SetupWizard({ onReady }) {
 
   const stepIds = useMemo(
     () =>
-      askConsent ? ['system', 'models', 'consent', 'dictation'] : ['system', 'models', 'dictation'],
+      askConsent ? ['system', 'models', 'consent'] : ['system', 'models'],
     [askConsent],
   );
   const stepId = stepIds[Math.min(step, stepIds.length - 1)];
@@ -285,13 +259,11 @@ export default function SetupWizard({ onReady }) {
     system: t('setup.system_check_desc'),
     models: t('setup.install_models_desc'),
     consent: t('consent.title', 'Help improve VoiceStudio?'),
-    dictation: t('setup.try_dictation'),
   };
   const STEP_LABELS = {
     system: t('setup.system_check'),
     models: t('firstrun.stage_models', 'Models & engines'),
     consent: t('consent.step_label', 'Improve VoiceStudio'),
-    dictation: t('setup.try_dictation'),
   };
 
   return (
@@ -315,28 +287,24 @@ export default function SetupWizard({ onReady }) {
         <header
           className="fr-rise flex flex-col gap-3 pb-1"
           style={{ '--rise': 0 }}
-          data-tauri-drag-region
-          onDoubleClick={doubleClickMaximize}
         >
           <Waveform />
           <div className="mt-2 flex flex-wrap items-end justify-between gap-6">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-2.5" data-tauri-drag-region>
+              <div className="flex flex-wrap items-baseline gap-2.5">
                 <h1
                   className="m-0 font-serif text-[clamp(1.6rem,3vw,2.2rem)] font-semibold leading-tight tracking-tight"
-                  data-tauri-drag-region
                 >
                   VoiceStudio
                 </h1>
                 {/* Same identity mark as the install splash footer. */}
                 <span
                   className="font-mono text-[0.62rem] tracking-[0.14em] text-fg-subtle"
-                  data-tauri-drag-region
                 >
                   v{APP_VERSION}
                 </span>
               </div>
-              <p className="mt-1.5 text-sm leading-snug text-fg-muted" data-tauri-drag-region>
+              <p className="mt-1.5 text-sm leading-snug text-fg-muted">
                 {STEP_SUBTITLES[stepId]}
               </p>
             </div>
@@ -357,13 +325,9 @@ export default function SetupWizard({ onReady }) {
           <div className="flex min-h-0 flex-auto flex-col gap-3" key="step-0">
             <div className="fr-rise min-h-0 flex-1 overflow-y-auto" style={{ '--rise': 1 }}>
               <PreflightPanel report={pre} loading={preLoading} onRecheck={recheckPreflight} />
-              {/* OS permissions (mic + macOS Accessibility) — advisory rows
-                  that never gate Continue; renders nothing outside Tauri. */}
-              <PermissionChecks />
               {/* Invisible when the media engine is ready; a quiet progress
                   line while the backend fetches its own bundled build; an
                   actionable card only on failure. */}
-              <MediaEngineCard />
               {networkDown && <MirrorRescue onApplied={recheckPreflight} />}
             </div>
             <div
@@ -411,7 +375,6 @@ export default function SetupWizard({ onReady }) {
             {/* Pinned next to Continue (not buried in the scrolling model list)
                 so it's visible without scrolling — drop a token right by the
                 action. */}
-            <HfTokenCard className="shrink-0" />
             <div
               className="fr-rise flex shrink-0 items-center justify-between gap-4 border-t border-border pt-3"
               style={{ '--rise': 2 }}
@@ -421,7 +384,7 @@ export default function SetupWizard({ onReady }) {
               </Button>
               <Button
                 variant="primary"
-                onClick={() => setStep(step + 1)}
+                onClick={() => (askConsent ? setStep(step + 1) : onReady())}
                 disabled={!modelsReady}
                 title={modelsReady ? '' : t('setup.install_required_models')}
               >
@@ -442,7 +405,7 @@ export default function SetupWizard({ onReady }) {
             >
               <SectionHead>{t('consent.title', 'Help improve VoiceStudio?')}</SectionHead>
               <div className="min-h-0 flex-1 overflow-y-auto pt-2">
-                <AnalyticsConsentCard onDone={() => setStep(step + 1)} />
+                <AnalyticsConsentCard onDone={onReady} />
               </div>
             </section>
             <div
@@ -453,37 +416,6 @@ export default function SetupWizard({ onReady }) {
                 ← {t('setup.back')}
               </Button>
               <span />
-            </div>
-          </div>
-        )}
-
-        {/* Dictation — guided walkthrough. Skippable. */}
-        {stepId === 'dictation' && (
-          <div className="flex min-h-0 flex-auto flex-col gap-3" key="step-2">
-            <section
-              className="fr-rise flex min-h-0 flex-1 flex-col gap-2.5"
-              style={{ '--rise': 1 }}
-            >
-              <SectionHead>{t('setup.try_dictation')}</SectionHead>
-              <div className="max-h-[min(58vh,640px)] min-w-0 overflow-y-auto rounded-lg">
-                <DictationDemo />
-              </div>
-            </section>
-            <div
-              className="fr-rise flex shrink-0 items-center justify-between gap-4 border-t border-border pt-3"
-              style={{ '--rise': 2 }}
-            >
-              <Button variant="ghost" size="sm" onClick={() => setStep(step - 1)}>
-                ← {t('setup.back')}
-              </Button>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={onReady}>
-                  {t('common.cancel')}
-                </Button>
-                <Button variant="primary" onClick={onReady}>
-                  {t('setup.enter_studio')}
-                </Button>
-              </div>
             </div>
           </div>
         )}
@@ -500,16 +432,6 @@ export default function SetupWizard({ onReady }) {
             <span aria-hidden="true">·</span>
             {t('setup.cache_label', 'Model cache')}{' '}
             <code className="font-mono text-fg-subtle">{shortenPath(cachePath)}</code>
-            {'__TAURI_INTERNALS__' in window && cachePath && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => revealPath(cachePath)}
-                title={t('setup.open_finder')}
-              >
-                {t('setup.open')}
-              </Button>
-            )}
           </span>
         </footer>
       </div>

@@ -20,7 +20,7 @@ from services.tts_backend import TTSBackend, list_backends
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-ECHO_SCRIPT = REPO_ROOT / "backend" / "engines" / "_echo" / "main.py"
+TEST_SIDECAR_SCRIPT = REPO_ROOT / "tests" / "helpers" / "fake_sidecar.py"
 
 
 # ── helpers — context-managed registry mutations ───────────────────────────
@@ -110,7 +110,7 @@ class FakeSubBackend(SubprocessBackend):
 
     @classmethod
     def sidecar_script(cls) -> Path:
-        return ECHO_SCRIPT
+        return TEST_SIDECAR_SCRIPT
 
 
 # ── ENGINE-05 — graceful degradation ───────────────────────────────────────
@@ -131,10 +131,7 @@ def test_list_backends_resilient(registry_sandbox, caplog):
     assert "availability probe failed for registered backend broken" in caplog.text
 
     # And every production backend still appears.
-    expected = {
-        "omnivoice", "cosyvoice", "kittentts", "mlx-audio", "voxcpm2",
-        "moss-tts-nano", "indextts2", "gpt-sovits", "sherpa-onnx",
-    }
+    expected = {"omnivoice", "vienue"}
     assert expected.issubset(by_id.keys()), (
         f"missing: {expected - by_id.keys()}"
     )
@@ -165,6 +162,8 @@ def test_list_backends_shape(registry_sandbox):
         # Graded-emotion capability (#1208): bool from the class attr; drives
         # the Audiobook expressive panel's emotion gate.
         "supports_emotion",
+        # Language surface list:
+        "languages",
         # True when services.sidecar_install can provision the engine in-app
         # (the Settings Install button keys off this).
         "one_click_install",
@@ -190,6 +189,8 @@ def test_mlx_audio_curated_models_roster(registry_sandbox):
     """#981 — mlx-audio's entry carries the curated-model roster + the
     currently-active pick, so Settings can render a model picker instead of
     always silently defaulting to Kokoro."""
+    if "mlx-audio" not in tts_backend._REGISTRY:
+        pytest.skip("mlx-audio engine pruned in 7-provider web runtime")
     out = {entry["id"]: entry for entry in list_backends()}
     entry = out["mlx-audio"]
     assert entry["active_model_id"] == "kokoro"  # DEFAULT_MODEL_KEY, no prefs set
@@ -202,6 +203,8 @@ def test_mlx_audio_curated_models_roster(registry_sandbox):
 
 
 def test_mlx_audio_active_model_id_reflects_prefs(registry_sandbox, monkeypatch, tmp_path):
+    if "mlx-audio" not in tts_backend._REGISTRY:
+        pytest.skip("mlx-audio engine pruned in 7-provider web runtime")
     from core import prefs as _prefs
     monkeypatch.setattr(_prefs, "_PREFS_PATH", str(tmp_path / "prefs.json"))
     monkeypatch.delenv("OMNIVOICE_MLX_AUDIO_MODEL", raising=False)
@@ -277,25 +280,20 @@ def test_last_error_cleared_after_recovery(registry_sandbox):
 
 
 def test_existing_engines_still_listed():
-    """Sanity: the wrap must not silently drop entries. We expect all nine
-    in-tree engines unchanged."""
+    """Sanity: the wrap must not silently drop entries. We expect the
+    authorized in-tree TTS engines."""
     out = list_backends()
     ids = {entry["id"] for entry in out}
-    expected = {
-        "omnivoice", "cosyvoice", "kittentts", "mlx-audio", "voxcpm2",
-        "moss-tts-nano", "indextts2", "gpt-sovits", "sherpa-onnx",
-    }
+    expected = {"omnivoice", "vienue"}
     assert expected.issubset(ids), f"missing entries: {expected - ids}"
-    assert len(out) >= 9
+    assert len(out) >= 2
 
 
 def test_install_hint_preserved():
     """install_hint passthrough — Phase 1's tooltips must still render."""
     out = {entry["id"]: entry for entry in list_backends()}
-    assert "kittentts" in out
-    # The pre-existing _INSTALL_HINTS dict carries this one.
-    assert out["kittentts"]["install_hint"] is not None
-    assert "kittentts" in out["kittentts"]["install_hint"].lower()
+    for entry in out.values():
+        assert "install_hint" in entry
 
 
 # ── `hint` — available-but-has-advice (the "ready — <advice>" convention) ──
@@ -363,7 +361,16 @@ def test_supports_cloning_true_false_and_model_dependent(registry_sandbox):
         display_name = "NoClone (test)"
         supports_cloning = False
 
+    class ModelDependentBackend(HealthyInProcessBackend):
+        id = "model-dep"
+        display_name = "ModelDep (test)"
+
+        @property
+        def supports_cloning(self):
+            return True
+
     registry_sandbox["no-clone"] = NoCloneBackend
+    registry_sandbox["model-dep"] = ModelDependentBackend
     registry_sandbox["healthy-inproc"] = HealthyInProcessBackend
     out = {e["id"]: e for e in list_backends()}
 
@@ -371,7 +378,7 @@ def test_supports_cloning_true_false_and_model_dependent(registry_sandbox):
     assert out["no-clone"]["supports_cloning"] is False
     assert out["healthy-inproc"]["supports_cloning"] is True  # TTSBackend default
     assert out["omnivoice"]["supports_cloning"] is True
-    # …but a property (model-dependent, mlx-audio) must report None — the
+    # …but a property (model-dependent) must report None — the
     # descriptor object itself is always truthy, so passing it through would
     # be a false "clones" claim (same guard as cloning_capable_engine_ids).
-    assert out["mlx-audio"]["supports_cloning"] is None
+    assert out["model-dep"]["supports_cloning"] is None

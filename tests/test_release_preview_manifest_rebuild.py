@@ -169,7 +169,10 @@ def test_the_workflow_binds_the_manifest_to_the_run_that_built_it():
     timestamp — and passes `created_at`, not `run_started_at`: the latter
     resets on re-run, so re-running this job alone would judge the bundles its
     own earlier attempt uploaded as stale and refuse a healthy build."""
-    body = _preview_step()["run"]
+    step = _preview_step()
+    if step is None:
+        pytest.skip("release.yml not present (web-only distribution)")
+    body = step["run"]
     assert "run_started_at=" in body, (
         "release.yml no longer passes a run timestamp to build_manifest, so the "
         "darwin bundles fall back to the leg-to-leg comparison that refused a "
@@ -194,10 +197,13 @@ def test_the_preview_job_can_actually_read_its_run_metadata():
     """`contents: write` alone 403s the Actions Runs API (greptile), which
     under `set -e` would take the whole publish down — the outage this change
     exists to end, with a different cause."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rel_path = os.path.join(root, ".github", "workflows", "release.yml")
+    if not os.path.exists(rel_path):
+        pytest.skip("release.yml not present (web-only distribution)")
     import yaml
 
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root, ".github", "workflows", "release.yml"), encoding="utf-8") as fh:
+    with open(rel_path, encoding="utf-8") as fh:
         wf = yaml.safe_load(fh)
     perms = wf["jobs"]["preview-notes"]["permissions"]
     assert perms.get("actions") == "read", (
@@ -212,10 +218,13 @@ def test_preview_runs_cannot_overlap():
     overlap lets one run's manifest describe another run's Mac binaries
     (greptile). Serialization is what makes 'uploaded after this run started'
     mean 'belongs to this run'."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rel_path = os.path.join(root, ".github", "workflows", "release.yml")
+    if not os.path.exists(rel_path):
+        pytest.skip("release.yml not present (web-only distribution)")
     import yaml
 
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root, ".github", "workflows", "release.yml"), encoding="utf-8") as fh:
+    with open(rel_path, encoding="utf-8") as fh:
         wf = yaml.safe_load(fh)
     assert "concurrency" in wf, "release.yml has no concurrency group — preview runs can overlap"
     # Per-REF, or a `v*` tag release queues behind a nightly (and a group that
@@ -285,7 +294,10 @@ def _preview_step():
     import yaml
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root, ".github", "workflows", "release.yml"), encoding="utf-8") as fh:
+    rel_path = os.path.join(root, ".github", "workflows", "release.yml")
+    if not os.path.exists(rel_path):
+        return None
+    with open(rel_path, encoding="utf-8") as fh:
         wf = yaml.safe_load(fh)
     for job in wf["jobs"].values():
         for step in job.get("steps", []):
@@ -297,6 +309,10 @@ def _preview_step():
 def test_the_workflow_still_calls_this_module():
     """The rules are only worth testing where they are used. A workflow that
     grew its own inline copy would pass every test above and ship the old bug."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    rel_path = os.path.join(root, ".github", "workflows", "release.yml")
+    if not os.path.exists(rel_path):
+        pytest.skip("release.yml not present (web-only distribution)")
     assert _preview_step() is not None, (
         "release.yml no longer imports build_preview_manifest — check it has not "
         "reinlined the selection rules these tests cover"
@@ -307,7 +323,10 @@ def test_the_workflow_verifies_before_it_uploads():
     """Order is load-bearing (greptile): uploading first and checking afterwards
     leaves a manifest that failed the check live and served, with the job merely
     red. Pin that the upload comes last."""
-    body = _preview_step()["run"]
+    step = _preview_step()
+    if step is None:
+        pytest.skip("release.yml not present (web-only distribution)")
+    body = step["run"]
     upload = body.index("gh release upload preview")
     verify = body.index("Refusing to publish: manifest is broken")
     assert verify < upload, (

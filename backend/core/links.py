@@ -4,21 +4,14 @@ Owned by Plan 01-02 (checker B-6 resolution). Read by:
   - backend/core/error_docs_map.py — error → docs URL mapping
   - (future) backend/services/bug_report.py — prefilled GitHub Issues URL
 
-Resolution order (highest → lowest):
-  1. `frontend/src-tauri/tauri.conf.json` `plugins.updater.endpoints[0]`
-     — this points at the desktop app fork (e.g. github.com/debpalash/
-     VoiceStudio), which is where docs deeplinks should resolve.
-  2. `pyproject.toml [project.urls].Repository` — fallback to the upstream
-     model repo URL when the Tauri config is unreadable.
+Resolution source: `pyproject.toml [project.urls].Repository`.
 
 The resolved URL is cached at import time so callers can use the module
 constants directly without re-reading files.
 """
 from __future__ import annotations
 
-import json
 import logging
-import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -40,34 +33,7 @@ def _find_repo_root() -> Path:
 
 
 _REPO_ROOT = _find_repo_root()
-_TAURI_CONF = _REPO_ROOT / "frontend" / "src-tauri" / "tauri.conf.json"
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
-
-_GITHUB_REPO_RE = re.compile(r"https?://github\.com/([^/]+)/([^/]+?)(?:/|\.git|$)")
-
-
-def _from_tauri() -> Optional[str]:
-    """Parse the updater endpoint and pull `github.com/<owner>/<repo>` out."""
-    try:
-        text = _TAURI_CONF.read_text(encoding="utf-8")
-        conf = json.loads(text)
-    except Exception:
-        logger.debug("links: tauri.conf.json unreadable", exc_info=True)
-        return None
-    try:
-        endpoints = (
-            conf.get("plugins", {})
-            .get("updater", {})
-            .get("endpoints", [])
-        )
-        for url in endpoints:
-            m = _GITHUB_REPO_RE.search(url)
-            if m:
-                owner, repo = m.group(1), m.group(2)
-                return f"https://github.com/{owner}/{repo}"
-    except Exception:
-        logger.debug("links: tauri.conf.json updater shape unexpected", exc_info=True)
-    return None
 
 
 def _from_pyproject() -> Optional[str]:

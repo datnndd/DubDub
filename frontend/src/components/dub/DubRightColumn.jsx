@@ -236,7 +236,7 @@ export default function DubRightColumn({
           type="button"
           className={`inline-flex items-center px-[var(--space-3)] py-[3px] mb-[4px] mr-[6px] font-[family-name:var(--chrome-font-mono)] text-[length:var(--chrome-label-size)] tracking-[var(--chrome-label-track)] uppercase rounded-[var(--chrome-radius-pill)] cursor-pointer transition-colors border ${
             termsReviewOpen
-              ? 'text-[var(--chrome-fg)] bg-[var(--chrome-hover-bg)] border-[var(--chrome-border)]'
+              ? 'text-[var(--chrome-fg)] bg-[var(--chrome-hover-bg)] border-transparent'
               : 'text-[var(--chrome-fg-muted)] bg-transparent border-transparent hover:bg-[var(--chrome-hover-bg)] hover:border-transparent hover:text-[var(--chrome-fg)]'
           }`}
           onClick={() => setTermsReviewOpen(!termsReviewOpen)}

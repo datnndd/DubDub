@@ -72,7 +72,6 @@ const LazyFallback = () => <div className="app-lazy-fallback">{i18n.t('app.loadi
 
 import { Toaster, toast } from 'react-hot-toast';
 import { toastErrorWithReport } from './utils/errorToast';
-import { listenDictationNotice, showDictationNotice } from './utils/dictationNotice';
 import { addBreadcrumb } from './utils/breadcrumbs';
 import { appShellClasses } from './utils/appShellClasses';
 import { configuredRemoteBackend, probeRemoteBackend } from './utils/remoteBackendProbe';
@@ -98,7 +97,7 @@ import {
   deleteProject as apiDeleteProject,
   renameProject as apiRenameProject,
 } from './api/projects';
-import { exportAction, exportReveal, exportRecord } from './api/exports';
+import { exportRecord } from './api/exports';
 import {
   clearHistory as apiClearHistory,
   setHistoryStarred as apiSetHistoryStarred,
@@ -106,18 +105,14 @@ import {
 } from './api/generate';
 import { clearDubHistory as apiClearDubHistory } from './api/dub';
 
-import { isTauri, doubleClickMaximize, fileToMediaUrl, playBlobAudio } from './utils/media';
+import { fileToMediaUrl, playBlobAudio } from './utils/media';
 import { browserDownload } from './utils/download';
 import { downloadMedia } from './utils/mediaDownload';
-import { checkForUpdate, fetchAppVersion } from './utils/updater';
-import { syncChannel } from './utils/channelControl';
 import i18n from './i18n';
 
 function App() {
-  // First-run bootstrap: Rust spawns uv sync in a background thread and
-  // publishes progress via the `bootstrap_status` Tauri command. Hook below
-  // polls every 1 s; until `ready`, we render BootstrapSplash instead of the
-  // normal app shell, so the user sees real progress instead of a hung UI.
+  // First-run backend bootstrap state controls whether the setup screen or the
+  // normal app shell is rendered.
   const { stage: bootstrapStage, message: bootstrapMessage } = useBootstrapStage();
   // Read once, like api/client.ts. Saving or disabling a remote backend reloads
   // the app, so this value and API's module-level base always move together.
@@ -143,13 +138,7 @@ function App() {
     return unsubscribe;
   }, [storeHydrated]);
 
-  // Latched on first render — "startup" is the contract, not a per-render read.
-  // Tauri's native zoom keeps the CSS viewport equal to the visible window
-  // (utils/uiScaleEngine.js), so applying a scale changes `window.innerWidth`.
-  // Re-measuring here on every render made this value depend on the zoom it
-  // itself produces, which is the other half of the first-run oscillation
-  // fixed in UiScaleSetup.jsx — see the long comment there. A live read also
-  // can't be the "startup" suggestion by definition.
+  // Latched on first render — startup is the contract, not a per-render read.
   const [startupSuggestedScale] = useState(() =>
     suggestUiScale({
       width: typeof window === 'undefined' ? 1440 : window.innerWidth,
@@ -182,10 +171,7 @@ function App() {
     return () => ro.disconnect();
   }, []);
 
-  // Desktop UI scale belongs at the webview boundary. A CSS `zoom` probe can
-  // report the expected bounding box on WebKitGTK even when the painted shell
-  // still occupies only the upper-left of the window. Tauri's native zoom keeps
-  // layout and paint in agreement; browser/dev sessions retain the CSS path.
+  // Apply the selected browser UI scale.
   useLayoutEffect(() => {
     void applyUiScale(effectiveUiScale);
   }, [effectiveUiScale]);
@@ -252,44 +238,6 @@ function App() {
     return () => window.removeEventListener('keydown', h);
   }, []);
 
-  // Listen for tray navigation events (Tauri desktop)
-  useEffect(() => {
-    let unlisten;
-    (async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        unlisten = await listen('tray-navigate', (ev) => {
-          if (ev.payload) setMode(ev.payload);
-        });
-      } catch {
-        /* not in Tauri */
-      }
-    })();
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, [setMode]);
-
-  // Dictation failures are raised in the widget window, which is never shown —
-  // this is the only place they can reach the user. Without it, a hotkey press
-  // that can't paste (Accessibility ungranted) or can't record (mic denied)
-  // would be indistinguishable from a hotkey that isn't working at all.
-  useEffect(() => {
-    let unlisten;
-    let cancelled = false;
-    (async () => {
-      const stop = await listenDictationNotice(showDictationNotice);
-      // The await above can outlive the effect (StrictMode double-mount, or a
-      // fast unmount) — drop the subscription rather than leaking a listener
-      // that would double every later toast.
-      if (cancelled) stop();
-      else unlisten = stop;
-    })();
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
-  }, []);
   const flipNavRailSide = useCallback(() => {
     setNavRailSide((prev) => {
       const next = prev === 'left' ? 'right' : 'left';
@@ -562,12 +510,10 @@ function App() {
     setPreviewAudios,
     transcribeElapsed,
     transcribeProgress,
-    asrInstall,
     handleDubUpload: _handleDubUpload,
     handleDubIngestUrl,
     handleDubAbort,
     handleDubRetryTranscribe,
-    handleInstallMissingAsr,
     handleDubStop,
     handleDubGenerate,
     handleCleanupSegments,
@@ -599,7 +545,11 @@ function App() {
     [],
   );
 
-  const handleDubUpload = () => _handleDubUpload(dubVideoFile);
+  const handleDubUpload = (opts = {}) =>
+    _handleDubUpload(
+      dubVideoFile,
+      opts && typeof opts === 'object' && !opts.nativeEvent ? opts : {},
+    );
 
   // ═══ STUDIO PROJECTS ═══
   const activeProjectId = useAppStore((s) => s.activeProjectId);
@@ -724,30 +674,6 @@ function App() {
     })();
   }, [setupChecked, setupNeeded, backendReady]);
 
-  // ── Tauri auto-updater ──
-  // On boot, ask GitHub Releases if a newer build is available. If yes,
-  // prompt the user, download the signed bundle, restart into the new
-  // version. Only runs in packaged .app (not `tauri dev`) — the updater
-  // endpoint 404s until the first signed release is published, and we
-  // don't want that noise in the dev console.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!('__TAURI_INTERNALS__' in window)) return;
-    if (import.meta.env.DEV) return;
-    // Non-blocking: surface update availability into the store so the user can
-    // choose to install + restart (with a progress bar) from Settings → Updates,
-    // so an update never interrupts in-flight work.
-    fetchAppVersion().then((v) => useAppStore.getState().setAppVersion(v));
-    syncChannel(useAppStore.getState());
-    checkForUpdate(useAppStore.getState());
-    // Re-check periodically so a long-running session still gets notified, not
-    // only at boot. checkForUpdate no-ops while a download/restart is already
-    // in flight, so this can't interrupt an install.
-    const SIX_HOURS = 6 * 60 * 60 * 1000;
-    const id = setInterval(() => checkForUpdate(useAppStore.getState()), SIX_HOURS);
-    return () => clearInterval(id);
-  }, []);
-
   // ── DESKTOP NATIVE INTEGRATION ──
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -772,7 +698,7 @@ function App() {
       if (e.ctrlKey) e.preventDefault();
     };
 
-    // 4. Global Drag and drop for seamless native feeling
+    // 4. Global drag and drop for media input.
     const handleDrop = (e) => {
       e.preventDefault();
       const file = e.dataTransfer?.files[0];
@@ -857,17 +783,17 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   });
 
-  const handleNativeExport = async (e, sourceIdentifier, fallbackName, mode) => {
+  const handleExport = async (e, sourceIdentifier, fallbackName, mode) => {
     addBreadcrumb('export');
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    // Browser / Docker web build: there is no Tauri shell, so the native save
+    // Browser / Docker web build: download through the browser.
     // dialog is unavailable — invoking it throws "Cannot read properties of
     // undefined (reading 'invoke')" (issue #256). Fall back to a plain HTTP
     // blob download of the file already served at /audio/<path>.
-    if (!isTauri) {
+    {
       const niceName = (fallbackName || sourceIdentifier || 'audio').split('/').pop();
       try {
         const finalName = await browserDownload(`${API}/audio/${sourceIdentifier}`, niceName);
@@ -891,36 +817,6 @@ function App() {
         );
       }
       return;
-    }
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const selection = await invoke('authorize_host_path', {
-        kind: 'dub_export',
-        suggestedName: fallbackName,
-      });
-      if (!selection) return; // User cancelled
-
-      await exportAction({
-        source_filename: sourceIdentifier,
-        authorization: selection.authorization,
-        mode,
-      });
-      toast.success(i18n.t('app.toast_exported', { name: fallbackName }));
-      recordValueMoment('export'); // success-only donation moment
-      loadExportHistory();
-    } catch (err) {
-      console.error(err);
-      toastErrorWithReport(
-        i18n.t('app.toast_export_failed', { message: err?.message || err }),
-        err,
-      );
-    }
-  };
-  const revealInFolder = async (filePath) => {
-    try {
-      await exportReveal({ path: filePath });
-    } catch (err) {
-      toast.error(i18n.t('app.toast_open_folder_failed', { message: err.message }));
     }
   };
   // Save a dynamic export — dub video/audio/subtitles — to
@@ -1291,7 +1187,7 @@ function App() {
   if (!uiScaleConfigured && backendReady) {
     return (
       <div className="app-wizard-wrap" style={{ '--ui-scale': effectiveUiScale }}>
-        <div data-tauri-drag-region className="app-wizard-dragstrip" />
+        <div className="app-wizard-dragstrip" />
         <Suspense fallback={<LazyFallback />}>
           <UiScaleSetup
             uiScale={uiScale}
@@ -1321,7 +1217,7 @@ function App() {
             dragged / double-click-zoomed from anywhere along the top. */}
         {/* Double-click-to-maximize is handled globally in main.jsx for every
             drag region (splash, first-run, wizard, main) on all platforms. */}
-        <div data-tauri-drag-region className="app-wizard-dragstrip" />
+        <div className="app-wizard-dragstrip" />
         {/* The wizard is where the multi-GB downloads happen — a mid-download
             backend restart needs its banner here too, not only in the studio. */}
         <BackendRestartBanner />
@@ -1430,7 +1326,6 @@ function App() {
         setMode={setMode}
         navStyle={navStyle}
         modelStatus={modelStatus}
-        doubleClickMaximize={doubleClickMaximize}
         activeProjectName={activeProjectName}
         onFlushMemory={async (unloadModel) => {
           try {
@@ -1507,9 +1402,6 @@ function App() {
                 onOpenStory={(id) => {
                   loadStoryProject(id);
                   setMode('stories');
-                }}
-                onRevealExport={(path) => {
-                  exportReveal({ path }).catch(() => {});
                 }}
               />
             </Suspense>
@@ -1606,7 +1498,6 @@ function App() {
                     dubLocalBlobUrl={dubLocalBlobUrl}
                     transcribeElapsed={transcribeElapsed}
                     transcribeProgress={transcribeProgress}
-                    asrInstall={asrInstall}
                     translateProvider={translateProvider}
                     setTranslateProvider={setTranslateProvider}
                     onGlossaryChange={setGlossaryTerms}
@@ -1622,7 +1513,6 @@ function App() {
                     handleDubUpload={handleDubUpload}
                     handleDubIngestUrl={handleDubIngestUrl}
                     handleDubRetryTranscribe={handleDubRetryTranscribe}
-                    handleInstallMissingAsr={handleInstallMissingAsr}
                     handleDubStop={handleDubStop}
                     handleDubGenerate={handleDubGenerate}
                     handleDubDownload={handleDubDownload}
@@ -1773,7 +1663,7 @@ function App() {
                 history={history}
                 handleSaveHistoryAsProfile={handleSaveHistoryAsProfile}
                 handleLockProfile={handleLockProfile}
-                handleNativeExport={handleNativeExport}
+                handleExport={handleExport}
                 restoreHistory={restoreHistory}
                 deleteHistory={deleteHistory}
                 clearHistory={() => clearWorkspaceHistory('synth')}
@@ -1817,8 +1707,7 @@ function App() {
           restoreHistory={restoreHistory}
           restoreDubHistory={restoreDubHistory}
           handleSaveHistoryAsProfile={handleSaveHistoryAsProfile}
-          handleNativeExport={handleNativeExport}
-          revealInFolder={revealInFolder}
+          handleExport={handleExport}
           deleteHistory={deleteHistory}
           loadHistory={loadHistory}
           loadDubHistory={loadDubHistory}

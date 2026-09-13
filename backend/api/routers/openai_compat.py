@@ -1,5 +1,5 @@
 """
-OpenAI-compatible TTS & STT API — Phase 3.2 (ROADMAP.md P0).
+OpenAI-compatible TTS API.
 
 Drop-in replacement for OpenAI's audio endpoints so that any tool speaking the
 OpenAI protocol (Claude, Cursor, LangChain, litellm, etc.) can use VoiceStudio
@@ -8,10 +8,9 @@ as a local backend with zero code changes.
 Endpoints
 ─────────
     POST /v1/audio/speech          → TTS  (text → wav/mp3/opus/flac)
-    POST /v1/audio/transcriptions  → STT  (audio file → text/json)
     GET  /v1/audio/voices          → list available voices (VoiceStudio extension)
 
-The router delegates to the active TTS/ASR backends via the same adapter
+The router delegates to the active TTS backend via the same adapter
 protocol used by the rest of VoiceStudio, so engine selection, GPU offloading,
 model loading, and invisible provenance watermarking (services.watermark,
 #1169) all work identically.
@@ -24,10 +23,9 @@ import asyncio
 import io
 import logging
 import os
-import tempfile
 from typing import Literal, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -48,8 +46,7 @@ class SpeechRequest(BaseModel):
     model: str = Field(
         default="omnivoice",
         description=(
-            "TTS model to use. Maps to VoiceStudio engine IDs: "
-            "'omnivoice', 'voxcpm2', 'cosyvoice', 'mlx-audio', 'kittentts', 'moss-tts-nano'. "
+            "TTS model to use: 'omnivoice' or 'vienue'. "
             "Also accepts 'tts-1' and 'tts-1-hd' as aliases for the active engine."
         ),
     )
@@ -62,7 +59,7 @@ class SpeechRequest(BaseModel):
         default="default",
         description=(
             "Voice to use. For VoiceStudio: pass a voice profile ID, 'default', "
-            "or a KittenTTS preset name. OpenAI voice names (alloy, echo, fable, "
+            "OpenAI voice names (alloy, echo, fable, "
             "onyx, nova, shimmer) are accepted but mapped to defaults."
         ),
     )
@@ -78,11 +75,6 @@ class SpeechRequest(BaseModel):
     )
     # VoiceStudio extensions (not part of OpenAI spec, but accepted if sent)
     language: Optional[str] = Field(default=None, description="Language code (ISO 639-1)")
-    description: Optional[str] = Field(
-        default=None,
-        description="Voice description for voice design (VoxCPM2 only). "
-        "E.g. 'young female, warm tone, slight British accent'.",
-    )
     instruct: Optional[str] = Field(default=None, description="Style instruction for the TTS engine.")
     duration: Optional[float] = Field(
         default=None,
@@ -101,16 +93,6 @@ class SpeechRequest(BaseModel):
         default=True,
         description="VoiceStudio extension: trim/preprocess reference prompt when supported.",
     )
-    chunk_duration: Optional[float] = Field(
-        default=None,
-        ge=0,
-        description="OmniVoice GGUF extension: long-form internal chunk duration.",
-    )
-    chunk_threshold: Optional[float] = Field(
-        default=None,
-        ge=0,
-        description="OmniVoice GGUF extension: long-form internal chunk threshold.",
-    )
     # #1014: these two were silently DISCARDED before (pydantic ignores
     # undeclared fields) — a 200 OK that quietly dropped the caller's quality
     # knobs. Declared now and passed through, matching the native /generate
@@ -128,22 +110,6 @@ class SpeechRequest(BaseModel):
         le=20,
         description="VoiceStudio extension: classifier-free guidance scale (app default 2.0).",
     )
-
-
-class TranscriptionResponse(BaseModel):
-    """Mirrors OpenAI's CreateTranscriptionResponse."""
-
-    text: str
-
-
-class VerboseTranscriptionResponse(BaseModel):
-    """Mirrors OpenAI's verbose_json transcription response."""
-
-    task: str = "transcribe"
-    language: str = ""
-    duration: float = 0.0
-    text: str = ""
-    segments: list[dict] = Field(default_factory=list)
 
 
 # ── OpenAI voice name mapping ──────────────────────────────────────────────
@@ -184,8 +150,7 @@ def _resolve_engine(model_id: str):
             status_code=400,
             detail=(
                 f"Unknown model '{model_id}'. Use one of: "
-                "omnivoice, voxcpm2, cosyvoice, mlx-audio, kittentts, "
-                "moss-tts-nano, indextts2, gpt-sovits, sherpa-onnx, tts-1, tts-1-hd."
+                "omnivoice, vienue, tts-1, tts-1-hd."
             ),
         )
 
@@ -288,8 +253,7 @@ def _run_tts(backend, text: str, kw: dict):
     from services.watermark import mark_synthetic
     wav = backend.generate(text, **kw)
     sr = backend.sample_rate
-    # Engines that already emit mastered, studio-grade audio (e.g. VoxCPM2's
-    # native 48 kHz) opt out of apply_mastering via `applies_own_mastering`.
+    # Engines that already emit mastered audio may opt out of apply_mastering.
     # That chain's highpass + Compressor is tuned for VoiceStudio's 24 kHz clone
     # output; applied to a studio engine it adds an audible level pump that
     # degrades the very output we want clean. Loudness normalisation still
@@ -297,11 +261,7 @@ def _run_tts(backend, text: str, kw: dict):
     if not getattr(backend, "applies_own_mastering", False):
         wav = apply_mastering(wav, sample_rate=sr)
     wav = normalize_audio(wav, target_dBFS=-2.0)
-    # Invisible AudioSeal provenance mark at the tensor stage, before any
-    # container encoding (#1169 — this route used to return unmarked audio
-    # while /generate marked the same text). Same failure semantics as
-    # /generate: pref-gated, no-op without AudioSeal, passes audio through
-    # unchanged on any failure — never blocks the response.
+    # Central synthetic-audio provenance seam.
     wav = mark_synthetic(wav, sr, context="openai_compat.speech")
     return wav, sr
 
@@ -332,10 +292,6 @@ async def create_speech(req: SpeechRequest):
         kw["duration"] = req.duration
     if req.seed is not None:
         kw["seed"] = req.seed
-    if req.chunk_duration is not None:
-        kw["chunk_duration"] = req.chunk_duration
-    if req.chunk_threshold is not None:
-        kw["chunk_threshold"] = req.chunk_threshold
     if req.num_step is not None:
         kw["num_step"] = req.num_step
     if req.guidance_scale is not None:
@@ -344,8 +300,6 @@ async def create_speech(req: SpeechRequest):
         kw["language"] = req.language
     if req.instruct:
         kw["instruct"] = req.instruct
-    if req.description:
-        kw["description"] = req.description
 
     # Voice handling: if it's a known OpenAI alias, use defaults.
     # If it's a UUID-like string, treat it as a profile_id and resolve ref_audio.
@@ -485,180 +439,6 @@ async def create_speech(req: SpeechRequest):
     )
 
 
-# ── STT: POST /v1/audio/transcriptions ──────────────────────────────────────
-
-
-@router.post("/transcriptions")
-async def create_transcription(
-    file: UploadFile = File(..., description="Audio file to transcribe"),
-    model: str = Form(
-        default="whisper-1",
-        description=(
-            "ASR model. Accepts 'whisper-1' (maps to active engine), or an "
-            "VoiceStudio engine ID: whisperx, faster-whisper, mlx-whisper, pytorch-whisper."
-        ),
-    ),
-    language: Optional[str] = Form(
-        default=None,
-        description="Language of the input audio (ISO 639-1). Optional.",
-    ),
-    prompt: Optional[str] = Form(
-        default=None,
-        description="Optional text to guide the model's style or continue a previous segment.",
-    ),
-    response_format: str = Form(
-        default="json",
-        description="Output format: json, text, verbose_json, srt, vtt.",
-    ),
-    temperature: Optional[float] = Form(
-        default=None,
-        description="Sampling temperature (0–1). Not used by all backends.",
-    ),
-):
-    """Transcribe audio to text. Compatible with OpenAI's POST /v1/audio/transcriptions."""
-    from services.asr_backend import (
-        ASRModelMissingError,
-        asr_model_missing_detail,
-        asr_model_missing_error,
-        load_active_asr_backend,
-    )
-
-    # TTS-only install: no ASR model on disk → actionable 409, BEFORE any
-    # backend load could silently auto-download multi-GB whisper weights.
-    # Same typed detail shape as /transcribe (capture.py): the machine fields
-    # (`error`, `missing_repo_id`, `recommended`) let VoiceStudio-aware clients
-    # render the one-click download CTA, while `message` keeps a human-readable
-    # line for generic OpenAI-compat clients.
-    missing = await asyncio.to_thread(asr_model_missing_error)
-    if missing is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={**missing, "message": asr_model_missing_detail(missing)},
-        )
-
-    # Write uploaded file to a temp location
-    suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not read audio file: {e}")
-
-    try:
-        # Run transcription in the thread pool to avoid blocking the event loop,
-        # bounded so a stuck/starved ASR returns a 504 with guidance instead of
-        # hanging the request forever (see run_transcribe_guarded).
-        from services.asr_backend import run_transcribe_guarded
-        word_ts = response_format == "verbose_json"
-
-        # `load_active_asr_backend`, not `get_active_asr_backend`: the latter is
-        # a pure selector, so a backend whose shallow `is_available()` probe
-        # passes but whose deep import chain is broken (whisperx →
-        # ctranslate2 failing to dlopen on a hardened kernel) reached
-        # `.transcribe()` and 500'd, even with a healthy engine next in line.
-        # The loader does select + ensure_loaded + degrade (#1185). It loads
-        # weights, so it belongs inside the pool with the transcribe call —
-        # never on the event loop.
-        def _run():
-            backend = load_active_asr_backend()
-            return backend.transcribe(tmp_path, word_timestamps=word_ts)
-
-        result = await run_transcribe_guarded(_gpu_pool, _run, what="OpenAI")
-
-        # Extract the full text from segments
-        segments = result.get("segments", [])
-        chunks = result.get("chunks", [])
-        full_text = " ".join(
-            seg.get("text", "").strip()
-            for seg in (segments if segments else chunks)
-        ).strip()
-        detected_lang = result.get("language", language or "en")
-
-        # Format response based on requested format
-        if response_format == "text":
-            from fastapi.responses import PlainTextResponse
-            return PlainTextResponse(full_text)
-
-        if response_format == "verbose_json":
-            duration = result.get("duration", 0.0)
-            if not duration and segments:
-                last = segments[-1]
-                duration = last.get("end", 0.0)
-            return VerboseTranscriptionResponse(
-                task="transcribe",
-                language=detected_lang,
-                duration=duration,
-                text=full_text,
-                segments=[
-                    {
-                        "id": i,
-                        "text": seg.get("text", ""),
-                        "start": seg.get("start", 0.0),
-                        "end": seg.get("end", 0.0),
-                    }
-                    for i, seg in enumerate(segments)
-                ],
-            )
-
-        if response_format == "srt":
-            from fastapi.responses import PlainTextResponse
-            srt_lines = []
-            for i, seg in enumerate(segments, 1):
-                start = seg.get("start", 0.0)
-                end = seg.get("end", 0.0)
-                text = seg.get("text", "").strip()
-                srt_lines.append(
-                    f"{i}\n"
-                    f"{_format_ts_srt(start)} --> {_format_ts_srt(end)}\n"
-                    f"{text}\n"
-                )
-            return PlainTextResponse("\n".join(srt_lines), media_type="text/plain")
-
-        if response_format == "vtt":
-            from fastapi.responses import PlainTextResponse
-            vtt_lines = ["WEBVTT\n"]
-            for seg in segments:
-                start = seg.get("start", 0.0)
-                end = seg.get("end", 0.0)
-                text = seg.get("text", "").strip()
-                vtt_lines.append(
-                    f"{_format_ts_vtt(start)} --> {_format_ts_vtt(end)}\n{text}\n"
-                )
-            return PlainTextResponse("\n".join(vtt_lines), media_type="text/vtt")
-
-        # Default: json
-        return TranscriptionResponse(text=full_text)
-
-    except HTTPException:
-        raise
-    except ASRModelMissingError as e:
-        # A degraded-to candidate has no weights on disk. Same typed 409 the
-        # preflight above raises — never a 500, and never a silent multi-GB
-        # auto-download.
-        raise HTTPException(
-            status_code=409,
-            detail={**e.payload, "message": asr_model_missing_detail(e.payload)},
-        )
-    except TimeoutError as e:
-        # ASRTimeoutError (subclass): backend alive, ASR too heavy for compute.
-        logger.warning("OpenAI transcription timed out: %s", e)
-        raise HTTPException(status_code=504, detail=str(e))
-    except Exception as e:
-        logger.exception("OpenAI transcription failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Clean up temp file
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-
-
-# ── Voices: GET /v1/audio/voices (VoiceStudio extension) ─────────────────────
-
-
 @router.get("/voices")
 def list_voices():
     """List available voices. VoiceStudio extension to the OpenAI API."""
@@ -698,20 +478,3 @@ def list_voices():
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-
-def _format_ts_srt(seconds: float) -> str:
-    """Format seconds as SRT timestamp: HH:MM:SS,mmm"""
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int((seconds % 1) * 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
-
-def _format_ts_vtt(seconds: float) -> str:
-    """Format seconds as VTT timestamp: HH:MM:SS.mmm"""
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int((seconds % 1) * 1000)
-    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"

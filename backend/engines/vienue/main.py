@@ -41,42 +41,15 @@ MAX_FRAME_BYTES = 64 * 1024 * 1024
 #: loaded engine before each result is emitted.
 VIENEU_SAMPLE_RATE = 48000
 
-#: Default checkpoint. v3-Turbo is the current generation (48 kHz, ONNX
-#: CPU path). Overridable for air-gapped / mirror installs. License care:
-#: keep to Apache-2.0 variants (0.5B / v2-Turbo) — never the CC BY-NC 0.3B.
-_DEFAULT_MODEL = "pnnbao-ump/VieNeu-TTS-v3-Turbo"
 _DEFAULT_MODE = "v3turbo"
 
-#: Languages the default checkpoint speaks. Overridable together with the
-#: model (e.g. OMNIVOICE_VIENEU_MODEL=…v2 + OMNIVOICE_VIENEU_LANGUAGES=vi,en).
+#: Languages the configured local checkpoint speaks.
 _LANGUAGES_ENV = "OMNIVOICE_VIENEU_LANGUAGES"
 
 
-def _hf_model_cached(repo_id: str) -> bool:
-    """True when the configured checkpoint already sits in the local HF cache.
-
-    Local-first policy: a cached model must never wait on the network —
-    hf_hub's default update HEAD-checks stall for minutes (5× retries) on
-    flaky networks and turn every cold load into a lottery. When the model
-    dir exists we flip HF_HUB_OFFLINE on (before vieneu/hf_hub read it) so
-    the load is instant and purely local. A fresh install stays online so
-    weights can download; OMNIVOICE_VIENEU_ONLINE=1 forces online checks."""
-    hub = (
-        os.environ.get("HF_HUB_CACHE")
-        or os.path.join(
-            os.environ.get("HF_HOME")
-            or os.path.join(os.path.expanduser("~"), ".cache", "huggingface"),
-            "hub",
-        )
-    )
-    return os.path.isdir(os.path.join(hub, "models--" + repo_id.replace("/", "--")))
-
-
-if (
-    os.environ.get("OMNIVOICE_VIENEU_ONLINE") != "1"
-    and _hf_model_cached(os.environ.get("OMNIVOICE_VIENEU_MODEL", _DEFAULT_MODEL))
-):
-    os.environ["HF_HUB_OFFLINE"] = "1"
+# VieNeu is local-install only. The application model downloader is reserved
+# exclusively for OmniVoice and this sidecar must never fetch a second repo.
+os.environ["HF_HUB_OFFLINE"] = "1"
 
 
 # ── wire protocol ─────────────────────────────────────────────────────────
@@ -142,7 +115,13 @@ def _load_tts(stdout):
     from vieneu import Vieneu  # type: ignore[import-not-found]
 
     mode = os.environ.get("OMNIVOICE_VIENEU_MODE", _DEFAULT_MODE)
-    model = os.environ.get("OMNIVOICE_VIENEU_MODEL", _DEFAULT_MODEL)
+    model = os.environ.get("OMNIVOICE_VIENEU_MODEL_DIR", "").strip()
+    if not model or not Path(model).is_dir():
+        raise RuntimeError(
+            "VieNeu-TTS needs a preinstalled local model directory. Set "
+            "OMNIVOICE_VIENEU_MODEL_DIR to that directory; automatic model "
+            "downloads are disabled."
+        )
     device = os.environ.get("OMNIVOICE_VIENEU_DEVICE", "auto")
 
     _send(stdout, {"op": "progress", "stage": "loading_model", "percent": 50})

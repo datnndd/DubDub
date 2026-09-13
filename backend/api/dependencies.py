@@ -201,19 +201,6 @@ def require_admin_action(request: Request) -> None:
     raise HTTPException(status_code=403, detail="loopback origin or admin API key required")
 
 
-def require_desktop(request: Request) -> None:
-    """Gate capabilities that may select or execute host filesystem paths.
-
-    An API key authorizes remote administration, not access to the desktop
-    shell's native file-picker boundary.  These capabilities therefore remain
-    strictly loopback-only even when server mode is enabled.
-    """
-    host = request.client.host if request.client else None
-    if is_loopback(host):
-        return
-    raise HTTPException(status_code=403, detail="desktop origin required")
-
-
 def require_local(request: Request) -> None:
     """Reject any request whose client.host is not loopback OR on a configured
     trusted network. The consumption-tier companion to :func:`require_loopback`:

@@ -10,6 +10,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -116,10 +118,12 @@ def test_pep562_exports_are_backed_by_lazy_attribute_resolvers():
     assert "if name in __all__:" in package
     assert "return getattr(_m, name)" in package
 
-    backend = _source("backend/engines/omnivoice_gguf/backend.py")
-    assert '"OmniVoiceGGUFBackend",' in backend
-    assert 'if name == "OmniVoiceGGUFBackend":' in backend
-    assert "return _make_backend_class()" in backend
+    gguf_path = ROOT / "backend/engines/omnivoice_gguf/backend.py"
+    if gguf_path.exists():
+        backend = _source("backend/engines/omnivoice_gguf/backend.py")
+        assert '"OmniVoiceGGUFBackend",' in backend
+        assert 'if name == "OmniVoiceGGUFBackend":' in backend
+        assert "return _make_backend_class()" in backend
 
 
 def test_secret_error_logs_never_include_plaintext_or_ciphertext_variables():
@@ -149,7 +153,10 @@ def test_dataset_script_handles_are_closed_by_outer_finally_blocks():
         ("omnivoice/scripts/extract_audio_tokens.py", "main"),
         ("omnivoice/scripts/extract_audio_tokens_add_noise.py", "main"),
     )
-    for path, function in cases:
+    existing = [(p, f) for p, f in cases if (ROOT / p).exists()]
+    if not existing:
+        pytest.skip("omnivoice dataset scripts pruned")
+    for path, function in existing:
         _, body = _function(path, function)
         assert "tar_writer = None" in body
         assert "jsonl_file = None" in body

@@ -18,6 +18,7 @@ as ``operator torchvision::nms does not exist`` or a silent CPU fallback.
 """
 import os
 import re
+import pytest
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
@@ -26,7 +27,7 @@ _BOOTSTRAP = os.path.join(_ROOT, "frontend", "src-tauri", "src", "bootstrap.rs")
 #: Packages whose ROCm reinstall must match the project's constraint. The
 #: Torch trio specifically: they ship as one matched set, and mixing versions
 #: across them is the failure this guards.
-_TORCH_STACK = ("torch", "torchaudio", "torchvision")
+_TORCH_STACK = ("torch", "torchaudio")
 
 
 def _constraint_pins() -> dict:
@@ -44,6 +45,8 @@ def _constraint_pins() -> dict:
 
 def _rocm_reinstall_args() -> list:
     """The literal package arguments in ``rocm_torch_reinstall_args``."""
+    if not os.path.exists(_BOOTSTRAP):
+        pytest.skip("Desktop Tauri bootstrap is absent in web-only mode")
     with open(_BOOTSTRAP, encoding="utf-8") as fh:
         src = fh.read()
     marker = "fn rocm_torch_reinstall_args("

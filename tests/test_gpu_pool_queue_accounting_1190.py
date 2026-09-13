@@ -215,19 +215,24 @@ def _guarded_calls():
     """(file, lineno, keywords) for every run_on_gpu_pool_guarded call in the
     backend."""
     out = []
-    for path in sorted(_BACKEND.rglob("*.py")):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:  # pragma: no cover
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
+    for root, dirs, files in os.walk(_BACKEND):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and "venv" not in d and d != "node_modules"]
+        for f in sorted(files):
+            if not f.endswith(".py"):
                 continue
-            fn = node.func
-            name = getattr(fn, "attr", None) or getattr(fn, "id", None)
-            if name == "run_on_gpu_pool_guarded":
-                out.append((path, node.lineno,
-                            {kw.arg for kw in node.keywords if kw.arg}))
+            path = Path(root) / f
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:  # pragma: no cover
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                fn = node.func
+                name = getattr(fn, "attr", None) or getattr(fn, "id", None)
+                if name == "run_on_gpu_pool_guarded":
+                    out.append((path, node.lineno,
+                                {kw.arg for kw in node.keywords if kw.arg}))
     return out
 
 

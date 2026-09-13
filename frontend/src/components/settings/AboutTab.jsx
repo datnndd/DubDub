@@ -17,7 +17,6 @@ import { Button, Badge } from '../../ui';
 import { SettingsSection } from './primitives';
 import { CATEGORY_BY_ID } from './settingsCategories';
 import { useAppStore } from '../../store';
-import { isTauri } from './native';
 import Row from './Row';
 import VoiceStudioMark from '../brand/VoiceStudioMark';
 
@@ -28,7 +27,6 @@ import VoiceStudioMark from '../brand/VoiceStudioMark';
  */
 const CHECK_FIX_CATEGORY = {
   ffmpeg: 'network',
-  hf_token: 'credentials',
   disk: 'storage',
   data_dir: 'storage',
   engines: 'engines',
@@ -67,10 +65,7 @@ function OpenCategoryButton({ categoryId }) {
  */
 export default function AboutTab({
   appVersion,
-  tauriVersion,
   info,
-  checkForUpdates,
-  updateState,
   selfCheck,
   selfCheckRunning,
   runSelfCheck,
@@ -92,37 +87,7 @@ export default function AboutTab({
         }
       />
       <Row label={t('about.version')} value={resolveAboutVersion(appVersion, info)} mono />
-      <Row
-        label={t('about.tauri_runtime')}
-        value={tauriVersion || (isTauri() ? '—' : t('about.web_preview'))}
-        mono
-      />
-      <Row
-        label={t('about.hf_token')}
-        value={
-          info?.has_hf_token ? (
-            t('about.yes')
-          ) : (
-            <span className="inline-flex flex-wrap items-center gap-[var(--space-3)]">
-              {t('about.no')}
-              <OpenCategoryButton categoryId="credentials" />
-            </span>
-          )
-        }
-      />
-
       <div className="settings-link-row mt-[var(--space-5)] flex flex-wrap gap-[var(--space-4)]">
-        {isTauri() && (
-          <Button
-            variant="primary"
-            size="md"
-            leading={<Download size={12} />}
-            onClick={checkForUpdates}
-            loading={updateState === 'checking' || updateState === 'downloading'}
-          >
-            {updateState === 'downloading' ? t('about.downloading') : t('about.check_updates')}
-          </Button>
-        )}
         <Button
           variant="subtle"
           size="md"

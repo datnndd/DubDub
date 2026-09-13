@@ -3,52 +3,18 @@
  *
  * Extracted from App.jsx to reduce file size and enable independent testing.
  */
-import { API_BASE as _PREVIEW_API, isTauriContext } from './apiBase';
 import { claimTrackedPlayback } from './playback';
-import { apiFetch } from '../api/client';
-
-const isTauri = isTauriContext();
-
-// ── Tauri window maximise on double-click ─────────────────────────────
-let tauriWindow = null;
-if (isTauri) {
-  import('@tauri-apps/api/window').then((m) => {
-    tauriWindow = m;
-  });
-}
-export const doubleClickMaximize = () => {
-  if (tauriWindow) tauriWindow.getCurrentWindow().toggleMaximize();
-};
 
 // ── File → media URL ──────────────────────────────────────────────────
-// _PREVIEW_API is now sourced from utils/apiBase.ts so Docker LAN users
-// (issue #80) get window.location.hostname:3900 instead of localhost:3900.
-
 /**
  * Convert a File object to a media-safe URL.
- * In Tauri's WebKit, blob: URLs fail for <video>/<audio> elements.
- * We upload to the backend's /preview endpoint and serve via HTTP instead.
- * Falls back to createObjectURL for regular browsers.
+ * The web runtime uses a browser object URL and revokes previous ones.
  */
 export const fileToMediaUrl = async (file, prevUrls) => {
   // Revoke previous blob URLs if they exist
   if (prevUrls?.videoUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrls.videoUrl);
   if (prevUrls?.audioUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrls.audioUrl);
 
-  if (isTauri) {
-    try {
-      const form = new FormData();
-      form.append('video', file, file.name || 'media.wav');
-      const res = await apiFetch(`${_PREVIEW_API}/preview/upload`, { method: 'POST', body: form });
-      const data = await res.json();
-      return {
-        videoUrl: `${_PREVIEW_API}${data.url}`,
-        audioUrl: data.audioUrl ? `${_PREVIEW_API}${data.audioUrl}` : `${_PREVIEW_API}${data.url}`,
-      };
-    } catch (e) {
-      console.warn('Preview upload failed, falling back to blob URL:', e);
-    }
-  }
   const url = URL.createObjectURL(file);
   return { videoUrl: url, audioUrl: url };
 };
@@ -186,183 +152,7 @@ const playTrackedAudioElement = (a, { label, peaksBlob, cleanup, onDone } = {}) 
   return { session, finish };
 };
 
-/**
- * Play a decoded AudioBuffer through a fresh AudioContext (Tauri path — blob
- * URLs don't play in WebKit media elements) as a tracked 'output' playback.
- * Seek re-creates the buffer source at the target offset; pause/resume map to
- * ctx.suspend()/resume() (ctx.currentTime freezes while suspended, so the
- * elapsed-time math stays correct across pauses).
- */
-const playTrackedBufferSource = (ctx, decoded, { label, onDone } = {}) => {
-  const duration = decoded.duration;
-  let srcNode = null;
-  let offset = 0;
-  let startedAt = 0;
-  let finished = false;
-  let timer = null;
-
-  const currentPos = () => Math.min(offset + (ctx.currentTime - startedAt), duration);
-
-  const finish = (reason) => {
-    if (finished) return;
-    finished = true;
-    if (timer) clearInterval(timer);
-    if (srcNode) srcNode.onended = null;
-    try {
-      srcNode?.stop();
-    } catch {
-      /* already stopped */
-    }
-    try {
-      ctx.close();
-    } catch {
-      /* already closed */
-    }
-    try {
-      onDone?.(reason);
-    } catch {
-      /* consumer callbacks must not break the manager */
-    }
-  };
-
-  const session = claimTrackedPlayback({
-    source: 'output',
-    label,
-    stop: () => finish('stopped'),
-    seek: (t) => {
-      if (finished) return;
-      startSource(Math.max(0, Math.min(t, Math.max(0, duration - 0.01))));
-      session.update({ currentTime: offset });
-    },
-    pause: () => {
-      if (finished) return;
-      ctx
-        .suspend()
-        .then(() => session.update({ paused: true, currentTime: currentPos() }))
-        .catch(() => {});
-    },
-    resume: () => {
-      if (finished) return;
-      ctx
-        .resume()
-        .then(() => session.update({ paused: false }))
-        .catch(() => {});
-    },
-  });
-
-  const startSource = (at) => {
-    const prev = srcNode;
-    if (prev) {
-      prev.onended = null; // superseded by seek — its end must not finish us
-      try {
-        prev.stop();
-      } catch {
-        /* already stopped */
-      }
-      try {
-        prev.disconnect();
-      } catch {
-        /* noop */
-      }
-    }
-    const s = ctx.createBufferSource();
-    s.buffer = decoded;
-    s.connect(ctx.destination);
-    offset = at;
-    startedAt = ctx.currentTime;
-    s.onended = () => {
-      if (srcNode !== s || finished) return;
-      session.update({ currentTime: duration });
-      session.release();
-      finish('ended');
-    };
-    srcNode = s;
-    s.start(0, at);
-  };
-
-  startSource(0);
-  // The buffer is already decoded — peaks come for free, no second decode.
-  session.update({ duration, currentTime: 0, peaks: computePeaks(decoded) });
-  timer = setInterval(() => {
-    if (!finished && ctx.state === 'running') session.update({ currentTime: currentPos() });
-  }, 250);
-};
-
-/**
- * Play audio from a Blob. Uses Web Audio API in Tauri (blob URLs blocked)
- * and standard Audio() elsewhere.
- *
- * Registered with the global playback manager (issue #316): starting any
- * other preview stops this one, and `stopActivePlayback()` halts it — the
- * old fire-and-forget version could neither be stopped nor de-overlapped.
- *
- * Every path registers as a *tracked* 'output' playback so the persistent
- * GlobalAudioPlayer bar gets a label, waveform peaks (decoded once from the
- * blob we already hold — never refetched), live time, and seek/pause.
- *
- * @param {Blob} blob
- * @param {object} [meta]
- * @param {string} [meta.label]   User-facing "what is playing" text.
- * @param {(reason: 'ended'|'stopped'|'error') => void} [meta.onDone]
- *        Fires exactly once when playback leaves the global player —
- *        callers chain sequences ('ended'/'error' → next) or reset their
- *        per-item playing state ('stopped').
- */
 export const playBlobAudio = async (blob, meta = {}) => {
-  if (isTauri) {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // WebKit suspends AudioContext by default — must resume before decoding
-    if (ctx.state === 'suspended') await ctx.resume();
-    try {
-      const buf = await blob.arrayBuffer();
-      const decoded = await ctx.decodeAudioData(buf);
-      playTrackedBufferSource(ctx, decoded, meta);
-    } catch (e) {
-      // Expected & recovered on WebView2 (Windows): decodeAudioData decodes the
-      // WHOLE file into one PCM AudioBuffer and chokes on long-form audiobook/
-      // story renders (.m4b / AAC) — a `warn`, not a red ERROR, since the
-      // streaming fallback below recovers it. (The scary "decode error" line
-      // users saw in Logs → Frontend was this expected branch, logged at error
-      // level even when playback succeeded.)
-      console.warn(
-        'playBlobAudio: Web Audio decode failed, falling back to streamed playback:',
-        e?.message || e,
-      );
-      ctx.close();
-      // Fallback (#653): a blob: URL won't play in an <audio> element under
-      // Tauri's WebKit (see fileToMediaUrl above), so upload to the backend
-      // preview endpoint (ffmpeg-extracts a streamable WAV) and play the HTTP
-      // URL — the same path video previews already use. Streams; no whole-file
-      // decode. NOTE: _PREVIEW_API must be 127.0.0.1 (not localhost) or this
-      // fetch misses the IPv4 backend on Windows (see utils/apiBase.ts).
-      // (Peaks skipped here on purpose: this blob just failed to decode.)
-      try {
-        const form = new FormData();
-        form.append('video', blob, 'preview.audio');
-        const res = await apiFetch(`${_PREVIEW_API}/preview/upload`, {
-          method: 'POST',
-          body: form,
-        });
-        const data = await res.json();
-        const url = `${_PREVIEW_API}${data.audioUrl || data.url}`;
-        const a = new Audio(url);
-        const { session, finish } = playTrackedAudioElement(a, {
-          label: meta.label,
-          onDone: meta.onDone,
-        });
-        await a.play().catch((err) => {
-          session.release();
-          finish('error'); // single onDone — the outer catch never re-fires it
-          console.error('playBlobAudio: streamed fallback play failed:', err?.message || err);
-        });
-      } catch (e2) {
-        // Real failure — both decode AND the streamed-fallback upload failed
-        // (before an element existed, so onDone hasn't fired yet).
-        console.error('playBlobAudio: streamed fallback also failed:', e2?.message || e2);
-        meta.onDone?.('error');
-      }
-    }
-  } else {
     const url = URL.createObjectURL(blob);
     const a = new Audio(url);
     const { session, finish } = playTrackedAudioElement(a, {
@@ -376,7 +166,6 @@ export const playBlobAudio = async (blob, meta = {}) => {
       finish('error');
       console.error('playBlobAudio play error:', e);
     });
-  }
 };
 
 // ── Notification ping ─────────────────────────────────────────────────
@@ -404,4 +193,3 @@ export const playPing = () => {
 };
 
 // Re-export for convenience
-export { isTauri };

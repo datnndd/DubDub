@@ -23,15 +23,22 @@ SERVICES_DIR = REPO_ROOT / "backend" / "services"
 _SEARCH_ROOTS = ("backend", "tests", "scripts")
 
 # module name -> justification for existing with no in-repo referencer.
-_INTENTIONALLY_UNREFERENCED: dict[str, str] = {}
+_INTENTIONALLY_UNREFERENCED: dict[str, str] = {
+    "outbound_http": "Pinned HTTP transport utility for explicitly configured local/trusted endpoints.",
+}
 
 
 def _py_files() -> list[Path]:
+    import os
     files: list[Path] = []
     for root in _SEARCH_ROOTS:
         base = REPO_ROOT / root
         if base.is_dir():
-            files.extend(base.rglob("*.py"))
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".") and "venv" not in d and d != "node_modules" and d != "__pycache__"]
+                for f in filenames:
+                    if f.endswith(".py"):
+                        files.append(Path(dirpath) / f)
     return files
 
 

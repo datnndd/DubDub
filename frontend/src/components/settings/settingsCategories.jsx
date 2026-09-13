@@ -19,7 +19,6 @@ import {
   Palette,
   Plug,
   Cpu,
-  Mic,
   SpellCheck,
   Languages,
   Brain,
@@ -27,10 +26,7 @@ import {
   HardDrive,
   Wifi,
   Share2,
-  KeyRound,
-  LockKeyhole,
   Sparkles,
-  ArrowDownToLine,
   ShieldCheck,
   FileText,
   Info,
@@ -134,23 +130,6 @@ export const GROUPS = [
         ],
       },
       {
-        id: 'dictation',
-        labelKey: 'settings.dictation',
-        defaultLabel: 'Dictation',
-        icon: Mic,
-        keywords: [
-          'dictation',
-          'hotkey',
-          'shortcut',
-          'refinement',
-          'echo cancellation',
-          'aec',
-          'microphone',
-          'voice capture',
-        ],
-        keywordKeys: ['settings.shortcut'],
-      },
-      {
         id: 'pronunciation',
         labelKey: 'settings.pronunciation',
         defaultLabel: 'Pronunciation',
@@ -243,26 +222,6 @@ export const GROUPS = [
         keywordKeys: ['settings.storage_usage', 'settings.reset', 'settings.uninstall'],
       },
       {
-        id: 'permissions',
-        // Lives in the permissions.* i18n namespace (not settings.*) so the
-        // whole feature's strings ship as one additive block per locale.
-        labelKey: 'permissions.title',
-        defaultLabel: 'Permissions',
-        icon: LockKeyhole,
-        keywords: [
-          'permission',
-          'permissions',
-          'microphone access',
-          'mic access',
-          'accessibility',
-          'privacy & security',
-          'os permissions',
-          'grant',
-          'tcc',
-        ],
-        keywordKeys: ['permissions.microphone', 'permissions.accessibility'],
-      },
-      {
         id: 'network',
         labelKey: 'settings.network',
         defaultLabel: 'Network',
@@ -335,14 +294,6 @@ export const GROUPS = [
         keywords: ['api', 'openapi', 'scalar', 'rest', 'swagger', 'docs', 'reference', 'endpoints'],
       },
       {
-        id: 'credentials',
-        labelKey: 'settings.credentials',
-        defaultLabel: 'Credentials',
-        icon: KeyRound,
-        keywords: ['credentials', 'hugging face token', 'hf token', 'api key', 'secret'],
-        keywordKeys: ['settings.hf_token_title'],
-      },
-      {
         id: 'llm-providers',
         labelKey: 'settings.llm_providers',
         defaultLabel: 'LLM Providers',
@@ -390,13 +341,6 @@ export const GROUPS = [
     labelKey: 'settings.group_app',
     defaultLabel: 'App',
     items: [
-      {
-        id: 'updates',
-        labelKey: 'settings.updates',
-        defaultLabel: 'Updates',
-        icon: ArrowDownToLine,
-        keywords: ['update', 'channel', 'stable', 'preview', 'releases', 'changelog'],
-      },
       {
         id: 'privacy',
         labelKey: 'settings.privacy',

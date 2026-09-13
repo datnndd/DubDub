@@ -5,9 +5,8 @@ fine-tune of NeuTTS Air (Qwen 0.5B backbone): instant voice cloning from a
 short reference clip, 48 kHz output, runs CPU (ONNX Runtime — the default
 ``v3turbo`` mode is torch-free) or GPU (PyTorch). Windows-capable.
 
-It runs in its own subprocess **and its own venv** (the same isolation
-primitive as dots.tts / MOSS / IndexTTS2): ``vieneu`` pulls its own GGUF/ONNX
-runtime + ``sea_g2p`` phonemizer stack that must not fight the parent's pins.
+It runs in its own subprocess and venv so its runtime and phonemizer stack do
+not conflict with the parent application's dependencies.
 
 Cross-platform honesty: the upstream SDK documents Windows/Linux/macOS for
 the NeuTTS family, and the ``v3turbo`` mode needs no torch on CPU — but the
@@ -61,8 +60,8 @@ class VieNueBackend(SubprocessBackend):
     """VieNeu-TTS — Vietnamese instant voice cloning, 48 kHz, CPU/GPU.
 
     Runs in a long-lived sidecar over length-prefixed JSON-over-stdio in a
-    dedicated venv (``pip install vieneu``). Weights download from
-    HuggingFace on first synthesize.
+    dedicated venv (``pip install vieneu``). Model files are selected from a
+    user-provided local directory; automatic model downloads are disabled.
 
     Modes (env ``OMNIVOICE_VIENEU_MODE``, default ``v3turbo``):
 
@@ -78,10 +77,10 @@ class VieNueBackend(SubprocessBackend):
         uv venv backend/engines/vienue/.venv
         uv pip install --python backend/engines/vienue/.venv/Scripts/python.exe vieneu
 
-    (Windows path; macOS/Linux use ``.venv/bin/python``). Or simply select
-    the engine — the venv auto-installs from PyPI on first use when ``uv``
-    is available. License: whitelist Apache-2.0 variants only (0.5B /
-    v2-Turbo); never the CC BY-NC 0.3B.
+    (Windows path; macOS/Linux use ``.venv/bin/python``). Set
+    ``OMNIVOICE_VIENEU_MODEL_DIR`` to the local model directory before use.
+    License: whitelist Apache-2.0 variants only (0.5B / v2-Turbo); never the
+    CC BY-NC 0.3B.
     """
 
     id = "vienue"
@@ -110,16 +109,19 @@ class VieNueBackend(SubprocessBackend):
             VIENEU_SIDECAR_SCRIPT,
             is_vieneu_installed,
         )
+        model_dir = os.environ.get("OMNIVOICE_VIENEU_MODEL_DIR", "").strip()
+        if not model_dir or not os.path.isdir(model_dir):
+            return False, (
+                "Set OMNIVOICE_VIENEU_MODEL_DIR to a preinstalled local "
+                "VieNeu-TTS model directory. Automatic model downloads are disabled."
+            )
         if not is_vieneu_installed():
             return False, (
                 "VieNeu-TTS venv not found. Create it once with: "
                 "uv venv backend/engines/vienue/.venv && uv pip install "
                 "--python backend/engines/vienue/.venv/Scripts/python.exe "
-                "vieneu (Windows; macOS/Linux use .venv/bin/python) — or just "
-                "select this engine and let VoiceStudio auto-install `vieneu` "
-                "from PyPI on first use (needs uv). Model weights download "
-                "from HuggingFace on first synthesize. License: Apache-2.0 "
-                "variants only (0.5B / v2-Turbo; never the CC BY-NC 0.3B). "
+                "vieneu (Windows; macOS/Linux use .venv/bin/python). Model weights must already "
+                "exist at OMNIVOICE_VIENEU_MODEL_DIR. "
                 "See docs/engines/vieneu-tts.md."
             )
         if not VIENEU_SIDECAR_SCRIPT.exists():
@@ -148,7 +150,7 @@ class VieNueBackend(SubprocessBackend):
     @property
     def supported_languages(self) -> list[str]:
         # v3-Turbo speaks Vietnamese; v2 adds English. Overridable for users
-        # running a different checkpoint via OMNIVOICE_VIENEU_MODEL.
+        # running a different local checkpoint.
         raw = os.environ.get("OMNIVOICE_VIENEU_LANGUAGES", "")
         langs = [s.strip().lower() for s in raw.split(",") if s.strip()]
         return langs or ["vi"]

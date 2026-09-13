@@ -7,7 +7,6 @@ import threading
 import pytest
 
 from engines.hardsub_ocr.main import _crop_from
-from services import hardsub_ocr as hso
 
 
 @pytest.mark.parametrize("bottom", [0.3, 1.0])
@@ -40,14 +39,14 @@ async def test_soft_route_extracts_subtitle_ordinal_not_global_stream_index(rout
     from schemas.requests import HardsubExtractRequest
 
     router, job, _, _ = route_job
-    monkeypatch.setattr(hso, "detect_soft_subtitles", lambda _: [{"index": 2}, {"index": 4}])
+    monkeypatch.setattr("services.hardsub_ocr.detect_soft_subtitles", lambda _: [{"index": 2}, {"index": 4}])
     selected = []
 
     def extract(path, index):
         selected.append(index)
         return "1\n00:00:00,000 --> 00:00:01,000\nselected\n"
 
-    monkeypatch.setattr(hso, "extract_soft_subtitle", extract)
+    monkeypatch.setattr("services.hardsub_ocr.extract_soft_subtitle", extract)
     result = await router.dub_hardsub_extract("fixture", HardsubExtractRequest(mode="soft", soft_index=1))
     assert selected == [1]  # ffmpeg -map 0:s:1 is the second subtitle stream
     assert result["segments"][0]["text"] == "selected"
@@ -59,7 +58,7 @@ async def test_ocr_outside_duration_preserves_existing_transcript(route_job, mon
 
     router, job, queued, folder = route_job
     before = list(job["segments"])
-    monkeypatch.setattr(hso, "run_ocr_client", lambda *a, **kw: [{"start": 3, "end": 4, "text": "outside"}])
+    monkeypatch.setattr("services.hardsub_ocr.run_ocr_client", lambda *a, **kw: [{"start": 3, "end": 4, "text": "outside"}])
     await router.dub_hardsub_extract("fixture", HardsubExtractRequest(mode="ocr"))
     events = [json.loads(event.removeprefix("data: ")) async for event in queued[0]()]
     assert events[-1]["type"] == "error"
@@ -73,7 +72,7 @@ async def test_srt_artifact_matches_clamped_transcript(route_job, monkeypatch):
     from services.srt_parser import parse_srt
 
     router, job, queued, folder = route_job
-    monkeypatch.setattr(hso, "run_ocr_client", lambda *a, **kw: [{"start": 1, "end": 3, "text": "visible"}])
+    monkeypatch.setattr("services.hardsub_ocr.run_ocr_client", lambda *a, **kw: [{"start": 1, "end": 3, "text": "visible"}])
     await router.dub_hardsub_extract("fixture", HardsubExtractRequest(mode="ocr"))
     events = [event async for event in queued[0]()]
     assert "hardsub_done" in events[-1]
@@ -96,7 +95,7 @@ async def test_cancelled_ocr_does_not_replace_transcript(route_job, monkeypatch)
         return [{"start": 0, "end": 1, "text": "unwanted"}]
 
     monkeypatch.setattr(task_manager, "is_cancelled", lambda _: cancelled)
-    monkeypatch.setattr(hso, "run_ocr_client", extract)
+    monkeypatch.setattr("services.hardsub_ocr.run_ocr_client", extract)
     await router.dub_hardsub_extract("fixture", HardsubExtractRequest(mode="ocr"))
     events = [json.loads(event.removeprefix("data: ")) async for event in queued[0]()]
     assert events[-1]["type"] == "cancelled"
@@ -106,6 +105,7 @@ async def test_cancelled_ocr_does_not_replace_transcript(route_job, monkeypatch)
 
 def test_client_cancellation_terminates_sidecar(monkeypatch, tmp_path):
     from engines.hardsub_ocr import bootstrap
+    import services.hardsub_ocr as fresh_hso
 
     script = tmp_path / "waiting_sidecar.py"
     child_pid_path = tmp_path / "child.pid"
@@ -129,13 +129,13 @@ def test_client_cancellation_terminates_sidecar(monkeypatch, tmp_path):
         processes.append(proc)
         return proc
 
-    monkeypatch.setattr(hso.subprocess, "Popen", track)
+    monkeypatch.setattr("services.hardsub_ocr.subprocess.Popen", track)
     cancel = threading.Event()
     timer = threading.Timer(1, cancel.set)
     timer.start()
     try:
         with pytest.raises(RuntimeError, match="cancelled"):
-            hso.run_ocr_client("unused.mp4", cancelled=cancel.is_set)
+            fresh_hso.run_ocr_client("unused.mp4", cancelled=cancel.is_set)
         import psutil
         assert child_pid_path.exists()
         assert not psutil.pid_exists(int(child_pid_path.read_text()))

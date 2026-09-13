@@ -1,47 +1,8 @@
-﻿"""One-click sidecar-engine provisioner.
+"""Provision the optional VieNeuTTS sidecar venv.
 
-Some engines (IndexTTS 2.5, MOSS-v1.5, dots.tts, and Confucius4) have the
-same shape and can't live in the app venv because they pin a ``transformers``
-version that conflicts with the parent's ``>=5.3``. They run as sidecars:
-a source checkout + a dedicated venv + (for IndexTTS-2) model weights in
-``<checkout>/checkpoints/``. Until now provisioning that trio was four
-manual terminal steps; this module turns it into a resumable background
-job the Model Catalogue → Engines UI can start and poll.
-
-Design notes (single source of truth for the choices):
-
-* **Fetch: git primary, tarball fallback.** ``git clone --depth 1`` is the
-  primary path (fast, matches the documented manual flow, and leaves a
-  repo the user can update). When git is absent — common on Windows — we
-  fall back to downloading the GitHub source tarball over HTTPS (httpx,
-  honours proxy env vars) and extracting it with :mod:`tarfile`. A
-  ``pip install git+https://…`` path was rejected because the engine
-  *directory* must exist on disk anyway: the sidecar resolves its venv
-  and model weights relative to it.
-* **Managed install root:** ``DATA_DIR/engines/<engine_id>/`` — always
-  user-writable (works in frozen/packaged builds where ``backend/`` is
-  read-only), survives app updates, and never collides with a user's own
-  clone. A user-managed install (env var already pointing at their clone)
-  is left completely alone.
-* **Weights ARE part of the install** for engines whose sidecar loads
-  from ``<checkout>/<weights_subdir>/`` (IndexTTS 2.5's ``main.py`` reads
-  ``$OMNIVOICE_INDEXTTS_DIR/checkpoints/config_v2_5.yaml`` — verified). The
-  download goes through ``huggingface_hub.snapshot_download`` with the
-  endpoint from :mod:`services.endpoint_race` (HF endpoint auto-select;
-  **no hardcoded huggingface.co**) and the token from
-  :mod:`services.token_resolver`.
-* **Idempotent + resumable:** every step no-ops when its output is
-  already healthy and repairs it when it is half-there (a checkout
-  without ``pyproject.toml`` is re-fetched; a venv that can't import the
-  probe module is re-installed; ``snapshot_download`` resumes weights).
-* **Persistence:** on success the checkout path is written to
-  ``os.environ[<env_var>]`` (the engine's bootstrap reads the env var, so
-  it works immediately — no restart) and to ``prefs.json`` under
-  ``env.<env_var>`` (restored into the environment at startup by
-  ``main.py``), the same mechanism Settings' env panel uses.
-
-Cross-platform: no symlinks, no shell strings (argv lists only), venv
-layout resolved per-OS (``Scripts/python.exe`` vs ``bin/python``).
+The provider installs only its PyPI runtime into ``DATA_DIR/engines/vienue``.
+Its model directory is always supplied locally by the user; this module never
+downloads model weights or contacts Hugging Face.
 """
 from __future__ import annotations
 
@@ -91,8 +52,7 @@ _IMPORT_PROBE_TIMEOUT_S = 120
 class SidecarSpec:
     """Everything the provisioner needs to install one sidecar engine.
 
-    Parametrized so future sidecar engines (MOSS-v1.5, dots.tts,
-    Confucius4) become one SPECS entry, not another installer.
+    The sole supported spec is VieNeuTTS.
     """
 
     engine_id: str
@@ -111,10 +71,6 @@ class SidecarSpec:
     repo_ref: Optional[str] = None     # branch/tag selected by git clone
     source_revision: Optional[str] = None  # reviewed upstream commit
     source_required_path: Optional[str] = None  # distinguishes incompatible source generations
-    weights_repo_id: Optional[str] = None   # HF repo downloaded into <checkout>/<weights_subdir>
-    weights_revision: Optional[str] = None  # reviewed HF commit
-    weights_subdir: str = "checkpoints"
-    weights_config_name: str = "config.yaml"  # required model config inside weights_subdir
     docs_path: str = "docs/engines"         # where the manual-install fallback lives
     required_bytes: int = 12 * _GIB    # conservative source+venv+weights estimate for preflight
     # Called after a successful install/uninstall so the engine's memoised
@@ -122,16 +78,6 @@ class SidecarSpec:
     invalidate: Callable[[], None] = field(default=lambda: None)
     # Cheap "is a healthy install already present?" probe (file existence only).
     installed_probe: Callable[[], bool] = field(default=lambda: False)
-
-
-def _indextts_invalidate() -> None:
-    from engines.indextts import bootstrap
-    bootstrap.invalidate()
-
-
-def _indextts_installed() -> bool:
-    from engines.indextts.bootstrap import is_indextts_installed
-    return is_indextts_installed()
 
 
 def _vienue_invalidate() -> None:
@@ -145,32 +91,6 @@ def _vienue_installed() -> bool:
 
 
 SPECS: dict[str, SidecarSpec] = {
-    "indextts2": SidecarSpec(
-        engine_id="indextts2",
-        display_name="IndexTTS 2.5",
-        repo_url="https://github.com/index-tts/index-tts.git",
-        tarball_url=(
-            "https://github.com/index-tts/index-tts/archive/"
-            "bf2e967fac7933197143b017a60820b1ad40c448.tar.gz"
-        ),
-        checkout_dirname="index-tts-2.5",
-        env_var="OMNIVOICE_INDEXTTS_DIR",
-        probe_module="indextts.infer_v2_5",
-        repo_ref="indextts-2.5",
-        source_revision="bf2e967fac7933197143b017a60820b1ad40c448",
-        source_required_path="indextts/infer_v2_5.py",
-        weights_repo_id="IndexTeam/IndexTTS-2.5",
-        weights_revision="d0aa86e75bb6f3437f3831e95056fa72842d89ef",
-        weights_subdir="checkpoints",
-        weights_config_name="config_v2_5.yaml",
-        docs_path="docs/engines/indextts.md",
-        # ~0.1 GB source + up to ~6 GB venv (torch + transformers<5) +
-        # ~6 GB weights. Deliberately conservative; the preflight subtracts
-        # whatever a partial install already put on disk.
-        required_bytes=12 * _GIB,
-        invalidate=_indextts_invalidate,
-        installed_probe=_indextts_installed,
-    ),
     # VieNeu-TTS — Vietnamese instant voice cloning (PyPI `vieneu`, the
     # Vietnamese fine-tune of NeuTTS Air). A PyPI-package spec: no source
     # checkout, no bundled-weights download (the SDK pulls its checkpoint
@@ -405,7 +325,6 @@ STEP_IDS = (
     "create_venv",
     "install_deps",
     "verify",
-    "fetch_weights",
     "persist",
 )
 
@@ -435,7 +354,6 @@ def _new_job(engine_id: str) -> dict:
         "log": deque(maxlen=_LOG_MAX_LINES),
         "error": None,
         "remediation": None,
-        "weights_progress": None,
         "started_at": time.time(),
         "finished_at": None,
     }
@@ -522,14 +440,11 @@ def _healthy(spec: SidecarSpec) -> bool:
         if env_dir and Path(env_dir) in _legacy_managed_checkouts(spec):
             return False
         # No managed install at all. A legacy install may still exist (e.g.
-        # IndexTTS's old lazy-bootstrap venv under backend/engines/) — trust
-        # the engine's own probe so we never re-provision over a working one.
+        # A user-managed predecessor remains available to the engine.
         return _safe_installed(spec)
     if not _source_present(spec, checkout):
         return False
     if not _venv_python(checkout / ".venv").is_file():
-        return False
-    if spec.weights_repo_id and not _weights_present(spec):
         return False
     return True
 
@@ -639,7 +554,6 @@ def _run_install(spec: SidecarSpec, job: dict) -> None:
         ("create_venv", _step_create_venv),
         ("install_deps", _step_install_deps),
         ("verify", _step_verify),
-        ("fetch_weights", _step_fetch_weights),
         ("persist", _step_persist),
     ]
     try:
@@ -922,133 +836,6 @@ def _step_verify(spec: SidecarSpec, job: dict) -> None:
         )
     _job_step(job, "verify")["detail"] = f"import {spec.probe_module} OK"
     _log(job, "Venv verified.")
-
-
-# Written into the weights dir after snapshot_download COMPLETES. A partial
-# multi-shard download can leave a config + several plausible shards on
-# disk, so file heuristics alone would declare a killed-mid-download install
-# healthy and never resume it (the sidecar edition of #352). Only this
-# installer writes the marker; user-managed clones never hit this path.
-_WEIGHTS_COMPLETE_MARKER = ".omnivoice_weights_complete"
-
-
-def _weights_present(spec: SidecarSpec) -> bool:
-    """True only for a COMPLETED weights download: the completion marker
-    plus a sanity floor (the expected config + one ≥5 MB weight file — the same
-    truncated-download floor the model store uses)."""
-    wdir = managed_checkout(spec) / spec.weights_subdir
-    try:
-        marker = (wdir / _WEIGHTS_COMPLETE_MARKER).read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return False
-    expected = [spec.weights_repo_id or "", spec.weights_revision or ""]
-    actual = marker[:2] if len(marker) >= 2 else marker + [""]
-    if actual != expected:
-        return False
-    return _weights_floor_ok(wdir, config_name=spec.weights_config_name)
-
-
-def _weights_floor_ok(wdir: Path, *, config_name: str = "config.yaml") -> bool:
-    if not (wdir / config_name).is_file():
-        return False
-    floor = 5 * 1024 * 1024
-    try:
-        for root, _dirs, files in os.walk(wdir):
-            for f in files:
-                try:
-                    if os.path.getsize(os.path.join(root, f)) >= floor:
-                        return True
-                except OSError:
-                    continue
-    except OSError:
-        pass  # unreadable weights dir — treat as not present
-    return False
-
-
-def _step_fetch_weights(spec: SidecarSpec, job: dict) -> None:
-    step = _job_step(job, "fetch_weights")
-    if not spec.weights_repo_id:
-        step["state"] = "skipped"
-        step["detail"] = "engine has no bundled-weights requirement"
-        return
-    if _weights_present(spec):
-        step["state"] = "done"
-        step["detail"] = "weights already present"
-        _log(job, "Model weights already present — skipping download.")
-        return
-
-    wdir = managed_checkout(spec) / spec.weights_subdir
-    wdir.mkdir(parents=True, exist_ok=True)
-    _log(job, f"Downloading {spec.weights_repo_id} → {wdir} (several GB — resumable) …")
-
-    from huggingface_hub import snapshot_download
-    from services import endpoint_race
-    from services.token_resolver import resolve as resolve_token
-    from utils import hf_progress
-
-    # Mirror per-file byte progress into the job so the polling UI can show
-    # it — same tqdm hook the model store's SSE feed uses.
-    def _listener(ev: dict) -> None:
-        try:
-            # Only mirror events for OUR repo — a concurrent model-store
-            # download must not scribble its progress into this job.
-            if ev.get("repo_id") not in (None, spec.weights_repo_id):
-                return
-            job["weights_progress"] = {
-                "filename": ev.get("filename"),
-                "downloaded": ev.get("downloaded"),
-                "total": ev.get("total"),
-                "pct": ev.get("pct"),
-            }
-        except Exception:
-            pass  # progress mirroring is advisory — never break the download
-
-    listener_id = hf_progress.register_listener(_listener)
-    repo_token = hf_progress.current_repo_id.set(spec.weights_repo_id)
-    try:
-        # Tracks the repo's default branch on purpose (same policy as every
-        # other model download in the app — see setup/download.py): the
-        # source checkout is unpinned upstream `main` anyway, and hf_hub
-        # checksum-verifies each artifact. Hence the B615 waiver below.
-        kwargs: dict = {
-            "repo_id": spec.weights_repo_id,
-            "local_dir": str(wdir),
-            "token": resolve_token(),
-        }
-        if spec.weights_revision:
-            kwargs["revision"] = spec.weights_revision
-        endpoint = endpoint_race.effective_endpoint()
-        if endpoint:
-            kwargs["endpoint"] = endpoint
-        tqdm_cls = hf_progress.tracked_tqdm_class()
-        if tqdm_cls is not None:
-            kwargs["tqdm_class"] = tqdm_cls
-        try:
-            snapshot_download(**kwargs)  # nosec B615 — deliberate default-branch policy, see above
-        except Exception as exc:
-            raise _StepError(
-                f"Model weight download failed: {exc}",
-                "Re-run the install — the download resumes where it stopped. "
-                "Check Settings → Network (HF endpoint / proxy) if it keeps failing.",
-            ) from exc
-    finally:
-        hf_progress.unregister_listener(listener_id)
-        hf_progress.current_repo_id.reset(repo_token)
-
-    if not _weights_floor_ok(wdir, config_name=spec.weights_config_name):
-        raise _StepError(
-            "Weight download finished but no plausible weight files were found — "
-            "the download was likely interrupted.",
-            "Re-run the install to resume the download.",
-        )
-    # snapshot_download returned AND the sanity floor holds → mark complete,
-    # so _weights_present/_healthy stop treating this dir as a partial.
-    (wdir / _WEIGHTS_COMPLETE_MARKER).write_text(
-        f"{spec.weights_repo_id}\n{spec.weights_revision or ''}\n{time.time():.0f}\n",
-        encoding="utf-8",
-    )
-    step["detail"] = "weights downloaded"
-    _log(job, "Model weights downloaded.")
 
 
 def _step_persist(spec: SidecarSpec, job: dict) -> None:

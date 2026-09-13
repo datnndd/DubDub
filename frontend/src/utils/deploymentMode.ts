@@ -15,12 +15,11 @@
  * ("restart the app") to users who have no app to restart.
  */
 
-export type DeploymentMode = 'desktop' | 'dev' | 'server';
+export type DeploymentMode = 'dev' | 'server';
 
 /** Pure + injectable for unit tests (same pattern as client._resolveApiBase). */
 export function detectDeploymentMode(env: unknown, win: unknown): DeploymentMode {
-  const w = win as Record<string, unknown> | undefined | null;
-  if (w && (w.__TAURI__ || w.__TAURI_INTERNALS__)) return 'desktop';
+  void win;
   if ((env as { DEV?: boolean } | undefined | null)?.DEV) return 'dev';
   return 'server';
 }

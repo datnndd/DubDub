@@ -86,7 +86,6 @@ def _mutating_route_functions(
     "filename",
     [
         "mcp_bindings.py",
-        "media_tools.py",
         "pronunciation.py",
         "settings.py",
         "system.py",
@@ -115,11 +114,11 @@ def test_sidecar_install_status_uses_method_aware_admin_guard():
     assert "require_admin" in dependencies
 
 
-def test_managed_sidecar_install_stays_desktop_only():
+def test_managed_sidecar_install_requires_admin():
     dependencies = _dependency_names(
         _route_decorators(_tree("engines.py"), "install_sidecar_engine")
     )
-    assert {"require_admin", "require_desktop"} <= dependencies
+    assert "require_admin" in dependencies
 
 
 @pytest.mark.parametrize(

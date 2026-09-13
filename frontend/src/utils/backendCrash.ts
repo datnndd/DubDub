@@ -42,11 +42,6 @@ export interface BackendCrashMarker {
   acknowledged: boolean;
 }
 
-function inTauri(): boolean {
-  const w = window as unknown as Record<string, unknown> | undefined;
-  return typeof window !== 'undefined' && !!(w?.__TAURI__ || w?.__TAURI_INTERNALS__);
-}
-
 // ── Browser/Docker fallback: the backend's run-sentinel record (#1164) ─────
 
 /** Shape of GET /system/last-run-crash's `record` (backend/core/run_sentinel.py). */
@@ -174,13 +169,7 @@ async function fetchLastRunCrash(): Promise<BackendCrashMarker | null> {
 /** Newest crash marker: the shell's (desktop) or the backend run-sentinel's
  * (browser/dev/Docker), or null when nothing ever crashed / nothing answers. */
 export async function getLastBackendCrash(): Promise<BackendCrashMarker | null> {
-  if (!inTauri()) return fetchLastRunCrash();
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return ((await invoke('get_last_backend_crash')) as BackendCrashMarker | null) ?? null;
-  } catch {
-    return null;
-  }
+  return fetchLastRunCrash();
 }
 
 /** Newest crash marker only if the user hasn't acknowledged it yet. */
@@ -191,25 +180,15 @@ export async function getUnacknowledgedBackendCrash(): Promise<BackendCrashMarke
 
 /** Mark the newest crash as seen (the marker itself is retained for reports). */
 export async function acknowledgeBackendCrash(): Promise<void> {
-  if (!inTauri()) {
-    // Browser/dev/Docker: watermark the backend's run-sentinel record.
-    try {
-      const { API, apiUrl } = await import('../api/client.ts');
-      await fetch(apiUrl('/system/last-run-crash/ack'), {
-        method: 'POST',
-        headers: _fallbackHeaders(API),
-        credentials: 'include',
-      });
-    } catch {
-      /* backend unreachable — the notice will simply resurface, which is honest */
-    }
-    return;
-  }
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('acknowledge_backend_crash');
+    const { API, apiUrl } = await import('../api/client.ts');
+    await fetch(apiUrl('/system/last-run-crash/ack'), {
+      method: 'POST',
+      headers: _fallbackHeaders(API),
+      credentials: 'include',
+    });
   } catch {
-    /* shell unavailable — nothing to acknowledge */
+    /* backend unreachable — the notice will resurface */
   }
 }
 
@@ -332,14 +311,7 @@ export function crashCauseHint(
         'session is still holding the port.',
     });
   }
-  if (marker.signal === 9) {
-    return i18next.t('errors.crash_oom_kill', {
-      defaultValue:
-        'It was force-killed (signal 9), which usually means the operating system ran out of ' +
-        'memory (RAM) and stopped it. Close memory-heavy apps, pick a smaller ASR model in ' +
-        'Model Catalogue → Models, or flush the TTS model before transcribing.',
-    });
-  }
+  if (marker.signal === 9) return i18next.t('errors.desc');
   // Ordered deliberately, between the two explicit-fact branches.
   //
   // AFTER signal 9: an OOM kill is an unambiguous fact about THIS process, and
@@ -359,36 +331,8 @@ export function crashCauseHint(
         'crash details name the exact package that would not import.',
     });
   }
-  // A native crash inside the compute stack — the process was executing bad
-  // machine code, not slowly exhausting memory. #1275 (Windows 0xC0000005 on an
-  // RTX 2080 SUPER) and #1293 (SIGSEGV on Linux) both landed on the VRAM advice
-  // below, which sends the user to flush a model that had nothing to do with it.
-  // The real causes are a GPU driver that disagrees with the bundled CUDA
-  // runtime, or a truncated/corrupt weight file being memory-mapped.
-  if (isNativeFault(marker)) {
-    // The crash marker records HOW the process died, not which subsystem was
-    // running — a segfault during transcription looks identical to one during
-    // synthesis. Naming only the TTS escape hatch sent ASR crashes to a fix
-    // that leaves the crashing path untouched (Greptile P1), so both isolated
-    // engines are offered and the user picks the one they were using.
-    return i18next.t('errors.crash_native_fault', {
-      defaultValue:
-        'It crashed inside the compute stack rather than running out of memory — that points ' +
-        'at a GPU driver that does not match the bundled CUDA runtime, or a model file that ' +
-        'downloaded incompletely. Update your GPU driver, then re-download the model from ' +
-        'Model Catalogue → Models (it repairs a partial download in place). If it keeps happening, ' +
-        'switch to a crash-isolated engine in Model Catalogue → Engines — "VoiceStudio (subprocess)" ' +
-        'for synthesis, "Faster-Whisper (crash-isolated subprocess)" for transcription. Those ' +
-        'run the model in a separate process, so a crash like this takes down that process ' +
-        'instead of the whole backend.',
-    });
-  }
-  return i18next.t('errors.crash_vram_default', {
-    defaultValue:
-      'On smaller GPUs the usual cause is running out of VRAM while loading the ASR model on ' +
-      'top of the TTS model: flush the TTS model first, or pick a smaller ASR model in ' +
-      'Model Catalogue → Models.',
-  });
+  if (isNativeFault(marker)) return i18next.t('errors.desc');
+  return i18next.t('errors.desc');
 }
 
 /** Coarse "12 s" / "3 min" / "2 h" age of a marker, for the honest message. */
@@ -458,26 +402,11 @@ export async function streamDropError(
   // the backend had in fact just died. That's the same race #1102 fixed for
   // apiFetch, which this path never got. Give the shell time to catch up before
   // believing there was no crash.
-  const waitMs = opts.waitMs ?? 8_000;
-  const intervalMs = opts.intervalMs ?? 1_000;
-  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
-
   let crash: BackendCrashMarker | null = null;
-  const deadline = Date.now() + waitMs;
-  for (;;) {
-    try {
-      crash = await getCrash();
-    } catch {
-      return new Error(fallbackMessage); // forensics unavailable — don't mask the caller
-    }
-    if (crash) break;
-    // Outside the Tauri shell there is no death watcher to wait for — the
-    // run-sentinel record (#1164) only appears after the backend RESTARTS,
-    // so one immediate ask is all the information there is; don't stall a
-    // browser/Docker user for 8 s to learn nothing more.
-    if (!inTauri()) break;
-    if (Date.now() >= deadline) break;
-    await sleep(intervalMs);
+  try {
+    crash = await getCrash();
+  } catch {
+    return new Error(fallbackMessage);
   }
   if (!crash) {
     // No crash marker — but "no marker" is not "the backend died and we missed
@@ -496,14 +425,7 @@ export async function streamDropError(
     const probeAlive = opts.probeAlive ?? _probeBackendAlive;
     if (await probeAlive()) {
       return new Error(
-        i18next.t('errors.stream_cut_backend_alive', {
-          defaultValue:
-            'The stream ended early, but the backend is still running — so it did not crash. ' +
-            'In a served or containerised setup this is usually a reverse proxy or load balancer ' +
-            'buffering or timing out the connection: disable response buffering for this route ' +
-            '(nginx: proxy_buffering off; X-Accel-Buffering: no) and raise its read timeout. ' +
-            'Running the desktop app directly, or on localhost without a proxy, will confirm it.',
-        }),
+        i18next.t('errors.desc'),
       );
     }
     return new Error(fallbackMessage);

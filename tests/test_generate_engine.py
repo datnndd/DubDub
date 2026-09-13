@@ -106,11 +106,11 @@ def no_omnivoice_model(monkeypatch):
 
 def test_generate_honors_settings_selected_engine(client, monkeypatch, no_omnivoice_model):
     """Engine selected via Settings (env/prefs resolution) runs the request."""
-    fake = _make_fake_engine()
-    monkeypatch.setitem(_tts_mod()._REGISTRY, "fake-engine", fake)
+    fake = _make_fake_engine("vienue")
+    monkeypatch.setitem(_tts_mod()._REGISTRY, "vienue", fake)
     # Env var is the top of the same resolution chain prefs.json feeds
     # (active_backend_id: env > prefs > default).
-    monkeypatch.setenv("OMNIVOICE_TTS_BACKEND", "fake-engine")
+    monkeypatch.setenv("OMNIVOICE_TTS_BACKEND", "vienue")
 
     res = client.post("/generate", data={"text": "Hello engine", "language": "Auto", "seed": "42"})
 

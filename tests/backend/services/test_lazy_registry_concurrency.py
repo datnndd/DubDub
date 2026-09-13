@@ -32,7 +32,11 @@ def test_tts_lazy_registry_iter_survives_concurrent_insert():
 
 
 def test_asr_lazy_registry_iter_survives_concurrent_insert():
-    from services.asr_backend import _LazyASRRegistry
+    import pytest
+    from services import asr_backend
 
-    reg = _LazyASRRegistry({"whisperx": object(), "faster-whisper": object()})
+    lazy_cls = getattr(asr_backend, "_LazyASRRegistry", None)
+    if lazy_cls is None:
+        pytest.skip("ASR registry is Deepgram-only in web runtime")
+    reg = lazy_cls({"whisperx": object(), "faster-whisper": object()})
     _assert_iter_survives_concurrent_insert(reg)

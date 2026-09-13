@@ -39,10 +39,10 @@ def lp(monkeypatch, clean_llm_env):
 
 def test_registry_has_all_providers(lp):
     ids = {p.id for p in lp.all_providers()}
-    # 13 cloud + 2 local + custom + openai
+    # 12 cloud + 2 local + custom + openai
     for expected in ("openai", "openrouter", "orcarouter", "groq", "cerebras", "google-ai",
                      "mistral", "cohere", "nvidia", "github-models", "cloudflare",
-                     "huggingface", "sambanova", "siliconflow", "ollama",
+                     "sambanova", "siliconflow", "ollama",
                      "lmstudio", "custom"):
         assert expected in ids, expected
 

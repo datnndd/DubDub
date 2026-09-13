@@ -18,9 +18,65 @@ def buffered_coarse_iter(frames, stride, window):
         pending = []
 
 
+def _normalize_ranges(ranges, min_gap=0.5):
+    if not ranges:
+        return []
+    cleaned = []
+    for r in ranges:
+        if len(r) >= 2:
+            s, e = float(r[0]), float(r[1])
+            if e > s:
+                cleaned.append((max(0.0, s), max(0.0, e)))
+    cleaned.sort(key=lambda x: x[0])
+    if not cleaned:
+        return []
+    merged = [cleaned[0]]
+    for cur_s, cur_e in cleaned[1:]:
+        prev_s, prev_e = merged[-1]
+        if cur_s <= prev_e + min_gap:
+            merged[-1] = (prev_s, max(prev_e, cur_e))
+        else:
+            merged.append((cur_s, cur_e))
+    return merged
+
+
 def scan_video(video, crop, engine, *, fps=2.0, threshold=0.5, on_progress=None,
-               checkpoint_path=None, model_identity=None, refine=False, refine_fps=6.0):
+               checkpoint_path=None, model_identity=None, refine=False, refine_fps=6.0,
+               time_ranges=None):
     _, _, duration = probe(video)
+    norm_ranges = _normalize_ranges(time_ranges) if time_ranges else None
+    if norm_ranges:
+        all_cues = []
+        for r_start, r_end in norm_ranges:
+            r_start = min(duration, max(0.0, r_start))
+            r_end = min(duration, max(r_start, r_end))
+            if r_end <= r_start:
+                continue
+            config = OcrConfig(roi=(0, 0, 1, 1), coarse_interval_ms=round(1000 / fps))
+            config.fingerprint = video_fingerprint(video, round(duration * 1000))
+            config.source_crop = dict(crop)
+            config.frame_sampling = 'ffmpeg-fps-round-up-v1'
+            config.text_score = threshold
+            config.model_identity = model_identity
+            config.refine_enabled = False
+            scanner = OcrScanner(EngineProvider(engine, threshold), config, on_progress=on_progress,
+                                 checkpoint_path=None)
+            raw_source = sampled_frame_iter(video, crop, fps, window_start=r_start, window_end=r_end)
+            try:
+                segments = scanner.scan(((round(ts * 1000), image) for _, ts, image in raw_source),
+                                        duration_ms=round(r_end * 1000), resume=False)
+            finally:
+                raw_source.close()
+            for index, segment in enumerate(segments):
+                if not segment.text:
+                    continue
+                next_start = segments[index + 1].start_ms / 1000 if index + 1 < len(segments) else r_end
+                c_start = max(r_start, round(segment.start_ms / 1000, 3))
+                c_end = min(r_end, round(min(next_start, segment.end_ms / 1000 + 1 / fps), 3))
+                if c_end > c_start and segment.text.strip():
+                    all_cues.append(dict(start=c_start, end=c_end, text=segment.text.strip()))
+        all_cues.sort(key=lambda c: c["start"])
+        return all_cues
     config = OcrConfig(roi=(0, 0, 1, 1), coarse_interval_ms=round(1000 / fps))
     config.fingerprint = video_fingerprint(video, round(duration * 1000))
     config.source_crop = dict(crop)

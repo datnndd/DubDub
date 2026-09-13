@@ -4,8 +4,7 @@
     "contact_never": "本次会话中它从未响应过——可能根本没有启动。",
     "dev": "无法连接本地 VoiceStudio 后端。{{contact}} 在 `bun run dev` 下后端以自动重载方式运行，任何文件改动（包括请求进行中的保存）都会重启它并中断连接。请先重试该操作；如果是重载导致的，重试即可成功。若仍然失败，请查看运行 `bun run dev` 的终端是否有 Python 回溯或退出信息，以及 VoiceStudio 数据文件夹中的 omnivoice.log。",
     "server": "无法连接 VoiceStudio 后端服务器。{{contact}} 请查看服务器日志以找到原因（例如 `docker logs <容器>` 或 `journalctl`）——另外请注意：如果此页面由 Docker 提供，页面本身也可能随后端一起不可用。",
-    "misrouted": "响应 {{url}} 的服务器不是 VoiceStudio 后端——它返回了自己的 404 页面。API 请求发送到了错误的主机：请在 设置 → 分享 中检查后端 URL；如果此界面由反向代理提供，请检查它对 API 路径的路由配置。",
-    "desktop": "无法连接本地 VoiceStudio 后端。{{contact}} 如果出现了崩溃提示，请打开它；或在 设置 → 日志 → 后端 中查看它最后记录的内容——“{{retry}}”会重新启动它，若仍无法恢复，“{{cleanRetry}}”会重建它的运行环境。"
+    "misrouted": "响应 {{url}} 的服务器不是 VoiceStudio 后端——它返回了自己的 404 页面。API 请求发送到了错误的主机：请在 设置 → 分享 中检查后端 URL；如果此界面由反向代理提供，请检查它对 API 路径的路由配置。"
   },
   "stories": {
     "title": "故事编辑器",
@@ -100,7 +99,6 @@
     "reload": "刷新界面",
     "backend": "后端",
     "frontend": "前端",
-    "tauri": "Tauri",
     "cancelOp": "取消操作",
     "dismiss": "关闭",
     "dismissStatus": "关闭状态",
@@ -269,7 +267,9 @@
     "seed_placeholder": "每次都是随机的",
     "seed_keep": "保留这个种子",
     "seed_reroll": "新种子",
-    "seed_reroll_hint": "滚动一个新的随机种子并保留它"
+    "seed_reroll_hint": "滚动一个新的随机种子并保留它",
+    "engine_chip": "引擎: {{engine}}",
+    "engine_chip_title": "当前 TTS 引擎: {{engine}}"
   },
   "settings": {
     "remote_backend_test": "测试连接",
@@ -355,18 +355,11 @@
     "ffmpeg_desc": "如果自动检测失败，可手动设置 ffmpeg 路径。",
     "ffmpeg_saved": "FFmpeg 路径已设置 — 重启后端生效。",
     "diagnostics_copied": "已复制诊断信息 — 粘贴到您的问题报告中。",
-    "updater_desktop": "更新程序仅在桌面应用程序中运行。",
     "latest_version": "您使用的是最新版本。",
     "logs_load_failed": "无法加载日志：{{message}}",
     "clear_frontend_confirm": "清除内存中的前端日志缓冲区吗？",
     "clear_frontend_title": "清除日志",
     "frontend_logs_cleared": "前端日志已清除",
-    "clear_tauri_confirm": "截断 Tauri 端日志文件？操作系统将继续写入新条目。",
-    "clear_tauri_title": "清除 Tauri 日志",
-    "nothing_to_clear": "没有什么需要清除的 — 磁盘上还没有 Tauri 日志文件。",
-    "cleared_tauri_one": "已清除 {{count}} Tauri 日志文件",
-    "cleared_tauri_other": "已清除 {{count}} Tauri 日志文件",
-    "clear_tauri_failed": "无法清除 Tauri 日志：{{message}}",
     "clear_backend_confirm": "清除后端运行时+崩溃日志？此操作无法撤消。",
     "clear_backend_title": "清除日志",
     "backend_logs_cleared": "后台日志清除",
@@ -556,7 +549,6 @@
   "about": {
     "app": "应用",
     "version": "版本",
-    "tauri_runtime": "Tauri 运行时",
     "platform": "平台",
     "architecture": "架构",
     "python": "Python",
@@ -568,7 +560,6 @@
     "active_model": "当前模型",
     "asr_model": "ASR 模型",
     "translator": "翻译引擎",
-    "hf_token": "HF 令牌",
     "data_dir": "数据目录",
     "outputs": "输出目录",
     "crash_log": "崩溃日志",
@@ -719,7 +710,9 @@
     "setup_key": "配置密钥",
     "needs_key": "需要 API 密钥",
     "save_and_activate": "保存并使用 Deepgram",
-    "deepgram_activated": "Deepgram 云端 ASR 现已激活！"
+    "deepgram_activated": "Deepgram 云端 ASR 现已激活！",
+    "languagesChipTitle": "此引擎支持语言: {{languages}}",
+    "languagesMany": "{{first}} +{{count}}"
   },
   "capture": {
     "desc": "全局热键仅在桌面应用中有效。网页界面使用页面内快捷键 <1>Ctrl+Shift+Space</1>（窗口聚焦时可用）。",
@@ -871,8 +864,6 @@
     "install_engine_pkg": "安装 {{pkg}}",
     "needs_install_short": "需要安装",
     "install_popover_title": "安装此引擎",
-    "install_popover_frozen_body": "此打包版本无法安装引擎——其 Python 环境为只读且已签名。请在源码安装环境中运行下面的命令，或切换到内置的 Argos 引擎。",
-    "switch_to_argos": "切换到 Argos（内置，离线）",
     "copy_command": "复制命令",
     "install_cmd_copied": "已复制命令",
     "dismiss_error": "关闭",
@@ -891,7 +882,6 @@
     "youtube_auth": "YouTube 登录（可选）",
     "youtube_cookie_file": "选择导出的 cookies.txt",
     "remove_cookie_file": "移除 Cookie 文件",
-    "cookie_transport_error": "Cookie 导出文件只能通过 HTTPS 或本地桌面应用发送。",
     "cookie_size_error": "Cookie 导出文件必须小于或等于 1 MB。",
     "save": "保存",
     "reset": "重置",
@@ -920,16 +910,13 @@
     "multi_lang": "多语言",
     "prep_download": "正在下载视频…",
     "prep_extract": "正在提取音频…",
-    "prep_demucs": "正在分离人声/音乐（Demucs）…",
     "prep_scene": "正在检测场景切换…",
     "prep_cached": "使用缓存结果…",
     "prep_preparing": "准备中…",
     "prep_chip_download": "下载",
     "prep_chip_extract": "提取",
-    "prep_chip_demucs": "人声分离",
     "prep_chip_scene": "场景",
     "prep_chip_cached": "缓存",
-    "prep_demucs_note": "Demucs 处理长视频可能需要几分钟。音频越长，等待越久。",
     "transcribing": "正在转录音频…",
     "elapsed": "已用",
     "remaining": "秒剩余",
@@ -1658,16 +1645,12 @@
     "tryAgain": "再试一次",
     "openDocs": "打开此错误的文档",
     "crash_port_in_use": "后端无法启动，因为端口 3900 已被占用 — 另一个 VoiceStudio 实例（或占用该端口的应用）正持有它。请退出另一个实例后重新启动；如果看不到任何正在运行的程序，则是上一次会话遗留的后端仍占用该端口。",
-    "crash_oom_kill": "进程被强制终止（信号 9），通常表示操作系统内存（RAM）不足而将其停止。请关闭占用内存较大的应用，在设置 → 模型中选择更小的 ASR 模型，或在转写前卸载 TTS 模型。",
-    "crash_native_fault": "它是在计算栈内部崩溃的，而不是内存耗尽 — 这通常指向与内置 CUDA 运行时不匹配的 GPU 驱动，或未完整下载的模型文件。请更新 GPU 驱动，然后在设置 → 模型中重新下载该模型（可就地修复未完成的下载）。如果反复出现，请在设置 → 引擎中切换到崩溃隔离引擎 — 合成用「VoiceStudio (subprocess)」，转写用「Faster-Whisper (crash-isolated subprocess)」。它们在独立进程中运行模型，因此这类崩溃只会终止该进程，而不是整个后端。",
     "report": "报告此错误",
     "report_failed": "无法打开错误报告。请重试，或将上面的详细信息复制到新的 issue 中。",
     "searchIssues": "搜索类似问题",
     "unexpected": "意外错误：{{message}}",
     "backend_shutting_down": "VoiceStudio 正在关闭。请重新打开应用后再试。",
-    "crash_broken_env": "它在加载自身的 Python 依赖时退出，因此与内存或显卡无关——运行环境不完整，或更新到一半就停下了。请在 设置 → 日志 → 后端 中使用“清理并重试”，它会从头重建环境并就地修复，不会动你的声音或项目。如果之后仍然失败，崩溃详情会指出无法导入的具体软件包。",
-    "crash_vram_default": "在较小的 GPU 上，常见原因是在 TTS 模型仍占用显存时加载 ASR 模型，导致显存（VRAM）不足：请先卸载 TTS 模型，或在 模型库 → 模型 中选择更小的 ASR 模型。",
-    "stream_cut_backend_alive": "音频流提前结束，但后端仍在运行——因此它并没有崩溃。在服务器或容器化部署中，这通常是反向代理或负载均衡器在缓冲连接或使其超时：请为此路由禁用响应缓冲（nginx: proxy_buffering off; X-Accel-Buffering: no）并调高读取超时。直接运行桌面应用，或在没有代理的 localhost 上运行，即可确认。"
+    "crash_broken_env": "它在加载自身的 Python 依赖时退出，因此与内存或显卡无关——运行环境不完整，或更新到一半就停下了。请在 设置 → 日志 → 后端 中使用“清理并重试”，它会从头重建环境并就地修复，不会动你的声音或项目。如果之后仍然失败，崩溃详情会指出无法导入的具体软件包。"
   },
   "keyboard": {
     "title": "键盘快捷键",
@@ -1735,33 +1718,6 @@
     "llm_configure": "配置 TRANSLATE_BASE_URL 以获得 Cinematic 精译级翻译质量",
     "llm_set_env": "设置 TRANSLATE_BASE_URL 和 TRANSLATE_API_KEY 环境变量。可与 Ollama、OpenAI、LM Studio 等配合使用。",
     "llm_optional": "可选——设置 TRANSLATE_BASE_URL 以获得 Cinematic 精译质量"
-  },
-  "license": {
-    "title": "Supertonic-3 — 许可证接受",
-    "intro": "Supertonic-3 拥有两个不同的许可证。请在启用引擎之前检查两者。",
-    "sdk_heading": "SDK 代码 · MIT",
-    "sdk_desc": "Python 推理 SDK (supertonic) 已获得 MIT 许可。允许使用，包括商业用途。",
-    "read_mit": "阅读 MIT 许可证 →",
-    "model_heading": "模型权重 · OpenRAIL-M",
-    "model_desc": "Supertonic-3 模型权重在 OpenRAIL-M 许可证下发布。该许可证限制用于非恶意目的 - 请参阅链接许可证以了解全套基于使用的限制。",
-    "read_openrail": "阅读 OpenRAIL-M 许可证 →",
-    "footer": "单击“接受”会在 VoiceStudio 的本地设置中记录您的接受情况并启用引擎。您的接受仅存储在本机上 — 不会向 Supertone Inc. 或任何第三方报告任何内容。",
-    "saving": "正在保存...",
-    "accept": "接受",
-    "accepted_toast": "已接受 Supertonic-3 许可证。",
-    "accept_error": "未能记录许可证接受情况：{{message}}",
-    "pockettts_title": "接受 PocketTTS 许可",
-    "pockettts_intro": "Kyutai 的 PocketTTS 采用两项许可证，其权重还受 Hugging Face 访问条件约束。启用引擎前请全部查看。",
-    "pockettts_sdk_desc": "pocket-tts Python 库采用宽松的 MIT 许可证，允许商业使用。",
-    "pockettts_model_heading": "模型权重（CC-BY-4.0）",
-    "pockettts_model_desc": "PocketTTS 模型权重采用 CC-BY-4.0。注明出处后允许商业使用。",
-    "read_cc_by": "阅读 CC-BY-4.0 许可证",
-    "gate_heading": "受限访问",
-    "gate_desc": "权重在 Hugging Face 上受限。首次下载前，你需要免费账户、分享联系信息并接受访问条件。",
-    "pockettts_conditions_desc": "访问条件禁止非法、有害、欺骗、欺诈、未经授权或未经同意的声音使用。继续前请查看完整条件。",
-    "review_access_conditions": "查看访问条件",
-    "pockettts_footer": "点击“接受”只会将你的确认保存在 VoiceStudio 本地设置中并启用引擎。模型访问和下载使用 Hugging Face，该服务会收到常规请求和账户信息。",
-    "pockettts_accepted_toast": "已接受 PocketTTS 条件。"
   },
   "voicePreview": {
     "title": "语音预览",
@@ -1895,7 +1851,10 @@
     "done_hint": "检查时序和同步比率。调整任意句子并点击“重新生成已改”即可快速部分重做。",
     "segment_one": "{{count}} 段",
     "segment_other": "{{count}} 段",
-    "dismiss_title": "关闭 — 在重新加载之前不会再次出现在该阶段"
+    "dismiss_title": "关闭 — 在重新加载之前不会再次出现在该阶段",
+    "terms_title": "转录文本已总结",
+    "terms_cta": "查看简报并翻译",
+    "terms_hint": "LLM 已根据转录文本起草了翻译简报（主题 + 术语）。请在翻译前查看并编辑。"
   },
   "compare": {
     "title": "A/B 语音比较",
@@ -2023,8 +1982,7 @@
     "a_internal_tools": "不需要。您的员工和承包商的使用——包括内部修改和自托管——在 AGPL-3.0 下是免费的。只有当您将 VoiceStudio 嵌入闭源或专有产品/服务、且不愿遵守 AGPL 的源代码公开义务时，才需要商业许可证。",
     "q_try_before": "我可以在提交之前尝试一下吗？",
     "a_try_before": "可以。完整应用可在 AGPL-3.0 下免费下载、运行和自托管——无需任何协议。当您准备讨论商业（专有用途）许可证时，请发邮件联系我们，我们将一起敲定细节。",
-    "q_watermark": "水印呢？",
-    "a_watermark": "不可见的 AudioSeal 水印默认为所有人嵌入。你可以在设置 → 隐私中关闭它；该设置仅影响更改之后生成的音频。"
+    "q_watermark": "水印呢？"
   },
   "gallery_extra": {
     "save_prompt": "输入此语音配置文件的名称：",
@@ -2625,7 +2583,7 @@
     "model": "OCR 模型",
     "not_installed": "未安装",
     "region_hint": "在视频上框选字幕区域。您可以移动或调整其大小。",
-    "adjust_region": "调整区域",
+    "adjust_region": "调整 OCR 区域",
     "left": "左",
     "top": "上",
     "right": "右",
@@ -2650,7 +2608,17 @@
     "cue": "字幕 {{number}}",
     "empty_cue": "未检测到文本",
     "previous": "上一个",
-    "next": "下一个"
+    "next": "下一个",
+    "replace_with_ocr": "用 OCR 替换",
+    "select_all": "全选",
+    "select_row": "选择第 {{number}} 行",
+    "selected_count": "已选择 {{count}} 项",
+    "crop_modal_title": "选择字幕区域",
+    "crop_hint": "在视频上的字幕区域绘制选框。该区域将被保存用于 OCR 替换。",
+    "confirm_region": "确认区域",
+    "replaced_count": "已替换为 {{count}} 条 OCR 字幕",
+    "no_text_cleared": "OCR 未检测到文本。已清空行文本以便手动输入。",
+    "replace_failed": "OCR 替换失败"
   },
   "gpu": {
     "local": "本机",
@@ -2684,5 +2652,28 @@
     "cta_design": "在 语音 ← 中描述即可设计",
     "new": "新建声音",
     "none_selected": "未选择声音——描述一个、拖入音频，或从下方选择。"
+  },
+  "terms_review": {
+    "title": "翻译简报",
+    "subtitle": "由 LLM 根据转录文本起草。可自由编辑 — 它将指导每行字幕的翻译。",
+    "theme_label": "背景 / 主题",
+    "theme_placeholder": "视频的主题、语调、目标受众…",
+    "terms_label": "术语",
+    "term_source_placeholder": "原文术语",
+    "term_target_placeholder": "译文",
+    "add_term": "添加术语",
+    "re_extract": "重新提取",
+    "re_extract_confirm": "放弃修改并从转录文本中重新提取简报？",
+    "start_translation": "开始翻译",
+    "extracting": "正在总结转录文本…",
+    "extract_error": "无法起草简报",
+    "translate_without": "不使用简报直接翻译",
+    "edited": "已编辑",
+    "cached": "已缓存",
+    "close_title": "关闭简报预览",
+    "remove_term_title": "删除此术语",
+    "terms_empty": "未提议术语 — 您可以自行添加。",
+    "toggle_btn": "简报",
+    "draft_title": "草稿 — 两个字段均填写后即可保存到项目术语表"
   }
 }

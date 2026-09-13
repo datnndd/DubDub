@@ -192,6 +192,8 @@ def test_generate_timeout_env_floor_respected(monkeypatch):
 def test_user_env_drops_read_only_path(tmp_path, monkeypatch):
     """An existing directory on a read-only mount passes isdir but fails on
     first real use — validation must probe actual write capability."""
+    if os.name == "nt":
+        pytest.skip("chmod read-only on directories is not supported on Windows")
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         pytest.skip("root writes anywhere; the probe cannot fail")
     ro = tmp_path / "readonly-cache"
@@ -252,21 +254,10 @@ def test_transcribe_guard_contains_system_exit():
 
 def test_managed_venv_ships_pip():
     """#1133 root trigger: uv-managed venvs ship no pip, but engine
-    dependencies written as CLIs (spaCy's model downloader, invoked in-process
-    by mlx-audio's phonemizer via misaki) shell out to `python -m pip`. pip is
-    now a real project dependency so it survives the update drift-sync
-    (anything installed ad-hoc would be stripped by `uv sync` on update,
-    resurrecting the crash after every release)."""
-    # Note: this inspects the interpreter running pytest — which in CI and
-    # the packaged app IS the uv-synced managed venv, so it verifies the lock
-    # produces these packages (review note on the original phrasing).
+    dependencies written as CLIs (spaCy's model downloader) shell out to `python -m pip`.
+    pip is now a real project dependency."""
     import importlib.util
     assert importlib.util.find_spec("pip") is not None, (
-        "pip missing from the managed venv — spaCy-style in-process "
+        "pip missing from the managed venv — in-process "
         "downloaders will fail (and pre-#1143, kill the backend)"
-    )
-    assert importlib.util.find_spec("en_core_web_sm") is not None, (
-        "the phonemizer's spaCy model is not bundled — first English "
-        "MLX-Audio generation would trigger a raw GitHub download that "
-        "bypasses the mirror system and fails offline"
     )

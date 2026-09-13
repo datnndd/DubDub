@@ -616,6 +616,7 @@ def _handle_ocr_video(msg: dict, stdout) -> None:
     refine_fps = max(4.0, min(float(msg.get("refine_fps") or 10.0), 30.0))
     do_refine = bool(msg.get("refine", False))
     checkpoint_path = msg.get("checkpoint_path")
+    time_ranges = msg.get("time_ranges")
     # Vùng quét: user vẽ (crop) > auto-suggest theo mật độ cạnh > dải dưới
     # mặc định 55%. Auto-suggest chỉ chạy khi user KHÔNG gửi band_top tùy
     # chỉnh (đặt band_top phi mặc định = chủ ý dùng dải cố định).
@@ -671,7 +672,8 @@ def _handle_ocr_video(msg: dict, stdout) -> None:
                     cache_hits=event['cache_hits']))
             cues = scan_video(video_path, crop, engine, fps=fps, threshold=text_score,
                               checkpoint_path=checkpoint_path, model_identity=identity,
-                              on_progress=report, refine=do_refine, refine_fps=refine_fps)
+                              on_progress=report, refine=do_refine, refine_fps=refine_fps,
+                              time_ranges=time_ranges)
         _log(stdout, f"ocr done — {len(cues)} cues extracted")
         if do_refine and os.environ.get('OMNIVOICE_OCR_LEGACY') == '1':
             try:

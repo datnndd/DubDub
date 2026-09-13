@@ -366,12 +366,12 @@ def test_session_and_worker_token_namespaces_do_not_overlap(store: AdminSessionS
 
 def test_ticket_is_scoped_to_normalized_path(store: AdminSessionStore):
     session = store.issue(MASTER)
-    ticket = store.issue_ws_ticket(session.token, "/ws/transcribe", MASTER)
+    ticket = store.issue_ws_ticket(session.token, "/ws/tts", MASTER)
 
     assert ticket.token.startswith(WS_TICKET_PREFIX)
     assert store.consume_ws_ticket(ticket.token, "/ws/events", MASTER) is None
     # A path mismatch consumes the one-use credential.
-    assert store.consume_ws_ticket(ticket.token, "/ws/transcribe", MASTER) is None
+    assert store.consume_ws_ticket(ticket.token, "/ws/tts", MASTER) is None
 
 
 @pytest.mark.parametrize(

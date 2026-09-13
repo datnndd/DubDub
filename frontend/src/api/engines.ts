@@ -7,38 +7,6 @@ import type {
   SelectEngineResponse,
 } from './types';
 
-interface TranslationEngine {
-  id: string;
-  display_name: string;
-  pip_package: string | null;
-  probe_module: string | null;
-  category: 'offline' | 'online' | 'llm';
-  needs_key: boolean;
-  builtin?: boolean;
-  notes?: string;
-  installed: boolean;
-  availability_reason: string;
-  /** `uv pip install <pkg>` (single-sourced by the backend registry), or
-   *  null when the engine needs no separate install (builtin/core dep). */
-  install_command: string | null;
-}
-export interface TranslationEnginesResponse {
-  engines: TranslationEngine[];
-  sandboxed: boolean;
-}
-export interface InstallEngineResponse {
-  status:
-    | 'installed'
-    | 'already_installed'
-    | 'installed_but_probe_failed'
-    | 'uninstalled'
-    | 'no_op';
-  engine: string;
-  package?: string;
-  log_tail?: string;
-  restart_required?: boolean;
-}
-
 export async function listEngines(): Promise<AllEnginesResponse> {
   return apiJson<AllEnginesResponse>('/engines');
 }
@@ -140,14 +108,6 @@ export async function getSidecarInstallStatus(engineId: string): Promise<Sidecar
   return apiJson<SidecarInstallStatus>(
     `/engines/sidecar/${encodeURIComponent(engineId)}/install/status`,
   );
-}
-
-export async function listTranslationEngines(): Promise<TranslationEnginesResponse> {
-  return apiJson<TranslationEnginesResponse>('/engines/translation');
-}
-
-export async function installTranslationEngine(id: string): Promise<InstallEngineResponse> {
-  return apiPost<InstallEngineResponse>(`/engines/translation/${id}/install`, {});
 }
 
 // ── Effect presets ──────────────────────────────────────────────────────

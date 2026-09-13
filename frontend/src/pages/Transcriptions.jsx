@@ -11,11 +11,8 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Mic, Copy, Trash2, Search, Clock, Languages, FileText, Download } from 'lucide-react';
 import { Button } from '../ui';
-import EngineQuickSwitch from '../components/EngineQuickSwitch';
 import { toast } from 'react-hot-toast';
 import { toMillis } from '../utils/relativeTime';
-import { useEffectiveDictationShortcut } from '../hooks/useEffectiveDictationShortcut';
-import { requestDictationCapture } from '../utils/dictationCapture';
 import {
   loadTranscriptions,
   TRANSCRIPTIONS_KEY,
@@ -49,18 +46,8 @@ export default function TranscriptionsPage() {
   const [transcriptions, setTranscriptions] = useState(loadTranscriptions);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
-  const { info: shortcut } = useEffectiveDictationShortcut();
-  const emptyDescription = t('transcriptions.empty_desc', { shortcut: shortcut.display });
+  const emptyDescription = t('transcriptions.empty');
   const normalizedSearch = search.trim();
-
-  const startCapture = useCallback(async () => {
-    try {
-      await requestDictationCapture('start');
-    } catch (error) {
-      console.warn('Could not start dictation:', error);
-      toast.error(t('transcriptions.capture_failed'));
-    }
-  }, [t]);
 
   // Listen for new transcriptions added from CaptureButton
   useEffect(() => {
@@ -160,10 +147,6 @@ export default function TranscriptionsPage() {
           </span>
         </div>
         <div className="txn-header__right flex items-center gap-[6px]">
-          <EngineQuickSwitch family="asr" />
-          <Button size="sm" variant="primary" onClick={startCapture}>
-            <Mic size={13} /> {t('transcriptions.capture')}
-          </Button>
           <div className="txn-search relative flex items-center">
             <Search
               size={13}
@@ -215,11 +198,6 @@ export default function TranscriptionsPage() {
               <p className="txn-empty__desc m-0 max-w-[280px] text-[var(--text-xs)] leading-[1.6] text-fg-muted">
                 {normalizedSearch ? t('transcriptions.empty_search_desc') : emptyDescription}
               </p>
-              {!normalizedSearch && (
-                <Button size="sm" variant="primary" onClick={startCapture}>
-                  <Mic size={13} /> {t('transcriptions.capture')}
-                </Button>
-              )}
             </div>
           ) : (
             filtered.map((t) => (

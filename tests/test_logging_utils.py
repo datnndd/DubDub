@@ -65,7 +65,6 @@ def test_sensitive_logging_sites_emit_metadata_not_paths_keys_or_tracebacks():
             "backend/api/routers/system.py",
             "backend/services/dub_pipeline.py",
             "backend/services/settings_store.py",
-            "backend/services/sonitranslate.py",
         )
     }
     combined = "\n".join(sources.values())

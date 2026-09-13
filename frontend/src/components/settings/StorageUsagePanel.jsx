@@ -15,7 +15,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   AlertTriangle,
-  FolderOpen,
   HardDrive,
   Package,
   RefreshCw,
@@ -26,7 +25,6 @@ import {
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { apiJson } from '../../api/client';
-import { exportReveal } from '../../api/exports';
 import { clearSystemLogs } from '../../api/system';
 import { useAppStore } from '../../store';
 import { fmtBytes } from './models/format';
@@ -168,16 +166,6 @@ export default function StorageUsagePanel() {
   useEffect(() => {
     load(false);
   }, [load]);
-
-  const openFolder = async (path) => {
-    try {
-      await exportReveal({ path });
-    } catch (e) {
-      toast.error(
-        e?.message || t('settings.open_folder_failed', { defaultValue: 'Could not open folder' }),
-      );
-    }
-  };
 
   // Same confirm gate as Settings → Logs → Clear: this truncates the crash log
   // too (the primary bug-report artifact), so it must never be one stray click.
@@ -400,16 +388,6 @@ export default function StorageUsagePanel() {
                       >
                         <Trash2 size={12} />
                         {t('settings.storage_clear_temp', { defaultValue: 'Clear temp files' })}
-                      </SmallButton>
-                    )}
-                    {cat.exists && (
-                      <SmallButton
-                        onClick={() => openFolder(cat.path)}
-                        title={cat.path}
-                        testId={`storage-open-${cat.id}`}
-                      >
-                        <FolderOpen size={12} />
-                        {t('settings.storage_open_folder', { defaultValue: 'Open folder' })}
                       </SmallButton>
                     )}
                   </span>

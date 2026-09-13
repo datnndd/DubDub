@@ -13,34 +13,8 @@
  */
 import toast from 'react-hot-toast';
 import { detectPlatform, micHintKey } from './micError';
-import { inTauri, openMicrophoneSettings } from './permissions';
 
 export function showMicDeniedGuide(t, platform = detectPlatform()) {
   const message = t('capture.mic_denied_toast', { hint: t(micHintKey(platform)) });
-  if (!inTauri()) {
-    // Browser/dev: no OS pane to deep-link — plain reactive-style toast.
-    toast.error(message, { duration: 8000 });
-    return;
-  }
-  toast.error(
-    (tst) => (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ flex: 1 }}>{message}</span>
-        <button
-          type="button"
-          className="btn-secondary"
-          style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
-          onClick={async () => {
-            toast.dismiss(tst.id);
-            if (!(await openMicrophoneSettings())) {
-              toast(t('capture.mic_hint_linux'), { icon: 'ℹ️', duration: 8000 });
-            }
-          }}
-        >
-          {t('permissions.open_settings')}
-        </button>
-      </div>
-    ),
-    { duration: 10000 },
-  );
+  toast.error(message, { duration: 8000 });
 }

@@ -566,15 +566,12 @@ async def preflight(
                 # only as "cannot run"; never invent a path or reject an
                 # opaque/user-managed installation.
                 return
-            from services.sidecar_install import SPECS  # noqa: PLC0415
-
-            sidecar_repos = {s.weights_repo_id for s in SPECS.values()}
             raise ModelNotDownloaded(
                 engine=engine,
                 repo_ids=repo_ids,
                 target=decision.worker_id,
                 target_label=decision.label,
-                downloadable=not any(repo in sidecar_repos for repo in repo_ids),
+                downloadable=True,
             )
 
 
@@ -878,15 +875,6 @@ async def download(
         )
         if capability is None:
             raise GatewayError(f"Unknown model for {decision.label}: {repo_id!r}.")
-        # Managed sidecars currently fetch mutable source HEAD before installing
-        # editable code. Do not make that supply-chain path remotely triggerable.
-        from services.sidecar_install import SPECS  # noqa: PLC0415
-
-        if any(spec.weights_repo_id == repo_id for spec in SPECS.values()):
-            raise GatewayError(
-                f"{repo_id!r} must be installed directly on {decision.label}; "
-                "remote sidecar installation is disabled."
-            )
         sent = await plane.servicer.prewarm(
             decision.worker_id,
             engine=str(capability.get("engine") or ""),

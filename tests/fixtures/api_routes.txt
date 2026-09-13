@@ -2,12 +2,10 @@
 # Guards against accidental endpoint removal/rename (tests/test_api_route_inventory.py).
 DELETE /api/auth/session
 DELETE /api/mcp/bindings/{client_id}
-DELETE /api/settings/hf-token
 DELETE /batch/jobs/{job_id}
 DELETE /dub/history
 DELETE /dub/history/{history_id}
 DELETE /engines/sidecar/{engine_id}/install
-DELETE /engines/translation/{engine_id}
 DELETE /gallery/voices/{voice_id}
 DELETE /glossary/{project_id}
 DELETE /glossary/{project_id}/{term_id}
@@ -25,14 +23,10 @@ DELETE /workers/{worker_id}
 GET /api/mcp/bindings
 GET /api/settings/analytics
 GET /api/settings/asr-deepgram
-GET /api/settings/asr-openai-compat
 GET /api/settings/changelog
 GET /api/settings/db-backup
-GET /api/settings/dictation-refinement
 GET /api/settings/hf-mirror
-GET /api/settings/hf-token/state
 GET /api/settings/history-retention
-GET /api/settings/license/{engine_id}
 GET /api/settings/llm-endpoint
 GET /api/settings/llm-providers
 GET /api/settings/llm-providers/{provider_id}/models
@@ -55,8 +49,6 @@ GET /community/items/{item_id}/preview
 GET /community/manifest
 GET /community/sources
 GET /community/submit-url
-GET /dictation/models
-GET /dictation/prefs
 GET /docs
 GET /dub/audio/{job_id}
 GET /dub/download-audio/{job_id}
@@ -67,6 +59,7 @@ GET /dub/download/{job_id}
 GET /dub/download/{job_id}/{filename}
 GET /dub/export-segments/{job_id}
 GET /dub/export-stems/{job_id}
+GET /dub/hardsub-models
 GET /dub/hardsub-srt/{job_id}
 GET /dub/history
 GET /dub/media/{job_id}
@@ -86,8 +79,6 @@ GET /engines/asr
 GET /engines/effects/presets
 GET /engines/llm
 GET /engines/sidecar/{engine_id}/install/status
-GET /engines/sonitranslate/status
-GET /engines/translation
 GET /engines/tts
 GET /engines/{engine_id}/health
 GET /export/history
@@ -127,12 +118,10 @@ GET /sysinfo
 GET /system/asr-backends
 GET /system/diagnose
 GET /system/errors/recent
-GET /system/hf-token/state
 GET /system/info
 GET /system/last-run-crash
 GET /system/logs
 GET /system/logs/stream
-GET /system/logs/tauri
 GET /system/network/state
 GET /system/notifications
 GET /system/quarantine-status
@@ -141,7 +130,6 @@ GET /tasks/stream/{task_id}
 GET /tools/effects
 GET /tools/plugins
 GET /v1/audio/voices
-GET /watermark/status
 GET /workers
 GET /workers/agent
 GET /workers/inbound
@@ -153,10 +141,7 @@ PATCH /workers/{worker_id}
 POST /api/auth/session
 POST /api/auth/ws-ticket
 POST /api/settings/asr-deepgram/test
-POST /api/settings/asr-openai-compat/test
 POST /api/settings/hf-mirror/test
-POST /api/settings/hf-token
-POST /api/settings/license
 POST /api/settings/llm-providers/active
 POST /api/settings/llm-providers/{provider_id}/test
 POST /api/settings/storage/temp/clear
@@ -173,7 +158,6 @@ POST /batch/jobs/{job_id}/cancel
 POST /clean-audio
 POST /community/items/{item_id}/use
 POST /design/describe
-POST /dictation/prefs
 POST /dub/abort/{job_id}
 POST /dub/cleanup-segments/{job_id}
 POST /dub/generate/{job_id}
@@ -189,15 +173,8 @@ POST /dub/translate-context
 POST /dub/upload
 POST /engines/select
 POST /engines/sidecar/{engine_id}/install
-POST /engines/sonitranslate/dub
-POST /engines/sonitranslate/install
-POST /engines/sonitranslate/start
-POST /engines/sonitranslate/stop
-POST /engines/translation/{engine_id}/install
 POST /engines/{engine_id}/selftest
-POST /export
 POST /export/record
-POST /export/reveal
 POST /gallery/download
 POST /gallery/search/youtube
 POST /gallery/upload
@@ -215,7 +192,6 @@ POST /marketplace/publish/{profile_id}
 POST /media-tools/acquire
 POST /media-tools/ytdlp/restore
 POST /media-tools/ytdlp/update
-POST /media-tools/{tool}/custom-path
 POST /media-tools/{tool}/restore
 POST /media-tools/{tool}/use-system
 POST /model/unload/{model_id}
@@ -240,7 +216,6 @@ POST /system/diagnostic-bundle
 POST /system/flush-memory
 POST /system/last-run-crash/ack
 POST /system/logs/clear
-POST /system/logs/tauri/clear
 POST /system/network/disable
 POST /system/network/enable
 POST /system/set-env
@@ -254,9 +229,6 @@ POST /tools/rate-fit
 POST /tools/video-context/{job_id}
 POST /transcribe
 POST /v1/audio/speech
-POST /v1/audio/transcriptions
-POST /watermark/detect
-POST /watermark/settings
 POST /workers/agent/enabled
 POST /workers/agent/join
 POST /workers/enabled
@@ -273,15 +245,12 @@ POST /workers/{worker_id}/resume
 PUT /api/mcp/bindings
 PUT /api/settings/analytics
 PUT /api/settings/asr-deepgram
-PUT /api/settings/asr-openai-compat
-PUT /api/settings/dictation-refinement
 PUT /api/settings/hf-mirror
 PUT /api/settings/history-retention
 PUT /api/settings/llm-endpoint
 PUT /api/settings/llm-providers/{provider_id}
 PUT /api/settings/llm-skills/{skill_id}
 PUT /api/settings/perf/torch-compile-disabled
-PUT /api/settings/storage/models-dir
 PUT /archetypes/previews
 PUT /glossary/{project_id}/{term_id}
 PUT /history/{history_id}/starred
@@ -289,5 +258,4 @@ PUT /profiles/{profile_id}
 PUT /projects/{project_id}
 PUT /pronunciation/{entry_id}
 WS /ws/events
-WS /ws/transcribe
 WS /ws/tts

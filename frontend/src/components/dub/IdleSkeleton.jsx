@@ -26,40 +26,12 @@ import DubbingDemo from '../DubbingDemo';
 import DubFailureNotice from './DubFailureNotice';
 import PrepOverlay from './PrepOverlay';
 import TranscribeOverlay from './TranscribeOverlay';
-import AsrEngineSelector from '../AsrEngineSelector';
 import { COLUMNS } from '../segmentColumns';
 import DubLangSelects from './DubLangSelects';
 import { useAppStore } from '../../store';
 
 const SPEAKERS_INPUT =
   'w-[52px] ml-[4px] px-[6px] py-[4px] rounded-[6px] border border-[var(--border,#3c3836)] bg-[var(--input-bg,#282828)] text-inherit text-[12px]';
-
-function AsrInstallStatus({ t, install, onAbort }) {
-  const pct = typeof install?.percent === 'number' ? Math.round(install.percent) : null;
-  return (
-    <div
-      className="flex flex-col items-center gap-[var(--space-5)] w-full"
-      role="status"
-      aria-live="polite"
-    >
-      <Loader className="spinner" size={20} color="#d3869b" aria-hidden="true" />
-      <span className="text-fg font-medium text-[var(--text-lg)]">
-        {t('dub.install_progress', { engine: install?.label })}
-      </span>
-      <div className="w-[80%] max-w-[340px]">
-        <Progress value={pct} tone="brand" size="sm" />
-      </div>
-      {pct != null && (
-        <span className="text-[var(--text-sm)] text-fg-muted [font-variant-numeric:tabular-nums]">
-          {pct}%
-        </span>
-      )}
-      <Button variant="danger" size="sm" onClick={onAbort}>
-        {t('dub.prep_stop')}
-      </Button>
-    </div>
-  );
-}
 
 export default function IdleSkeleton({
   t,
@@ -70,8 +42,6 @@ export default function IdleSkeleton({
   dubJobId,
   dubStep,
   dubFailure,
-  asrInstall,
-  handleInstallMissingAsr,
   handleDubRetryTranscribe,
   handleDubImportSrt,
   onOpenHardsubDialog,
@@ -174,12 +144,13 @@ export default function IdleSkeleton({
             {dubError}
           </span>
           <DubFailureNotice failure={dubFailure} />
-          {asrInstall?.phase === 'missing' && asrInstall.repoId && (
-            <Button variant="primary" size="sm" onClick={handleInstallMissingAsr}>
-              {t('asr_missing.download', {
-                label: asrInstall.label,
-                size: asrInstall.sizeGb,
-              })}
+          {(/deepgram/i.test(dubError) || /api key/i.test(dubError)) && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => useAppStore.getState().openSettingsTab?.('engines')}
+            >
+              {t('settings.title', { defaultValue: 'Settings' })}
             </Button>
           )}
           {handleDubRetryTranscribe && (
@@ -255,8 +226,6 @@ export default function IdleSkeleton({
                       progress={dubPrepProgress}
                       onAbort={handleDubAbort}
                     />
-                  ) : dubStep === 'installing-asr' ? (
-                    <AsrInstallStatus t={t} install={asrInstall} onAbort={handleDubAbort} />
                   ) : dubStep === 'transcribing' ? (
                     <TranscribeOverlay
                       elapsed={transcribeElapsed}
@@ -270,7 +239,6 @@ export default function IdleSkeleton({
               <div className="flex flex-col gap-[10px] mt-[10px] p-[12px] [border:1px_solid_var(--chrome-border,#3c3836)] rounded-[10px] bg-[rgba(255,255,255,0.02)]">
                 {/* Row 1: Engine & Language Controls */}
                 <div className="flex flex-wrap items-center justify-between gap-[10px]">
-                  <AsrEngineSelector />
                   <div className="flex flex-wrap items-center gap-[10px]">
                     <DubLangSelects
                       variant="bar"
@@ -289,7 +257,7 @@ export default function IdleSkeleton({
                 </div>
 
                 {/* Row 2: Voice & Speaker Controls */}
-                <div className="flex flex-wrap items-center justify-between gap-[10px] pt-1 border-t border-[rgba(255,255,255,0.05)]">
+                <div className="flex flex-wrap items-center justify-between gap-[10px] pt-1">
                   <div className="flex flex-wrap items-center gap-[12px]">
                     <label
                       className="inline-flex items-center gap-[5px] text-[12px] text-[var(--muted,#a89984)] whitespace-nowrap cursor-pointer"
@@ -376,8 +344,7 @@ export default function IdleSkeleton({
                     onClick={handleDubUpload}
                     disabled={
                       dubStep === 'uploading' ||
-                      dubStep === 'transcribing' ||
-                      dubStep === 'installing-asr'
+                      dubStep === 'transcribing'
                     }
                   >
                     {dubStep === 'uploading' || dubStep === 'transcribing' ? (
@@ -400,10 +367,6 @@ export default function IdleSkeleton({
               onAbort={handleDubAbort}
               large
             />
-          ) : dubStep === 'installing-asr' ? (
-            <div className="flex-1 flex flex-col items-center justify-center min-h-0">
-              <AsrInstallStatus t={t} install={asrInstall} onAbort={handleDubAbort} />
-            </div>
           ) : dubStep === 'transcribing' ? (
             // URL-ingest / restored jobs have no local `dubVideoFile`, so the
             // waveform-overlay branch above never runs for them. Without this
@@ -621,9 +584,6 @@ export default function IdleSkeleton({
                       onChange={(e) => setDubInstruct(e.target.value)}
                     />
                   </label>
-                  <div className="dub-landing-adv__field inline-flex items-center gap-[6px]">
-                    <AsrEngineSelector />
-                  </div>
                 </div>
               )}
             </>
@@ -642,7 +602,7 @@ export default function IdleSkeleton({
             id="video-upload"
             className="hidden"
             disabled={
-              dubStep === 'uploading' || dubStep === 'transcribing' || dubStep === 'installing-asr'
+              dubStep === 'uploading' || dubStep === 'transcribing'
             }
             onChange={(e) => {
               const file = e.target.files[0];

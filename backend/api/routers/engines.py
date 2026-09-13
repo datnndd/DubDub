@@ -21,13 +21,11 @@ import threading
 from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
-from huggingface_hub import utils as hf_utils
-from huggingface_hub.errors import HFValidationError
 from pydantic import BaseModel
 
-from api.dependencies import require_admin, require_admin_action, require_desktop
+from api.dependencies import require_admin, require_admin_action
 from core import prefs
-from services import tts_backend, asr_backend, llm_backend, translation_engines
+from services import tts_backend, asr_backend, llm_backend
 from services.audio_dsp import list_effect_presets
 from api.schemas import EffectPresetsResponse
 from api.public_engine_metadata import public_backends, public_unavailability
@@ -49,17 +47,6 @@ def _family_payload(family: str, module):
         "env_override": bool(os.environ.get(f"OMNIVOICE_{family.upper()}_BACKEND")),
         "backends": public_backends(module.list_backends()),
     }
-
-def _is_hf_repo_id(value: str) -> bool:
-    """Validate the route's ``owner/repo`` contract in bounded time."""
-    if not isinstance(value, str) or len(value) > 96 or value.count("/") != 1:
-        return False
-    try:
-        hf_utils.validate_repo_id(value)
-    except (HFValidationError, TypeError):
-        return False
-    return True
-
 
 @router.get("/engines")
 def list_all_engines():
@@ -95,122 +82,26 @@ def list_effects_presets():
     return {"presets": list_effect_presets()}
 
 
-@router.get("/engines/translation")
-def list_translation_engines():
-    """Translation engines with per-engine pip-package availability.
-
-    Separate from the tts/asr/llm "family" endpoints because these are
-    pip-installable on demand rather than select-from-what's-available.
-    The UI uses this to show a one-click Install chip when the user picks
-    an engine whose Python dependency isn't importable yet.
-    """
-    return {
-        "engines": [
-            {**entry, "availability_reason": public_unavailability(entry.get("availability_reason"))}
-            for entry in translation_engines.list_engines()
-        ],
-        "sandboxed": translation_engines.is_frozen(),
-    }
-
-
-@router.post(
-    "/engines/translation/{engine_id}/install",
-    dependencies=[Depends(require_admin)],
-)
-async def install_translation_engine(engine_id: str):
-    entry = translation_engines.get_engine(engine_id)
-    if not entry:
-        raise HTTPException(status_code=404, detail=f"Unknown translation engine: {engine_id!r}")
-    if translation_engines.is_frozen():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Engine install is disabled in the packaged build — the "
-                "bundled Python environment is read-only and signed. Run the "
-                "source/dev install (`uv sync`) if you need to add an engine."
-            ),
-        )
-    pkg = entry.get("pip_package")
-    if not pkg:
-        return {"status": "already_installed", "engine": engine_id, "reason": "no pip package required"}
-    if translation_engines.is_installed(engine_id):
-        return {"status": "already_installed", "engine": engine_id}
-    rc, out = await translation_engines.run_pip(["install", pkg])
-    if rc != 0:
-        raise HTTPException(status_code=500, detail=f"pip install {pkg} failed ({rc}): {out[-1000:]}")
-    # Probe again so the response reflects post-install reality; site-packages
-    # is visible immediately but importlib may have cached a failure.
-    import importlib
-    importlib.invalidate_caches()
-    ok = translation_engines.is_installed(engine_id)
-    return {
-        "status": "installed" if ok else "installed_but_probe_failed",
-        "engine": engine_id,
-        "package": pkg,
-        "log_tail": out[-800:],
-        "restart_required": not ok,
-    }
-
-
-@router.delete(
-    "/engines/translation/{engine_id}",
-    dependencies=[Depends(require_admin)],
-)
-async def uninstall_translation_engine(engine_id: str):
-    entry = translation_engines.get_engine(engine_id)
-    if not entry:
-        raise HTTPException(status_code=404, detail=f"Unknown translation engine: {engine_id!r}")
-    if entry.get("builtin"):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{entry['display_name']} is built-in and cannot be uninstalled. "
-                "It shares its Python dependency with core features."
-            ),
-        )
-    if translation_engines.is_frozen():
-        raise HTTPException(status_code=400, detail="Engine uninstall is disabled in packaged builds.")
-    pkg = entry.get("pip_package")
-    if not pkg:
-        return {"status": "no_op", "engine": engine_id}
-    rc, out = await translation_engines.run_pip(["uninstall", "-y", pkg])
-    if rc != 0:
-        raise HTTPException(status_code=500, detail=f"pip uninstall {pkg} failed ({rc}): {out[-1000:]}")
-    return {"status": "uninstalled", "engine": engine_id, "package": pkg, "log_tail": out[-800:]}
-
-
-# ── One-click sidecar-engine install (IndexTTS-2 & friends) ────────────────
+# ── VieNeuTTS sidecar installation ────────────────────────────────────────
 #
-# Sidecar engines (dedicated venv + source checkout + weights, isolated from
-# the parent's transformers>=5.3) used to require four manual terminal steps.
-# These routes drive services.sidecar_install: POST starts a resumable
-# background job, GET polls its step-by-step status (the Model Catalogue → Engines
-# Install button polls this), DELETE removes an app-managed install.
+# VieNeuTTS uses a dedicated venv, isolated from OmniVoice. These routes start,
+# inspect, or remove that app-managed environment.
 #
 # Path namespace: /engines/sidecar/{engine_id}/… — NOT /engines/{engine_id}/…
-# — because a dynamic segment there would shadow pre-existing literal routes
-# (this router registers before sonitranslate's, so a dynamic
-# POST /engines/{engine_id}/install would swallow
-# POST /engines/sonitranslate/install). Mirrors the
-# /engines/translation/{engine_id}/install namespace pattern.
+# — because a dynamic segment there would shadow pre-existing literal routes.
 #
-# Desktop-only: installing spawns git/uv against mutable source and writes an
-# editable environment. An API key does not make that supply-chain path safe to
-# trigger remotely. The job runs fine in packaged builds: the venv lives under
-# the user data dir, not inside the signed app bundle, and uv resolves via
-# OMNIVOICE_BUNDLED_UV/PATH.
+# Installation mutates local state, so it remains admin-gated.
 
 
 @router.post(
     "/engines/sidecar/{engine_id}/install",
-    dependencies=[Depends(require_admin), Depends(require_desktop)],
+    dependencies=[Depends(require_admin)],
 )
 def install_sidecar_engine(engine_id: str):
     """Start (or report) the one-click install for a sidecar engine.
 
     Returns ``{status: "started"|"already_running"|"already_installed"}``.
-    404 for engines that have no sidecar installer — the response names the
-    translation-engine route so a mis-aimed client can self-correct.
+    404 for a provider that has no sidecar installer.
     """
     from services import sidecar_install
     try:
@@ -220,9 +111,7 @@ def install_sidecar_engine(engine_id: str):
             status_code=404,
             detail=(
                 f"No one-click installer for engine {engine_id!r}. Sidecar "
-                f"installers exist for: {sorted(sidecar_install.SPECS)}. "
-                "(Translation engines install via POST "
-                "/engines/translation/{id}/install.)"
+                f"installers exist for: {sorted(sidecar_install.SPECS)}."
             ),
         )
 
@@ -539,11 +428,6 @@ def engine_selftest(engine_id: str):
 class SelectEngineRequest(BaseModel):
     family: str   # "tts" | "asr" | "llm"
     backend_id: str
-    # Only meaningful for family="tts", backend_id="mlx-audio" (#981) — picks
-    # which of mlx-audio's curated models is actually loaded. A curated key
-    # ("kokoro") or a raw HF repo id ("mlx-community/Kokoro-82M-bf16") — the
-    # same tolerance MLXAudioBackend.__init__ already has. Ignored otherwise.
-    model_id: str | None = None
 
 
 class SelectEngineResponse(BaseModel):
@@ -572,11 +456,11 @@ def select_engine(req: SelectEngineRequest):
     `unavailable` is blocked. LLM is never routing-gated (its status is "n/a")."""
     family = _FAMILIES.get(req.family)
     if not family:
-        raise HTTPException(400, f"Unknown family: {req.family}. Expected one of tts/asr/llm.")
+        raise HTTPException(404, f"Unknown family: {req.family}. Expected one of tts/asr/llm.")
     module, pref_key = family
     available = {b["id"]: b for b in module.list_backends()}
     if req.backend_id not in available:
-        raise HTTPException(400, f"Unknown {req.family} backend: {req.backend_id!r}")
+        raise HTTPException(404, f"Unknown {req.family} backend: {req.backend_id!r}")
     entry = available[req.backend_id]
     if not entry["available"]:
         reason = entry.get("reason") or "unavailable"
@@ -590,24 +474,6 @@ def select_engine(req: SelectEngineRequest):
             f"Backend {req.backend_id} can't run on this machine: {why}. "
             f"Pick an engine with a CPU path, or one that supports this host's GPU.",
         )
-    # #981: mlx-audio multiplexes 7+ curated models behind one backend id —
-    # persist the model pick alongside the backend id so the UI can actually
-    # select which curated model gets loaded (previously it always defaulted
-    # to Kokoro no matter what the user downloaded in Model Catalogue → Models).
-    if req.family == "tts" and req.backend_id == "mlx-audio" and req.model_id is not None:
-        known_keys = tts_backend.MLXAudioBackend.CURATED_MODELS
-        # Accept a curated key OR a raw HF repo id ("owner/name") — the same
-        # tolerance MLXAudioBackend.__init__ already has for power users.
-        # Anything else (typo'd key, malformed id) is rejected outright
-        # rather than silently persisted as a "custom repo" that then fails
-        # to resolve at load time.
-        if req.model_id not in known_keys and not _is_hf_repo_id(req.model_id):
-            raise HTTPException(
-                400,
-                "Unknown mlx-audio model. Expected a curated model key or a "
-                "Hugging Face repo ID like 'owner/name'.",
-            )
-        prefs.set_("mlx_audio_model_id", req.model_id)
     prefs.set_(pref_key, req.backend_id)
     return {
         "family": req.family,

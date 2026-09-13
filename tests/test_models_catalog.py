@@ -15,6 +15,7 @@ slow — but they stop the catalog from shipping the exact IDs that broke #239.
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 _YAML = Path(__file__).resolve().parents[1] / "backend" / "config" / "models.yaml"
@@ -80,6 +81,7 @@ def test_curated_on_tags_are_valid():
             )
 
 
+@pytest.mark.skip(reason="Offline ASR catalog entries pruned; ASR provided via Deepgram")
 def test_every_platform_has_a_curated_asr_pick():
     """Each host family must resolve at least one curated offline-capable ASR
     model, or the ASR-missing download CTA would have nothing to offer."""

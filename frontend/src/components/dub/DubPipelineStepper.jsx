@@ -24,7 +24,7 @@ const DUB_PIPELINE = [
 const DUB_PHASE_BY_STEP = {
   idle: 0,
   uploading: 1,
-  'installing-asr': 2,
+  prepare: 1,
   transcribing: 2,
   editing: 3,
   generating: 4,
@@ -43,7 +43,6 @@ function DubPipelineStepper({
   const current = DUB_PHASE_BY_STEP[dubStep] ?? 0;
   const busy =
     dubStep === 'uploading' ||
-    dubStep === 'installing-asr' ||
     dubStep === 'transcribing' ||
     dubStep === 'generating' ||
     dubStep === 'stopping';

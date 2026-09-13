@@ -72,12 +72,12 @@ describe('crashCauseHint — port conflict is not a memory problem (#1223)', () 
     expect(hint).not.toMatch(/VRAM|RAM/);
   });
 
-  it('leaves the OS-OOM branch alone', () => {
-    expect(crashCauseHint({ exit_code: null, signal: 9 })).toMatch(/ran out of/i);
+  it('uses the generic recovery message for an OS-OOM marker', () => {
+    expect(crashCauseHint({ exit_code: null, signal: 9 })).not.toMatch(/ASR|VRAM|Faster-Whisper/i);
   });
 
-  it('leaves the default VRAM branch alone', () => {
-    expect(crashCauseHint({ exit_code: 1, signal: null })).toMatch(/VRAM/);
+  it('does not recommend a removed local ASR engine', () => {
+    expect(crashCauseHint({ exit_code: 1, signal: null })).not.toMatch(/ASR|VRAM|Faster-Whisper/i);
   });
 });
 

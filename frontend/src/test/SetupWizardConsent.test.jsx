@@ -83,12 +83,13 @@ describe('SetupWizard analytics consent step', () => {
   });
 
   it('YES persists enabled:true, starts the frontend SDK, and advances', async () => {
+    const onReady = vi.fn();
     apiJson.mockResolvedValue({
       available: true,
       prompted: false,
       opted_in: false,
     });
-    render(withI18n(<SetupWizard onReady={() => {}} />));
+    render(withI18n(<SetupWizard onReady={onReady} />));
     await screen.findByText(/Improve VoiceStudio/i);
     await advancePastModels();
 
@@ -103,17 +104,17 @@ describe('SetupWizard analytics consent step', () => {
       );
     });
     expect(enableAnalytics).toHaveBeenCalled();
-    // Advanced to the dictation act.
-    expect(await screen.findByText(/Enter studio/i)).toBeInTheDocument();
+    expect(onReady).toHaveBeenCalled();
   });
 
   it('NO persists enabled:false, keeps the SDK off, and advances all the same', async () => {
+    const onReady = vi.fn();
     apiJson.mockResolvedValue({
       available: true,
       prompted: false,
       opted_in: false,
     });
-    render(withI18n(<SetupWizard onReady={() => {}} />));
+    render(withI18n(<SetupWizard onReady={onReady} />));
     await screen.findByText(/Improve VoiceStudio/i);
     await advancePastModels();
 
@@ -129,40 +130,42 @@ describe('SetupWizard analytics consent step', () => {
     });
     expect(disableAnalytics).toHaveBeenCalled();
     expect(enableAnalytics).not.toHaveBeenCalled();
-    expect(await screen.findByText(/Enter studio/i)).toBeInTheDocument();
+    expect(onReady).toHaveBeenCalled();
   });
 
   it('shows NO consent step when the build has no analytics destination', async () => {
+    const onReady = vi.fn();
     apiJson.mockResolvedValue({
       available: false,
       prompted: false,
       opted_in: false,
     });
-    render(withI18n(<SetupWizard onReady={() => {}} />));
+    render(withI18n(<SetupWizard onReady={onReady} />));
     await advancePastModels();
-    // Straight from models to dictation — an unanswerable ask would be a lie.
-    expect(await screen.findByText(/Enter studio/i)).toBeInTheDocument();
+    expect(onReady).toHaveBeenCalled();
     expect(screen.queryByText(/Help improve VoiceStudio\?/i)).not.toBeInTheDocument();
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
   it('shows NO consent step when the user was already asked', async () => {
+    const onReady = vi.fn();
     apiJson.mockResolvedValue({
       available: true,
       prompted: true,
       opted_in: false,
     });
-    render(withI18n(<SetupWizard onReady={() => {}} />));
+    render(withI18n(<SetupWizard onReady={onReady} />));
     await advancePastModels();
-    expect(await screen.findByText(/Enter studio/i)).toBeInTheDocument();
+    expect(onReady).toHaveBeenCalled();
     expect(screen.queryByTestId('analytics-consent-yes')).not.toBeInTheDocument();
   });
 
   it('a backend error means no consent step — and nothing is ever sent (fails closed)', async () => {
+    const onReady = vi.fn();
     apiJson.mockRejectedValue(new Error('backend down'));
-    render(withI18n(<SetupWizard onReady={() => {}} />));
+    render(withI18n(<SetupWizard onReady={onReady} />));
     await advancePastModels();
-    expect(await screen.findByText(/Enter studio/i)).toBeInTheDocument();
+    expect(onReady).toHaveBeenCalled();
     expect(apiFetch).not.toHaveBeenCalled();
     expect(enableAnalytics).not.toHaveBeenCalled();
   });

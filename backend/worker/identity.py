@@ -31,6 +31,7 @@ import json
 import os
 import secrets
 import time
+import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -299,27 +300,44 @@ def save_worker_key(path: str, keypair: WorkerKeypair) -> None:
     directory = os.path.dirname(os.path.abspath(path))
     os.makedirs(directory, exist_ok=True)
     tmp = f"{path}.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0)
+    fd = os.open(tmp, flags, 0o600)
     try:
         os.write(fd, keypair.private_bytes())
+        try:
+            os.fsync(fd)
+        except OSError:
+            pass
     finally:
         os.close(fd)
     os.replace(tmp, path)
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        # Windows and some network filesystems do not honour POSIX modes; the
-        # key is still in a per-user directory there.
-        pass
+    if sys.platform != "win32":
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
 
 
 def load_worker_key(path: str) -> Optional[WorkerKeypair]:
-    try:
-        with open(path, "rb") as fh:
-            raw = fh.read()
-    except (FileNotFoundError, PermissionError):
-        return None
-    if len(raw) != 32:
+    raw = None
+    for attempt in range(5):
+        try:
+            with open(path, "rb") as fh:
+                raw = fh.read()
+            if len(raw) == 32:
+                break
+            if sys.platform == "win32" and attempt < 4 and len(raw) == 0:
+                time.sleep(0.05)
+                continue
+            break
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            if attempt < 4 and sys.platform == "win32":
+                time.sleep(0.05)
+                continue
+            return None
+    if raw is None or len(raw) != 32:
         return None
     try:
         return WorkerKeypair.from_private_bytes(raw)

@@ -1007,7 +1007,7 @@ def _timeout_guidance(
         return common + (
             "this machine renders on CPU, where long generations are "
             "compute-bound. For a durable fix try shorter text or a lighter "
-            "engine (OmniVoice GGUF and Supertonic-3 are CPU-tuned). If you "
+            "engine or shorter text. If you "
             "expect very long single generations, raise "
             "OMNIVOICE_GENERATE_TIMEOUT_S."
         )
@@ -1030,8 +1030,7 @@ def _timeout_guidance(
             f"{device_name or 'this GPU'} has {vram_gb:.1f} GB of VRAM and "
             f"this engine wants about {min_vram_gb:.0f} GB — generations here "
             f"are slow enough to hit the limit even with nothing else loaded. "
-            f"The durable fix is a lighter engine (OmniVoice GGUF and "
-            f"Supertonic-3 are tuned for small/no GPU) or shorter text; "
+            f"The durable fix is shorter text or a lighter supported engine; "
             f"Flush caches / Unload the resident model (top toolbar or "
             f"Model Catalogue → Models) frees what little headroom there is. (Raise "
             f"OMNIVOICE_GENERATE_TIMEOUT_S if you'd rather let long "
@@ -1045,33 +1044,6 @@ def _timeout_guidance(
         "Model Catalogue → Models. (Raise OMNIVOICE_GENERATE_TIMEOUT_S for very "
         "long single generations.)"
     )
-
-
-# ── Watermark pool (#1169 load, split out in #1190) ──────────────────────
-# AudioSeal's generator is loaded with `AudioSeal.load_generator(...)` and
-# never moved to an accelerator: `embed_watermark` is CPU work on CPU tensors.
-# Running it on the GPU pool therefore reserves a *GPU* worker for a job that
-# uses no VRAM — and since #1169 routed every producer (including per-chunk
-# stream previews) through mark_synthetic, on an 8 GB host (exactly 1 GPU
-# worker) each watermark embed serialized directly ahead of the next generate,
-# doubling the effective queue depth of a streamed multi-chunk render.
-# Giving it its own tiny pool removes that head-of-line blocking with no VRAM
-# risk, because the work was never on the device to begin with.
-_watermark_pool_singleton: "ThreadPoolExecutor | None" = None
-_watermark_pool_lock = threading.Lock()
-
-
-def get_watermark_pool() -> ThreadPoolExecutor:
-    """Dedicated 1-worker pool for provenance marking. Built lazily so hosts
-    with watermarking disabled never spawn the thread."""
-    global _watermark_pool_singleton
-    if _watermark_pool_singleton is None:
-        with _watermark_pool_lock:
-            if _watermark_pool_singleton is None:
-                _watermark_pool_singleton = ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix="watermark",
-                )
-    return _watermark_pool_singleton
 
 
 model = None  # type: ignore
@@ -2692,16 +2664,6 @@ async def idle_worker():
                 free_vram()
         except Exception:  # noqa: BLE001 — the reaper must never kill idle_worker
             logger.warning("idle capture-ASR release failed", exc_info=True)
-        # Same bargain for the AudioSeal watermark models, which loaded on the
-        # first embed and were never released. Deliberately only here and not
-        # in the make-room paths: watermarking runs immediately *after* a
-        # generate, so evicting it just before one would only buy a reload.
-        try:
-            from services.watermark import release_idle_models
-
-            release_idle_models(idle_timeout)
-        except Exception:  # noqa: BLE001 — the reaper must never kill idle_worker
-            logger.warning("idle watermark-model release failed", exc_info=True)
 
 def release_tts_side_caches():
     """Drop caches keyed to the TTS model, for when the model itself is released.
@@ -3026,136 +2988,3 @@ async def _heal_tts_placement() -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("TTS placement self-heal could not run: %s", e)
 
-_diar_pipeline = None
-
-# Sentinel error classes used by callers (dub_core) to decide whether to
-# emit a structured SSE warning with a docs deeplink. Kept as module-level
-# constants so tests can pin them — they cross the SSE wire and the
-# frontend's errorDocsMap classifies on the same strings.
-DIARIZATION_ERR_NO_TOKEN = "NO_TOKEN"
-DIARIZATION_ERR_LICENSE  = "PYANNOTE_LICENSE_REQUIRED"
-DIARIZATION_ERR_LOAD     = "LOAD_FAILED"
-
-
-def _classify_diarization_error(exc: BaseException) -> str:
-    """Map a pyannote/HF-hub exception to one of the diarization error
-    sentinels above.
-
-    The 401/403 path is the canonical "user hasn't accepted the model
-    license on huggingface.co" symptom — both `Pipeline.from_pretrained`
-    and `huggingface_hub` raise distinct exception classes for it
-    depending on the installed versions, so we sniff on both the class
-    name and the stringified message rather than importing the
-    `HfHubHTTPError` symbol directly (which is not stable across
-    huggingface_hub majors).
-    """
-    name = type(exc).__name__.lower()
-    msg = str(exc).lower()
-    if (
-        "401" in msg
-        or "403" in msg
-        or "unauthorized" in msg
-        or "gated" in msg
-        or "accept" in msg and ("license" in msg or "terms" in msg or "user conditions" in msg)
-        or "hfhubhttperror" in name
-        or "gatedrepoerror" in name
-        or "repositorynotfounderror" in name and "gated" in msg
-    ):
-        return DIARIZATION_ERR_LICENSE
-    return DIARIZATION_ERR_LOAD
-
-
-def _ensure_pyannote_hf_token_compat():
-    """pyannote-audio 3.x calls huggingface_hub.hf_hub_download / snapshot_download
-    with the ``use_auth_token`` kwarg, which huggingface_hub 1.x removed (only
-    ``token`` remains) — raising ``hf_hub_download() got an unexpected keyword
-    argument 'use_auth_token'`` and breaking diarization (#167).
-
-    Wrap those functions to translate the deprecated kwarg. We patch
-    huggingface_hub itself BEFORE pyannote is imported, so pyannote's
-    ``from huggingface_hub import hf_hub_download`` binds the wrapped fn; we
-    also patch any already-imported pyannote submodule that bound it directly.
-    Idempotent (guarded by an attribute marker).
-    """
-    import functools
-    import sys as _sys
-    import huggingface_hub as _hf
-
-    def _wrap(orig):
-        if orig is None or getattr(orig, "_ov_uat_shim", False):
-            return orig
-
-        @functools.wraps(orig)
-        def _wrapped(*args, **kwargs):
-            if "use_auth_token" in kwargs:
-                kwargs.setdefault("token", kwargs.pop("use_auth_token"))
-            return orig(*args, **kwargs)
-
-        _wrapped._ov_uat_shim = True
-        return _wrapped
-
-    for _name in ("hf_hub_download", "snapshot_download"):
-        if hasattr(_hf, _name):
-            setattr(_hf, _name, _wrap(getattr(_hf, _name)))
-    for _modname, _mod in list(_sys.modules.items()):
-        if _modname.startswith("pyannote.") and _mod is not None:
-            for _name in ("hf_hub_download", "snapshot_download"):
-                if hasattr(_mod, _name):
-                    setattr(_mod, _name, _wrap(getattr(_mod, _name)))
-
-
-def get_diarization_pipeline(return_error: bool = False):
-    """Load (or return the cached) pyannote speaker-diarization-3.1 pipeline.
-
-    Default return: the pipeline instance, or `None` if anything went
-    wrong (no token, license not accepted, model load crashed). Existing
-    callers (dub_core legacy `_transcribe`) rely on the `None` sentinel.
-
-    When `return_error=True`, returns a 2-tuple
-    `(pipeline | None, error_sentinel | None)` where `error_sentinel` is
-    one of the `DIARIZATION_ERR_*` constants. This shape is what the
-    streaming `_diarize` path uses to emit a structured SSE warning with
-    a docs deeplink — issue #78.
-    """
-    global _diar_pipeline
-    if _diar_pipeline is not None:
-        return (_diar_pipeline, None) if return_error else _diar_pipeline
-
-    # Phase 1 AUTH-01: 3-source resolver (App → Env → HF-CLI). Per
-    # Pitfall #1 in 01-RESEARCH.md — exactly one place in the backend
-    # reads HF tokens, and that place is `token_resolver.resolve()`.
-    from services import token_resolver
-    resolved = token_resolver.resolve()
-    if not resolved:
-        return (None, DIARIZATION_ERR_NO_TOKEN) if return_error else None
-    hf_token = resolved.token
-    try:
-        torch = _lazy_torch()
-        _ensure_pyannote_hf_token_compat()  # #167: use_auth_token -> token
-        # PyTorch 2.6 flipped torch.load's default to weights_only=True, whose
-        # secure unpickler rejects the pyannote checkpoint's metadata globals
-        # (torch_version.TorchVersion, omegaconf nodes, …) — surfacing as
-        # "Weights only load failed / Unsupported global" and breaking
-        # diarization on torch>=2.6 even after the license is accepted (#270).
-        # Reuse the exact allowlist the WhisperX VAD load registers so the
-        # secure load path succeeds; it is idempotent and per-process.
-        try:
-            from services.asr_backend import WhisperXBackend
-            WhisperXBackend._allow_vad_pickle_globals()
-        except Exception as _glob_e:
-            logger.debug("pyannote safe-globals allowlist skipped: %s", _glob_e)
-        from pyannote.audio import Pipeline
-        logger.info("Loading Pyannote Diarization Pipeline...")
-        _diar_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=hf_token)
-        device = get_best_device()
-        # Pyannote supports CUDA and CPU; route XPU/DirectML to CPU
-        if device in ("cuda",):
-            _diar_pipeline.to(torch.device(device))
-        logger.info("Pyannote Diarization Pipeline loaded on %s.", device)
-        return (_diar_pipeline, None) if return_error else _diar_pipeline
-    except Exception as e:
-        err_class = _classify_diarization_error(e)
-        logger.exception(
-            "Failed to load Pyannote pipeline (class=%s)", err_class,
-        )
-        return (None, err_class) if return_error else None

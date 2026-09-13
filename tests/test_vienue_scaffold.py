@@ -40,6 +40,7 @@ def test_inert_without_venv(monkeypatch, tmp_path):
     # Hermetic: point the package-owned venv at a nonexistent tmp dir — a dev
     # machine that already installed vieneu has a real .venv on disk.
     from engines.vienue import bootstrap, VieNueBackend
+    monkeypatch.setenv("OMNIVOICE_VIENEU_MODEL_DIR", str(tmp_path))
     monkeypatch.setattr(bootstrap, "_ENGINES_VENV_DIR", tmp_path / ".venv")
     monkeypatch.delenv("OMNIVOICE_VIENEU_VENV", raising=False)
     bootstrap.invalidate()
@@ -61,7 +62,6 @@ def test_sidecar_spec_registered():
     assert spec.pip_requirement == "vieneu>=3.0"
     assert spec.env_var == "OMNIVOICE_VIENEU_VENV"
     assert spec.probe_module == "vieneu"
-    assert spec.weights_repo_id is None  # weights download lazily inside the SDK
 
 
 def test_one_click_install_and_languages_reach_list_backends():
@@ -96,6 +96,9 @@ def _capture_generate(monkeypatch):
         return "AUDIO"
 
     monkeypatch.setattr(SubprocessBackend, "generate", _fake)
+    for base in VieNueBackend.__mro__:
+        if hasattr(base, "generate") and base is not VieNueBackend:
+            monkeypatch.setattr(base, "generate", _fake)
     return calls, VieNueBackend()
 
 

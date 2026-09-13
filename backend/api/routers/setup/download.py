@@ -384,13 +384,12 @@ def _is_retryable_download_error(exc: BaseException) -> bool:
 async def install_model(req: InstallModelRequest):
     """Download one HF repo snapshot; progress goes through the shared
     ``/setup/download-stream`` SSE feed."""
-    if req.repo_id not in [m["repo_id"] for m in KNOWN_MODELS]:
+    from core.provider_boundary import is_allowed_hf_model
+
+    if not is_allowed_hf_model(req.repo_id):
         raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unknown model: {req.repo_id!r}. Known: "
-                + ", ".join(m["repo_id"] for m in KNOWN_MODELS)
-            ),
+            status_code=404,
+            detail=f"Model {req.repo_id!r} is not part of this runtime.",
         )
     target = (req.target or "").strip()
     if target != "local":
@@ -708,6 +707,10 @@ async def cancel_install(req: InstallModelRequest):
     in hf_hub 1.7.2, so an already-streaming file finishes; the cancel takes
     effect at the next retry boundary. Clears the cooldown so the user can
     immediately restart."""
+    from core.provider_boundary import is_allowed_hf_model
+
+    if not is_allowed_hf_model(req.repo_id):
+        raise HTTPException(status_code=404, detail="Model is not part of this runtime.")
     _cancelled.add(req.repo_id)
     _install_cooldowns.pop(req.repo_id, None)
     return {"cancelling": req.repo_id}
@@ -718,6 +721,10 @@ async def cancel_install(req: InstallModelRequest):
 @router.delete("/models/{repo_id:path}")
 def delete_model(repo_id: str):
     """Remove every cached revision of a repo from the HF cache."""
+    from core.provider_boundary import is_allowed_hf_model
+
+    if not is_allowed_hf_model(repo_id):
+        raise HTTPException(status_code=404, detail="Model is not part of this runtime.")
     hf_progress.emit({
         "repo_id": repo_id,
         "filename": repo_id,

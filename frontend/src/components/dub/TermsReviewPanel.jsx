@@ -24,7 +24,7 @@ import {
 // extraction suggestions stay local drafts until completed.
 
 const SHELL =
-  'rounded-[var(--chrome-radius-pill)] border border-[var(--chrome-border)] bg-[var(--chrome-bg)]';
+  'rounded-[var(--chrome-radius-pill)] border border-transparent bg-[var(--chrome-bg)]';
 const HEAD =
   'font-[family-name:var(--chrome-font-mono)] text-[length:var(--chrome-label-size)] tracking-[var(--chrome-label-track)] uppercase text-[var(--chrome-fg-muted)] font-semibold';
 const LABEL =

@@ -136,22 +136,6 @@ export function unreachableBackendMessage(
 ): string {
   const m = mode ?? deploymentMode();
   const contact = describeLastContact(nowMs);
-  if (m === 'desktop') {
-    // The buttons this names are themselves translated (French renders
-    // them as "Réessayer" / "Nettoyer et réessayer", Japanese differently
-    // again), so quoting the English labels would send a non-English user
-    // hunting for a button that says something else (CodeRabbit). Resolve
-    // them through the same i18n layer.
-    return tr(
-      'backendUnreachable.desktop',
-      {
-        contact,
-        retry: tr('bootstrap.retry', {}, 'Retry'),
-        cleanRetry: tr('bootstrap.clean_retry', {}, 'Clean & Retry'),
-      },
-      EN.desktop,
-    );
-  }
   if (m === 'dev') return tr('backendUnreachable.dev', { contact }, EN.dev);
   return tr('backendUnreachable.server', { contact }, EN.server);
 }

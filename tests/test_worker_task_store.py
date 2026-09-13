@@ -79,7 +79,7 @@ def test_persisted_input_params_do_not_contain_user_home_paths(db, tmp_path, mon
         ).fetchone()[0]
     assert str(voice) not in stored
     assert str(tmp_path) not in stored
-    assert "inputs/" in stored
+    assert "inputs/" in stored.replace("\\\\", "/").replace("\\", "/")
 
 
 def test_attempts_round_trip(db):

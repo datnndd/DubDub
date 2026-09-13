@@ -17,9 +17,9 @@ def test_engine_matrix(probe_report, boot_capture):
     results = probe_spec.run_judges(spec, ctx)
     probe_report.record(spec, results)
     assert probe_spec.blocking_failures(results) == [], "\n".join(str(r) for r in results)
-    # Real-world sanity: the shipped defaults are available out of the box.
+    # Real-world sanity: the shipped defaults are available out of the box (TTS).
     assert E.active_engine_available(boot_capture["engines_tts"]).passed is True
-    assert E.engine_available(boot_capture["engines_asr"], "whisperx").passed is True
+    assert E.unavailable_engines_explained(boot_capture["engines_asr"]).passed is True
 
 
 def test_unavailable_engines_explained_synthetic():

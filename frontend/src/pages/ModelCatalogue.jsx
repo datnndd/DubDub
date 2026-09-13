@@ -11,7 +11,7 @@
  * points here for the rest.
  *
  * Deliberately a COMPOSITION, not a rewrite: the panes mount the existing
- * `EnginesTab` (engine matrix + the OpenAI-compatible ASR config) and
+ * `EnginesTab` (provider selector + Deepgram configuration) and
  * `ModelStoreTab` unchanged, so their data contracts, tests and behaviour carry
  * over untouched — the shared engine cache, the same install/delete flows, and
  * the same env-var-wins semantics.
@@ -133,8 +133,7 @@ export default function ModelCatalogue() {
   );
 
   return (
-    // Same container-query shell as Settings: the app is zoom-scaled, so
-    // viewport media queries fire at the wrong logical width under Tauri.
+    // Container queries keep the content responsive inside the app shell.
     <div
       className="h-full min-h-0 w-full [container-type:inline-size] [container-name:catalogue-shell]"
       data-testid="model-catalogue"

@@ -64,6 +64,48 @@ def _save(data: dict) -> None:
         raise
 
 
+def migrate_provider_boundary() -> bool:
+    """Rewrite persisted provider selections without contacting providers.
+
+    Returns ``True`` only when ``prefs.json`` changed. User projects, voices,
+    model caches, and unrelated preferences are preserved.
+    """
+    from core.provider_boundary import (
+        sanitize_asr_backend,
+        sanitize_translate_provider,
+        sanitize_tts_backend,
+    )
+
+    with _MUTATE_LOCK:
+        data = _load()
+        migrated = dict(data)
+        migrated["tts_backend"] = sanitize_tts_backend(data.get("tts_backend"))
+        migrated["asr_backend"] = sanitize_asr_backend(data.get("asr_backend"))
+        for key in ("translate_provider", "translation_engine"):
+            if key in data:
+                migrated[key] = sanitize_translate_provider(data.get(key))
+
+        for key in tuple(migrated):
+            if key.startswith("dictation.") or key == "mlx_audio_model_id":
+                migrated.pop(key, None)
+        retired_env_fragments = (
+            "INDEXTTS", "COSYVOICE", "GPT_SOVITS", "VOXCPM", "KITTENTTS",
+            "MLX", "POCKETTTS", "SUPERTONIC", "MOSS", "DOTS", "CONFUCIUS",
+            "WHISPER", "PARAKEET", "NEMO", "FUNASR", "MOONSHINE", "SHERPA",
+            "PYANNOTE", "ARGOS", "NLLB", "SONITRANSLATE", "AUDIOSEAL", "DEMUCS",
+        )
+        for key in tuple(migrated):
+            if key in {"env.OMNIVOICE_TTS_BACKEND", "env.OMNIVOICE_ASR_BACKEND"}:
+                migrated.pop(key, None)
+            elif key.startswith("env.") and any(part in key.upper() for part in retired_env_fragments):
+                migrated.pop(key, None)
+
+        if migrated == data:
+            return False
+        _save(migrated)
+        return True
+
+
 def get(key: str, default: Any = None) -> Any:
     return _load().get(key, default)
 
@@ -86,8 +128,18 @@ def delete(key: str) -> None:
 def resolve(key: str, *, env: Optional[str] = None, default: Any = None) -> Any:
     """Env var > prefs.json > default. Env is authoritative so power-users
     can pin a backend without the UI silently changing it."""
+    val = None
     if env:
-        v = os.environ.get(env)
-        if v:
-            return v
-    return get(key, default)
+        val = os.environ.get(env)
+    if val is None:
+        val = get(key, default)
+    if key == "tts_backend":
+        from core.provider_boundary import sanitize_tts_backend
+        return sanitize_tts_backend(val)
+    if key == "asr_backend":
+        from core.provider_boundary import sanitize_asr_backend
+        return sanitize_asr_backend(val)
+    if key in ("translate_provider", "translation_engine"):
+        from core.provider_boundary import sanitize_translate_provider
+        return sanitize_translate_provider(val)
+    return val

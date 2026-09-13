@@ -1,9 +1,7 @@
-"""VieNeu-TTS venv probe + lazy bootstrap.
+"""VieNeu-TTS venv probe and local-runtime bootstrap.
 
-Resolves which Python interpreter runs the VieNeu sidecar. Mirrors
-``engines.dots_tts.bootstrap`` / ``engines.confucius4.bootstrap`` — same
-subprocess-isolation shape — but simpler: ``vieneu`` is a PyPI package, so
-there is no user clone directory to point at.
+Resolves which Python interpreter runs the VieNeu sidecar. ``vieneu`` is a
+PyPI package, so there is no source checkout to manage.
 
 Probe order (priority):
 
@@ -11,14 +9,12 @@ Probe order (priority):
     2. ``backend/engines/vienue/.venv/`` — this package's own venv.
     3. Bootstrap: ``uv venv`` then ``uv pip install vieneu`` (>=3.0 — the
        v3-Turbo generation) into the package venv. Fully automatic: no clone
-       dir, no manual step. Weights still download from HuggingFace on first
-       synthesize, reported through sidecar progress frames.
+       dir, no manual step. Model weights must be present in the local model
+       directory selected by the user.
 
 Caching: memoised after first success. Tests reset via :func:`invalidate`.
 
-Security: same posture as the other engine bootstraps — bootstrap never
-touches HF_TOKEN; the sidecar's stderr is redacted by the parent's
-``HFTokenRedactor``; the install comes from PyPI (user-run `uv`).
+The bootstrap never downloads model weights or reads a Hugging Face token.
 """
 from __future__ import annotations
 

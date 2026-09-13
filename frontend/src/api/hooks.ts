@@ -24,7 +24,6 @@ export const queryKeys = {
   notifications: ['notifications'] as const,
   systemInfo: ['system-info'] as const,
   systemLogs: (tail?: number) => ['system-logs', tail ?? 300] as const,
-  tauriLogs: (tail?: number) => ['tauri-logs', tail ?? 300] as const,
   models: ['models'] as const,
   recommendations: ['recommendations'] as const,
   preflight: ['preflight'] as const,
@@ -122,16 +121,6 @@ export function useSystemLogs(tail = 300, enabled = true, refetchInterval = 10_0
   return useQuery({
     queryKey: queryKeys.systemLogs(tail),
     queryFn: () => systemApi.systemLogs(tail),
-    refetchInterval,
-    refetchIntervalInBackground: false,
-    enabled,
-  });
-}
-
-export function useTauriLogs(tail = 300, enabled = true, refetchInterval = 10_000) {
-  return useQuery({
-    queryKey: queryKeys.tauriLogs(tail),
-    queryFn: () => systemApi.systemLogsTauri(tail),
     refetchInterval,
     refetchIntervalInBackground: false,
     enabled,

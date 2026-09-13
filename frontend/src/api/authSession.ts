@@ -22,8 +22,6 @@ type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 type AuthWindow = {
   location?: { origin?: string };
   dispatchEvent?: (event: Event) => boolean;
-  __TAURI__?: unknown;
-  __TAURI_INTERNALS__?: unknown;
 };
 
 type CommonOptions = {

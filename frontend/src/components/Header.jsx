@@ -124,24 +124,11 @@ function WaveBars({ color = '#f3a5b6', active }) {
   );
 }
 
-async function runWindowAction(action) {
-  try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    const appWindow = getCurrentWindow();
-    if (action === 'minimize') await appWindow.minimize();
-    else if (action === 'maximize') await appWindow.toggleMaximize();
-    else if (action === 'close') await appWindow.close();
-  } catch {
-    console.warn('Window control action failed');
-  }
-}
-
 export default function Header({
   mode,
   setMode,
   navStyle = 'rail',
   modelStatus,
-  doubleClickMaximize,
   activeProjectName,
   onFlushMemory,
 }) {
@@ -149,7 +136,6 @@ export default function Header({
   // breadcrumb + wordmark normally sit — the tabs already say where you are,
   // and two answers to that question in one bar is one too many.
   const tabsInTitlebar = navStyle === 'tabs';
-  const showWindowControls = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
   const { t } = useTranslation();
   // Sysinfo is subscribed here (not in App via useAppData) so the 5s poll
   // only re-renders the header chrome, not the whole App tree.
@@ -248,8 +234,6 @@ export default function Header({
   return (
     <div
       className={`header-area ${tabsInTitlebar ? 'header-area--tabs' : ''}`}
-      data-tauri-drag-region
-      onDoubleClick={doubleClickMaximize}
     >
       {tabsInTitlebar ? (
         <div className="header-area__tabs min-w-0">
@@ -471,37 +455,6 @@ export default function Header({
                   )}
               </div>
             )}
-          </div>
-        )}
-        {showWindowControls && (
-          <div className="ml-1 flex h-full shrink-0 items-stretch" data-testid="window-controls">
-            <button
-              type="button"
-              className="flex h-7 w-9 items-center justify-center border-0 bg-transparent text-[var(--chrome-fg-muted)] hover:bg-[var(--chrome-hover-bg)] hover:text-[var(--chrome-fg)]"
-              aria-label={t('common.minimize_window')}
-              title={t('common.minimize_window')}
-              onClick={() => void runWindowAction('minimize')}
-            >
-              <Minus size={13} />
-            </button>
-            <button
-              type="button"
-              className="flex h-7 w-9 items-center justify-center border-0 bg-transparent text-[var(--chrome-fg-muted)] hover:bg-[var(--chrome-hover-bg)] hover:text-[var(--chrome-fg)]"
-              aria-label={t('common.maximize_restore_window')}
-              title={t('common.maximize_restore_window')}
-              onClick={() => void runWindowAction('maximize')}
-            >
-              <Square size={10} />
-            </button>
-            <button
-              type="button"
-              className="flex h-7 w-9 items-center justify-center border-0 bg-transparent text-[var(--chrome-fg-muted)] hover:bg-[#c42b1c] hover:text-white"
-              aria-label={t('common.close_window')}
-              title={t('common.close_window')}
-              onClick={() => void runWindowAction('close')}
-            >
-              <X size={13} />
-            </button>
           </div>
         )}
       </div>

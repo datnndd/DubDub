@@ -8,37 +8,17 @@ from fastapi.responses import JSONResponse
 
 from schemas.requests import TranslateContextRequest, TranslateRequest
 from services.model_manager import _cpu_pool, _gpu_pool
-from services.hf_revisions import revision_for
 from services.translator import cinematic_available, cinematic_refine_many, _cinematic_budget
 from api.routers.dub_core import _get_job, _save_job
 
 router = APIRouter()
 logger = logging.getLogger("omnivoice.api")
 
-_NLLB_REPO_ID = "facebook/nllb-200-distilled-600M"
-
-
-def _load_nllb_component(factory):
-    """Load a curated NLLB component from its reviewed immutable revision."""
-    return factory.from_pretrained(
-        _NLLB_REPO_ID,
-        revision=revision_for(_NLLB_REPO_ID),
-    )
-
 TRANSLATE_CODES = {
     "en": "en", "es": "es", "fr": "fr", "de": "de", "it": "it", "pt": "pt",
     "ru": "ru", "ja": "ja", "ko": "ko", "zh": "zh-CN", "cmn-Hans": "zh-CN",
     "ar": "ar", "hi": "hi", "tr": "tr", "pl": "pl", "nl": "nl", "sv": "sv",
     "th": "th", "vi": "vi", "id": "id", "uk": "uk",
-}
-
-FLORES_CODES = {
-    "en": "eng_Latn", "es": "spa_Latn", "fr": "fra_Latn", "de": "deu_Latn",
-    "it": "ita_Latn", "pt": "por_Latn", "ru": "rus_Cyrl", "ja": "jpn_Jpan",
-    "ko": "kor_Hang", "zh": "zho_Hans", "zh-CN": "zho_Hans", "cmn-Hans": "zho_Hans", "ar": "arb_Arab",
-    "hi": "hin_Deva", "tr": "tur_Latn", "pl": "pol_Latn", "nl": "nld_Latn",
-    "sv": "swe_Latn", "th": "tha_Thai", "vi": "vie_Latn", "id": "ind_Latn",
-    "uk": "ukr_Cyrl",
 }
 
 # Human-readable language names for LLM prompts. Empirically a tiny / 7B
@@ -162,11 +142,6 @@ def _looks_like_target(text: str, code: str, threshold: float = 0.5) -> bool:
     always return True since we can't distinguish English from German by
     codepoints alone."""
     return _script_ratio(text, code) >= threshold
-
-_nllb_model = None
-_nllb_tokenizer = None
-_nllb_device = None
-
 
 def _dialect_flags(req, applied: bool) -> dict:
     """Response fields describing whether the requested dialect was honored.
@@ -452,111 +427,16 @@ async def dub_translate_context(req: TranslateContextRequest):
         return JSONResponse(status_code=500, content={"error": error})
 
 
-def _unload_nllb():
-    """Release NLLB VRAM so TTS model can reload."""
-    global _nllb_model, _nllb_tokenizer
-    import gc
-    _nllb_model = None
-    _nllb_tokenizer = None
-    gc.collect()
-    try:
-        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-    except Exception:
-        pass
-
-
 @router.post("/dub/translate")
 async def dub_translate(req: TranslateRequest):
     try:
-        provider = (req.provider if req.provider else os.environ.get("TRANSLATE_PROVIDER", "google")).lower()
+        from core.provider_boundary import sanitize_translate_provider
+        provider = sanitize_translate_provider(req.provider or os.environ.get("TRANSLATE_PROVIDER", "google"))
         lang_code = TRANSLATE_CODES.get(req.target_lang, req.target_lang)
         api_key = os.environ.get("TRANSLATE_API_KEY", "")
         loop = asyncio.get_running_loop()
         src_lang = _resolve_source_lang(req)
 
-        # Offline NLLB Transformer Translation
-        if provider == "nllb":
-            flores_tgt = FLORES_CODES.get(req.target_lang, "eng_Latn")
-            flores_src = FLORES_CODES.get(src_lang, "eng_Latn")
-
-            def _translate_nllb():
-                global _nllb_model, _nllb_tokenizer, _nllb_device
-                import torch
-                from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-
-                if torch.cuda.is_available():
-                    target_device = "cuda"
-                elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                    target_device = "mps"
-                else:
-                    target_device = "cpu"
-
-                try:
-                    if _nllb_tokenizer is None:
-                        _nllb_tokenizer = _load_nllb_component(AutoTokenizer)
-                    if _nllb_model is None:
-                        _nllb_model = _load_nllb_component(AutoModelForSeq2SeqLM)
-                        if target_device != "cpu":
-                            try:
-                                _nllb_model = _nllb_model.to(target_device)
-                                _nllb_device = target_device
-                            except Exception as e:
-                                logger.warning("NLLB %s placement failed, falling back to CPU: %s", target_device, e)
-                                _nllb_device = "cpu"
-                        else:
-                            _nllb_device = "cpu"
-                except Exception as e:
-                    logger.exception("NLLB model load failed")
-                    return [{"id": seg.id, "text": seg.text, "error": f"Model load error: {str(e)}"} for seg in req.segments]
-
-                results = []
-                for seg in req.segments:
-                    try:
-                        if not seg.text or not seg.text.strip():
-                            results.append({"id": seg.id, "text": seg.text})
-                            continue
-
-                        tgt = FLORES_CODES.get(seg.target_lang, flores_tgt) if seg.target_lang else flores_tgt
-
-                        _nllb_tokenizer.src_lang = flores_src
-                        inputs = _nllb_tokenizer(seg.text, return_tensors="pt")
-                        if _nllb_device and _nllb_device != "cpu":
-                            inputs = {k: v.to(_nllb_device) for k, v in inputs.items()}
-
-                        forced_bos_token_id = _nllb_tokenizer.convert_tokens_to_ids(tgt)
-                        try:
-                            translated_tokens = _nllb_model.generate(
-                                **inputs, forced_bos_token_id=forced_bos_token_id, max_length=400
-                            )
-                        except (RuntimeError, NotImplementedError) as e:
-                            if _nllb_device == "mps":
-                                logger.warning("MPS generate failed, retrying on CPU: %s", e)
-                                _nllb_model.to("cpu")
-                                _nllb_device = "cpu"
-                                inputs = {k: v.to("cpu") for k, v in inputs.items()}
-                                translated_tokens = _nllb_model.generate(
-                                    **inputs, forced_bos_token_id=forced_bos_token_id, max_length=400
-                                )
-                            else:
-                                raise
-                        translated_text = _nllb_tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0]
-                        results.append({"id": seg.id, "text": translated_text})
-                    except Exception as e:
-                        results.append({"id": seg.id, "text": seg.text, "error": str(e)})
-                return results
-
-            translated = await loop.run_in_executor(_gpu_pool, _translate_nllb)
-            if os.environ.get("OMNIVOICE_UNLOAD_NLLB", "1") == "1":
-                _unload_nllb()
-            # Cinematic/Autofit refine + rate-ratio badges must run for NLLB too
-            # (previously this returned before _maybe_cinematic, so a Cinematic
-            # pick on NLLB silently produced plain Fast output). Unloading NLLB
-            # first is fine — the refine LLM is a separate network provider.
-            return await _maybe_cinematic(translated, req, src_lang, loop)
 
         # LLM translation — resolves through the LLM Skills registry: per-skill
         # "Dub translation" override → global active provider (Settings → LLM
@@ -806,117 +686,23 @@ async def dub_translate(req: TranslateRequest):
             return await _maybe_cinematic(translated, req, src_lang, loop, already_llm=True,
                                           context_source=context_source)
 
-        # Offline Argos Translate
-        if provider == "argos" or provider == "libretranslate":
-            try:
-                import argostranslate  # noqa: F401
-            except ImportError:
-                # Single-source the install command from the engine registry so
-                # this 400 and the proactive Install button in the Engine
-                # selector can never drift (see translation_engines.install_command).
-                from services.translation_engines import install_command
-                cmd = install_command("argos") or "uv pip install argostranslate"
-                friendly = (
-                    f"The '{provider}' translation engine needs the optional "
-                    f"`argostranslate` Python package, which isn't installed in "
-                    f"this backend. Install it with `{cmd}` "
-                    f"and restart the server, or "
-                    f"switch the Engine dropdown to another provider."
-                )
-                return JSONResponse(status_code=400, content={"error": friendly})
-            def _translate_argos():
-                cache_dir = os.environ.get("OMNIVOICE_CACHE_DIR")
-                if cache_dir:
-                    argos_cache = os.path.join(cache_dir, "argos-translate")
-                    os.makedirs(argos_cache, exist_ok=True)
-                    os.environ.setdefault("ARGOS_PACKAGES_DIR", argos_cache)
-                    os.environ.setdefault("ARGOS_DATA_DIR", argos_cache)
-                import argostranslate.package
-                import argostranslate.translate
-
-                from_code = src_lang
-                available_packages = argostranslate.package.get_installed_packages()
-
-                results = []
-                for seg in req.segments:
-                    try:
-                        if not seg.text or not seg.text.strip():
-                            results.append({"id": seg.id, "text": seg.text})
-                            continue
-                        to_code = seg.target_lang if seg.target_lang else req.target_lang
-                        installed_pkg = next(filter(lambda x: x.from_code == from_code and x.to_code == to_code, available_packages), None)
-
-                        if installed_pkg is None:
-                            argostranslate.package.update_package_index()
-                            all_packages = argostranslate.package.get_available_packages()
-                            package_to_install = next(filter(lambda x: x.from_code == from_code and x.to_code == to_code, all_packages), None)
-                            if package_to_install:
-                                argostranslate.package.install_from_path(package_to_install.download())
-                                available_packages = argostranslate.package.get_installed_packages()
-                            else:
-                                raise Exception(f"No Argos package available for {from_code} -> {to_code}")
-
-                        translated_text = argostranslate.translate.translate(seg.text, from_code, to_code)
-                        results.append({"id": seg.id, "text": translated_text})
-                    except Exception as e:
-                        results.append({"id": seg.id, "text": seg.text, "error": str(e)})
-                return results
-
-            translated = await loop.run_in_executor(_cpu_pool, _translate_argos)
-            # Argos is the DEFAULT engine — routing it through _maybe_cinematic is
-            # the headline fix: a user who picks Cinematic/Autofit on Argos now
-            # gets the LLM refine + fit pass (and rate-ratio badges in Fast mode)
-            # instead of silent plain-Fast output.
-            return await _maybe_cinematic(translated, req, src_lang, loop)
-
-        # Legacy / API Deep_Translator logic.
-        # Preflight the optional `deep_translator` dep once so we fail with a
-        # single actionable error instead of N identical per-segment
-        # ModuleNotFoundErrors that flood the UI's error badge.
+        # Google Translate (Free web endpoint via deep_translator)
         try:
             import deep_translator  # noqa: F401
         except ImportError:
-            # Same single-source install command as the Engine selector's Install
-            # button (translation_engines.install_command) — google/deepl/
-            # microsoft/mymemory all share the deep_translator package.
-            from services.translation_engines import install_command
-            cmd = install_command(provider) or "uv pip install deep_translator"
             friendly = (
-                f"The '{provider}' translation engine needs the optional "
-                f"`deep_translator` Python package, which isn't installed in "
-                f"this backend. Install it with `{cmd}` "
-                f"and restart the server, or "
-                f"switch the Engine dropdown to Argos (local, bundled), NLLB "
-                f"(local, heavier), or OpenAI (LLM)."
+                "Google Translate requires `deep_translator`. "
+                "Install it with `uv pip install deep_translator`."
             )
             return JSONResponse(status_code=400, content={"error": friendly})
 
         src_arg = TRANSLATE_CODES.get(src_lang, src_lang) or "auto"
-
         _proxies = {"http": None, "https": None}
-        _deepl_key = os.environ.get("DEEPL_API_KEY") or api_key
-        _msft_key = os.environ.get("MICROSOFT_API_KEY") or api_key
 
         def _build_translator(src, tgt):
-            if provider == "deepl":
-                from deep_translator import DeeplTranslator
-                tr = DeeplTranslator(api_key=_deepl_key, source=src, target=tgt, use_free_api=False)
-                _custom = os.environ.get("DEEPL_BASE_URL")
-                if _custom:
-                    tr._base_url = _custom.rstrip("/") + "/"
-                return tr
-            if provider == "mymemory":
-                from deep_translator import MyMemoryTranslator
-                return MyMemoryTranslator(source=src, target=tgt, proxies=_proxies)
-            if provider == "microsoft":
-                from deep_translator import MicrosoftTranslator
-                tr = MicrosoftTranslator(api_key=_msft_key, source=src, target=tgt, proxies=_proxies)
-                _custom = os.environ.get("MICROSOFT_BASE_URL")
-                if _custom:
-                    tr._base_url = _custom.rstrip("/") + "/translate?api-version=3.0"
-                return tr
             from deep_translator import GoogleTranslator
             return GoogleTranslator(source=src, target=tgt, proxies=_proxies)
+
 
         def _translate_single(seg):
             seg_lc = (
@@ -945,7 +731,7 @@ async def dub_translate(req: TranslateRequest):
             # the API key (same class as the OpenAI user_id leak).
             from core.scrub import scrub_provider_error
             return {"id": seg.id, "text": seg.text,
-                    "error": scrub_provider_error(last_err, _deepl_key or _msft_key or api_key) or "unknown"}
+                    "error": scrub_provider_error(last_err, api_key) or "unknown"}
 
         tasks = [loop.run_in_executor(_cpu_pool, _translate_single, seg) for seg in req.segments]
         translated = await asyncio.gather(*tasks)

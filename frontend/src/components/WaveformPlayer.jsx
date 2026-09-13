@@ -18,7 +18,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { Play, Pause } from 'lucide-react';
 import { claimPlayback } from '../utils/playback';
-import { isTauri, fileToMediaUrl } from '../utils/media';
 import { unlockAudio } from '../utils/audioUnlock';
 import { useAppStore } from '../store';
 
@@ -131,9 +130,7 @@ export default function WaveformPlayer({
     };
   }, [aecEnabled, isPlaying]);
 
-  // Resolve Blob/File → playable URL. Strings pass through. In Tauri, blob:
-  // URLs don't play in WebKit media elements, so blobs are routed through the
-  // backend preview endpoint (same path the rest of the app uses).
+  // Resolve Blob/File to a browser object URL. Strings pass through.
   useEffect(() => {
     if (!src) {
       setResolvedUrl(null);
@@ -142,19 +139,6 @@ export default function WaveformPlayer({
     if (typeof src === 'string') {
       setResolvedUrl(src);
       return;
-    }
-    if (isTauri) {
-      let cancelled = false;
-      fileToMediaUrl(src, null)
-        .then((urls) => {
-          if (!cancelled) setResolvedUrl(urls.audioUrl);
-        })
-        .catch(() => {
-          if (!cancelled) setResolvedUrl(URL.createObjectURL(src));
-        });
-      return () => {
-        cancelled = true;
-      };
     }
     const u = URL.createObjectURL(src);
     setResolvedUrl(u);

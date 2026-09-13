@@ -350,3 +350,71 @@ def test_deepgram_transcribe_with_language_parameter(asr_mod, ss, monkeypatch, t
     assert captured_params.get("detect_language") == "true"
     assert "language" not in captured_params
 
+
+def test_deepgram_transcribe_error_includes_api_response_detail(asr_mod, ss, monkeypatch, tmp_path):
+    ss.set_secret(asr_mod._ASR_DEEPGRAM_SECRET_NAME, "test-key")
+
+    class _MockErrorResponse:
+        status_code = 400
+        text = '{"err_code":"INVALID_PARAM","err_msg":"Language detection not supported"}'
+
+    class _MockHttpxClient:
+        def __init__(self, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def post(self, url, **kwargs):
+            return _MockErrorResponse()
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", _MockHttpxClient)
+
+    audio = tmp_path / "test.wav"
+    audio.write_bytes(b"RIFF....WAVEfmt ")
+
+    backend = asr_mod.DeepgramASRBackend()
+    with pytest.raises(RuntimeError) as exc_info:
+        backend.transcribe(str(audio))
+
+    assert "Deepgram API error (400)" in str(exc_info.value)
+    assert "Language detection not supported" in str(exc_info.value)
+
+
+def test_deepgram_transcribe_picks_up_late_configured_key(asr_mod, ss, monkeypatch, tmp_path):
+    # Initialized without key
+    backend = asr_mod.DeepgramASRBackend()
+
+    class _MockOkResponse:
+        status_code = 200
+        text = "{}"
+        def json(self):
+            return {"results": {"channels": [{"alternatives": [{"transcript": "hello"}]}]}}
+
+    captured_headers = {}
+    class _MockHttpxClient:
+        def __init__(self, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def post(self, url, headers=None, **kwargs):
+            captured_headers.update(headers or {})
+            return _MockOkResponse()
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", _MockHttpxClient)
+
+    # Save key after backend creation
+    ss.set_secret(asr_mod._ASR_DEEPGRAM_SECRET_NAME, "late-configured-key")
+
+    audio = tmp_path / "test.wav"
+    audio.write_bytes(b"RIFF....WAVEfmt ")
+
+    res = backend.transcribe(str(audio))
+    assert res["chunks"][0]["text"] == "hello"
+    assert captured_headers.get("Authorization") == "Token late-configured-key"
+
+

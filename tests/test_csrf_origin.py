@@ -97,9 +97,6 @@ def test_explicit_allowed_origin_is_exact_and_port_bound(monkeypatch):
     assert origin_allowed(_connection(origin="https://ui.test.evil")) is False
 
 
-def test_default_tauri_origins_are_allowed():
-    assert origin_allowed(_connection(origin="tauri://localhost")) is True
-    assert origin_allowed(_connection(origin="http://tauri.localhost")) is True
 
 
 def test_invalid_ui_port_falls_back_to_the_default_allowlist(monkeypatch):

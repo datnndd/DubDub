@@ -469,7 +469,7 @@ def test_legacy_worker_missing_weights_returns_typed_409_before_submit(
     class Worker:
         class Record:
             capabilities = [{
-                "engine": "cosyvoice", "model_id": "cosyvoice:default",
+                "engine": "omnivoice", "model_id": "omnivoice:default",
                 "supported": True, "installed": True, "downloaded": False,
                 # Phase-4 wire payload: repo_ids did not exist yet.
                 "operations": ["tts"],
@@ -496,15 +496,15 @@ def test_legacy_worker_missing_weights_returns_typed_409_before_submit(
     monkeypatch.setattr(gateway, "decide", lambda op, **kwargs: decision)
     monkeypatch.setattr(gateway, "_plane", lambda control_plane=None: Plane())
 
-    response = _post(client, text="Legacy capability probe.", engine="cosyvoice")
+    response = _post(client, text="Legacy capability probe.", engine="omnivoice")
 
     assert response.status_code == 409, response.text
     assert response.json()["detail"] == {
         "error": "model_not_downloaded",
         "message": "This model is not downloaded on gpu2.",
-        "engine": "cosyvoice",
-        "repo_ids": ["FunAudioLLM/Fun-CosyVoice3-0.5B-2512"],
-        "size_bytes": int(9.8 * 1024**3),
+        "engine": "omnivoice",
+        "repo_ids": ["k2-fsa/OmniVoice"],
+        "size_bytes": int(2.4 * 1024**3),
         "target": decision.worker_id,
         "target_label": "gpu2",
         "downloadable": True,

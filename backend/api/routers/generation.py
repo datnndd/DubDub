@@ -1106,7 +1106,7 @@ def _apply_routing_headers(headers, engine_notice, decision):
             worker_notice = notice_for(decision)
         except Exception:  # noqa: BLE001 — a notice must never fail a render
             worker_notice = None
-        if worker_notice and (getattr(decision, "remote", False) or not notice):
+        if worker_notice and (getattr(decision, "remote", False) or not notice or notice[0] != "cpu_fallback"):
             notice = worker_notice
     if not notice:
         return headers

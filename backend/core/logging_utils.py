@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import unicodedata
 
+from core.scrub import scrub_text
+
 DEFAULT_LOG_VALUE_LIMIT = 512
 
 
@@ -25,7 +27,7 @@ def log_safe(value: object, *, limit: int = DEFAULT_LOG_VALUE_LIMIT) -> str:
     # Keep the canonical CR/LF transformation explicit: besides documenting
     # the primary invariant, static analyzers recognize this as the sanitizer
     # before the broader Unicode-control rendering below.
-    raw = raw.replace("\r", r"\r").replace("\n", r"\n")
+    raw = scrub_text(raw).replace("\r", r"\r").replace("\n", r"\n")
     limit = max(8, int(limit))
     parts: list[str] = []
     used = 0

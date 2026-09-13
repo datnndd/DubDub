@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { Copy, FileText, FolderOpen, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
+import { Copy, FileText, RefreshCw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
-import { exportReveal } from '../../api/exports';
 import { copyText } from '../../utils/copyText';
 import { Segmented, Button, Badge } from '../../ui';
 import { SettingsSection } from './primitives';
@@ -11,7 +10,6 @@ import ReportBugButton from '../ReportBugButton';
 const LOG_SOURCE_DEFS = [
   { value: 'backend', key: 'backend' },
   { value: 'frontend', key: 'frontend' },
-  { value: 'tauri', key: 'tauri' },
 ];
 
 export default function LogsTab({
@@ -33,19 +31,6 @@ export default function LogsTab({
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [logs]);
-
-  // The frontend "log" is an in-memory buffer — there is no file to reveal.
-  const hasLogFile = logSource !== 'frontend' && !!logMeta.exists && !!logMeta.path;
-
-  const openLogFolder = async () => {
-    try {
-      await exportReveal({ path: logMeta.path });
-    } catch (e) {
-      toast.error(
-        e?.message || t('settings.open_folder_failed', { defaultValue: 'Could not open folder' }),
-      );
-    }
-  };
 
   const copyLogs = async () => {
     const ok = await copyText(logs.join(''));
@@ -100,23 +85,6 @@ export default function LogsTab({
 
       <div className="settings-log-meta my-[var(--space-4)] flex shrink-0 items-center gap-[var(--space-4)] font-mono text-[var(--text-base)] text-[var(--chrome-fg-dim)]">
         <span>{logMeta.path || '—'}</span>
-        {hasLogFile && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={openLogFolder}
-            leading={<FolderOpen size={11} />}
-            title={logMeta.path}
-            data-testid="logs-open-folder"
-          >
-            {t('settings.storage_open_folder', { defaultValue: 'Open folder' })}
-          </Button>
-        )}
-        {logSource === 'tauri' && !logMeta.exists && (
-          <Badge tone="warn">
-            <AlertCircle size={11} /> {t('logs.no_tauri_log')}
-          </Badge>
-        )}
       </div>
       <div
         ref={scrollRef}
@@ -128,11 +96,7 @@ export default function LogsTab({
       >
         {logs.length === 0 ? (
           <span className="settings-log__empty font-sans text-[var(--chrome-fg-dim)]">
-            {logSource === 'frontend'
-              ? t('logs.empty_frontend')
-              : logSource === 'tauri'
-                ? t('logs.empty_tauri')
-                : t('logs.empty_backend')}
+            {logSource === 'frontend' ? t('logs.empty_frontend') : t('logs.empty_backend')}
           </span>
         ) : (
           logs.join('')

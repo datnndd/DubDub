@@ -25,32 +25,6 @@ describe('LogsTab', () => {
     vi.restoreAllMocks();
   });
 
-  it('offers Open folder for on-disk logs and reveals via /export/reveal', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true }),
-      text: async () => '{"success":true}',
-    });
-    global.fetch = fetchMock;
-
-    renderTab();
-    fireEvent.click(screen.getByTestId('logs-open-folder'));
-    await waitFor(() => {
-      const call = fetchMock.mock.calls.find(([u]) => u.endsWith('/export/reveal'));
-      expect(call).toBeTruthy();
-      expect(JSON.parse(call[1].body)).toEqual({ path: '/home/u/.omnivoice/omnivoice.log' });
-    });
-  });
-
-  it('hides Open folder for the in-memory frontend buffer and missing files', () => {
-    renderTab({ logSource: 'frontend', logMeta: { path: 'in-memory (last 500)', exists: true } });
-    expect(screen.queryByTestId('logs-open-folder')).not.toBeInTheDocument();
-
-    renderTab({ logSource: 'tauri', logMeta: { path: '—', exists: false } });
-    expect(screen.queryByTestId('logs-open-folder')).not.toBeInTheDocument();
-  });
-
   it('copies the visible tail to the clipboard', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });

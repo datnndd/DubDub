@@ -31,8 +31,6 @@ const clientApi = vi.hoisted(() => ({
 vi.mock('../api/dub', () => dubApi);
 vi.mock('../api/client', () => clientApi);
 vi.mock('../api/engines', () => ({
-  listTranslationEngines: vi.fn(() => new Promise(() => {})),
-  installTranslationEngine: vi.fn(),
 }));
 vi.mock('../hooks/useTimelineOnsets', () => ({ default: () => ({ onsets: [] }) }));
 vi.mock('../utils/media', () => ({ playPing: vi.fn() }));

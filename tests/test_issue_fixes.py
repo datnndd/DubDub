@@ -55,7 +55,7 @@ def test_no_old_discord_link_anywhere():
         for p in _REPO.rglob(ext):
             # Skip node_modules, .git, research submodules
             parts = p.relative_to(_REPO).parts
-            if any(skip in parts for skip in ("node_modules", ".git", "research", "dist", "target", "build")):
+            if any(skip in parts for skip in ("node_modules", ".git", "research", "dist", "target", "build", "venv", ".venv")):
                 continue
             if OLD_DISCORD in p.read_text(errors="ignore"):
                 hits.append(str(p.relative_to(_REPO)))
@@ -105,6 +105,7 @@ def test_main_py_bootstrap_adds_backend_dir():
 # ── #42 — IndexTTS is_available() graceful conflict detection ────────────────
 
 
+@pytest.mark.skip(reason="IndexTTS pruned in web-only runtime")
 def test_indextts_is_available_returns_tuple():
     """is_available() must always return (bool, str)."""
     ok, msg = tts_backend.IndexTTS2Backend.is_available()
@@ -113,17 +114,11 @@ def test_indextts_is_available_returns_tuple():
     assert len(msg) > 0
 
 
+@pytest.mark.skip(reason="IndexTTS pruned in web-only runtime")
 def test_indextts_unavailable_message_is_actionable():
-    """When IndexTTS is not installed, the message should guide the user.
-
-    Plan 02-03 migrated IndexTTS to a subprocess + dedicated venv (closes
-    #42 properly). The unavailable message is no longer about the
-    transformers conflict — it's about the venv not existing — and it
-    must point the user at the install docs.
-    """
+    """When IndexTTS is not installed, the message should guide the user."""
     ok, msg = tts_backend.IndexTTS2Backend.is_available()
     if not ok:
-        # Must point at the env-var-driven install path OR the docs.
         msg_lower = msg.lower()
         assert (
             "omnivoice_indextts_dir" in msg_lower
@@ -134,14 +129,9 @@ def test_indextts_unavailable_message_is_actionable():
         ), f"is_available() failure message not actionable: {msg!r}"
 
 
+@pytest.mark.skip(reason="IndexTTS pruned in web-only runtime")
 def test_indextts_no_inprocess_import_attempted():
-    """The new IndexTTS2Backend must NOT attempt `import indextts` at any point.
-
-    Plan 02-03 closes #42 by running IndexTTS in a subprocess with its
-    own venv — the parent's transformers>=5.3 never touches
-    transformers<5. We assert by patching builtins.__import__: if
-    is_available() triggers an indextts.* import, the assertion fires.
-    """
+    """The new IndexTTS2Backend must NOT attempt `import indextts` at any point."""
     calls: list[str] = []
     original_import = (
         __builtins__.__import__
@@ -165,6 +155,7 @@ def test_indextts_no_inprocess_import_attempted():
     assert isinstance(msg, str)
 
 
+@pytest.mark.skip(reason="IndexTTS pruned in web-only runtime")
 def test_indextts_docstring_warns_about_uv_sync():
     """The docstring should warn users NOT to use uv sync --all-extras."""
     doc = tts_backend.IndexTTS2Backend.__doc__
@@ -200,6 +191,7 @@ def test_install_hints_cover_all_registered_backends():
     assert missing == [], f"Backends missing install_hint: {missing}"
 
 
+@pytest.mark.skip(reason="IndexTTS pruned in web-only runtime")
 def test_indextts_install_hint_warns_about_sync():
     """IndexTTS hint should recommend `uv pip install` not `uv sync --all-extras`."""
     rows = tts_backend.list_backends()
@@ -210,20 +202,12 @@ def test_indextts_install_hint_warns_about_sync():
     assert "NOT" in hint or "not" in hint.lower()
 
 
+@pytest.mark.skip(reason="VoxCPM pruned in web-only runtime")
 def test_voxcpm_install_hint_uses_correct_package_name():
-    """VoxCPM2 backend's hint must reference pip package 'voxcpm', not
-    'voxcpm2' — and carry the >=2.0.3 version FLOOR (2.0.3 fixed an
-    Apple-Silicon audio-quality bug; floor only, never an exact pin)."""
+    """VoxCPM2 backend's hint must reference pip package 'voxcpm'."""
     rows = tts_backend.list_backends()
     vox_row = next((r for r in rows if r["id"] == "voxcpm2"), None)
     assert vox_row is not None, "voxcpm2 not in registry"
-    hint = vox_row["install_hint"]
-    # The pip package is 'voxcpm' (with the version floor), NOT 'voxcpm2'
-    assert 'pip install "voxcpm>=2.0.3"' in hint
-    assert "voxcpm2" not in hint.split("pip install ")[1].split()[0], (
-        f"Hint should say 'pip install voxcpm...' not 'pip install voxcpm2': {hint}"
-    )
-    assert "voxcpm==" not in hint, f"Floor only — never pin exact: {hint}"
 
 
 def test_list_backends_shape_unchanged():
@@ -238,9 +222,9 @@ def test_list_backends_shape_unchanged():
 
 
 def test_registry_minimum_engine_count():
-    """We must have at least 9 engines registered."""
+    """We must have at least 2 engines registered (OmniVoice, VieNeu)."""
     rows = tts_backend.list_backends()
-    assert len(rows) >= 9, f"Only {len(rows)} engines registered, expected ≥ 9"
+    assert len(rows) >= 2, f"Only {len(rows)} engines registered, expected ≥ 2"
 
 
 def test_all_backends_is_available_returns_tuple():

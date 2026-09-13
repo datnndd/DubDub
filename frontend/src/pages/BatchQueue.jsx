@@ -137,8 +137,7 @@ export default function BatchQueue({ onBack }) {
         } catch (e) {
           const missing = asrMissingPayload(e);
           if (missing) {
-            // Typed 409: no ASR model installed → one download CTA, then stop
-            // (every remaining file would fail the same preflight).
+            // Typed 409: Deepgram ASR requires configuration in Settings → direct user and stop the queue.
             toastAsrModelMissing(missing);
             break;
           }

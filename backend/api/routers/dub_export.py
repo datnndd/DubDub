@@ -15,7 +15,7 @@ from core.http_headers import content_disposition
 from core.logging_utils import log_safe
 from core.path_security import UnsafePath, resolve_within
 from core.tasks import task_manager
-from fastapi import APIRouter, Header, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from services.ffmpeg_utils import (
     bed_mix_filter,
@@ -170,42 +170,6 @@ def _safe_lang_or_400(lang: str | None) -> str | None:
         raise HTTPException(status_code=400, detail="Invalid language code")
     return lang
 
-
-def _consume_native_save(authorization: str) -> str | None:
-    if not authorization:
-        return None
-    from core.path_authorization import PathAuthorizationError, consume
-
-    try:
-        return consume(authorization, "dub_export")
-    except PathAuthorizationError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-
-
-def _native_save(source: str, destination: str, display_name: str, media_type: str):
-    """Copy a generated export file to a user-chosen destination and return JSON."""
-    import shutil
-    dest = os.path.expanduser(destination)
-    # Reject traversal against the user's home dir — Tauri save dialog returns abs path.
-    if not os.path.isabs(dest):
-        raise HTTPException(status_code=400, detail="save_path must be absolute")
-    try:
-        os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
-        shutil.copy2(source, dest)
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=f"Permission denied: {e}")
-    except OSError as e:
-        raise HTTPException(status_code=500, detail=f"Copy failed: {e}")
-    if not os.path.exists(dest) or os.path.getsize(dest) == 0:
-        raise HTTPException(status_code=500, detail="Copy produced empty file at destination")
-    logger.info("Native save completed (%d bytes)", os.path.getsize(dest))
-    return {
-        "saved": True,
-        "path": dest,
-        "size": os.path.getsize(dest),
-        "media_type": media_type,
-        "display_name": display_name,
-    }
 
 @router.get("/tasks/stream/{task_id}")
 async def stream_task(task_id: str, after_seq: int = 0):
@@ -574,7 +538,6 @@ async def dub_download(
     preserve_bg: bool = Query(True, description="Mix background noise into dubbed tracks"),
     default_track: str = Query("original"),
     include_tracks: str = Query("", description="Comma-separated list of tracks to include (e.g. 'original,de,es'). Empty = include all."),
-    save_authorization: str = Header("", alias="X-VoiceStudio-Path-Authorization"),
     burn_subs: bool = Query(False, description="Burn subtitles into the video stream (forces re-encode). Uses dual-subtitle layout when dual=1."),
     dual: bool = Query(False, description="When burn_subs=1, render translated on top of italicised original."),
     out_format: str = Query("m4a", description="Audio-only jobs (#119): output container — wav, m4a, mp3, or flac. Ignored for video jobs."),
@@ -660,9 +623,6 @@ async def dub_download(
         safe_name = "".join(c for c in base_name if c.isalnum() or c in "-_ ").strip() or "output"
         dl_name = f"dubbed_{safe_name}_{safe_lang}_{stamp}.{fmt}"
         media_type = _MEDIA_TYPES.get(f".{fmt}", "audio/mp4")
-        save_path = _consume_native_save(save_authorization)
-        if save_path:
-            return _native_save(out_path, save_path, dl_name, media_type=media_type)
         return FileResponse(
             out_path, media_type=media_type,
             headers={"Content-Disposition": content_disposition(dl_name)},
@@ -939,13 +899,6 @@ async def dub_download(
     extra_headers = {}
     if retime_warning is not None:
         extra_headers["X-Dub-Export-Warning"] = "video-retime-fallback"
-
-    save_path = _consume_native_save(save_authorization)
-    if save_path:
-        result = _native_save(output_path, save_path, dl_name, media_type="video/mp4")
-        if retime_warning is not None:
-            result["warning"] = {"type": "video_retime_fallback", **retime_warning}
-        return result
 
     return FileResponse(
         output_path, media_type="video/mp4",
@@ -1516,7 +1469,6 @@ async def dub_download_audio(
     job_id: str,
     lang: str = Query(None),
     preserve_bg: bool = Query(True),
-    save_authorization: str = Header("", alias="X-VoiceStudio-Path-Authorization"),
 ):
     job_dir = _existing_job_dir_or_404(job_id)
     lang = _safe_lang_or_400(lang)
@@ -1561,9 +1513,6 @@ async def dub_download_audio(
     base_name = os.path.splitext(job.get('filename', 'audio'))[0]
     safe_name = ''.join(c for c in base_name if c.isalnum() or c in '-_ ').strip() or 'audio'
     dl_name = f"dubbed_audio_{lang_label}_{safe_name}_{stamp}.wav"
-    save_path = _consume_native_save(save_authorization)
-    if save_path:
-        return _native_save(wav_path, save_path, dl_name, media_type="audio/wav")
     return FileResponse(
         wav_path, media_type="audio/wav",
         headers={"Content-Disposition": content_disposition(dl_name)},
@@ -1752,7 +1701,6 @@ async def dub_download_mp3(
     job_id: str,
     lang: str = Query(None),
     preserve_bg: bool = Query(True),
-    save_authorization: str = Header("", alias="X-VoiceStudio-Path-Authorization"),
     bitrate: str = Query("192k"),
 ):
     job_dir = _existing_job_dir_or_404(job_id)
@@ -1825,9 +1773,6 @@ async def dub_download_mp3(
     base_name = os.path.splitext(job.get('filename', 'audio'))[0]
     safe_name = ''.join(c for c in base_name if c.isalnum() or c in '-_ ').strip() or 'audio'
     dl_name = f"dubbed_{lang_label}_{safe_name}_{stamp}.mp3"
-    save_path = _consume_native_save(save_authorization)
-    if save_path:
-        return _native_save(mp3_path, save_path, dl_name, media_type="audio/mpeg")
     return FileResponse(
         mp3_path, media_type="audio/mpeg",
         headers={"Content-Disposition": content_disposition(dl_name)},

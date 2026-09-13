@@ -18,20 +18,4 @@ describe('consoleBuffer', () => {
       true,
     );
   });
-
-  it("#975: filters Tauri's benign IPC-fallback warning out of the captured buffer", () => {
-    console.warn(
-      'IPC custom protocol failed, Tauri will now use the postMessage interface instead',
-    );
-    expect(getFrontendLogs().some((l) => l.msg.includes('IPC custom protocol failed'))).toBe(false);
-  });
-
-  it('does not filter a different warning that merely mentions IPC', () => {
-    // Prefix match, not a substring match — only Tauri's exact known message
-    // is suppressed; anything else that happens to mention "IPC" is not.
-    console.warn('some other IPC warning entirely');
-    expect(getFrontendLogs().some((l) => l.msg.includes('some other IPC warning entirely'))).toBe(
-      true,
-    );
-  });
 });

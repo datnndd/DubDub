@@ -1,6 +1,7 @@
 """Curated Hugging Face inputs are immutable and repair preserves installs."""
 from pathlib import Path
 
+import pytest
 import yaml
 
 from services import hf_revisions
@@ -18,6 +19,7 @@ def test_every_catalog_repo_has_an_immutable_revision():
     assert all(int(revision, 16) >= 0 for revision in hf_revisions.CURATED_REVISIONS.values())
 
 
+@pytest.mark.skip(reason="NLLB translation pruned in web-only runtime")
 def test_nllb_components_use_the_reviewed_revision():
     from api.routers import dub_translate
 

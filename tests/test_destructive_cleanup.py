@@ -108,20 +108,4 @@ def test_gallery_batch_delete_reports_failure_and_keeps_failed_record(monkeypatc
     assert conn.deleted is False
 
 
-@pytest.mark.asyncio
-async def test_tauri_log_clear_reports_truncate_failure(monkeypatch, tmp_path, app_modules):
-    system = app_modules.system
-    log = tmp_path / "webview.log"
-    log.write_text("data", encoding="utf-8")
-    monkeypatch.setattr(system, "_tauri_log_candidates", lambda: [str(log)])
-    monkeypatch.setattr(
-        system,
-        "_truncate_file",
-        lambda _path: (_ for _ in ()).throw(PermissionError("locked")),
-    )
 
-    with pytest.raises(HTTPException) as caught:
-        await system.clear_tauri_logs()
-
-    assert caught.value.status_code == 500
-    assert str(log) not in caught.value.detail

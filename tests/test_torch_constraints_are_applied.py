@@ -37,7 +37,7 @@ _CONSTRAINTS = _ROOT / "deploy" / "torch-constraints.txt"
 _DOCKERFILE = _ROOT / "deploy" / "Dockerfile"
 _NOTEBOOK = _ROOT / "notebooks" / "OmniVoice_Studio_Colab.ipynb"
 
-_PACKAGES = ("torch", "torchaudio", "torchvision")
+_PACKAGES = ("torch", "torchaudio")
 
 
 def _pins(text: str) -> dict:

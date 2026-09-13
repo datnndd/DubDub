@@ -30,7 +30,7 @@ MERGE_GAP = 0.6       # seconds — tolerated silence when folding a fragment ba
 MERGE_GAP_ULTRA = 2.0 # seconds — wider gap tolerated for ultra-short (< 0.5s or < 3 chars)
 ULTRA_SHORT_DUR = 0.5 # seconds — threshold for "always fold" regardless of neighbor match
 ULTRA_SHORT_CHARS = 4 # chars — same tier
-SPEAKER_GAP = 1.2     # seconds — heuristic speaker-change gap (no pyannote)
+SPEAKER_GAP = 1.2     # seconds — heuristic speaker-change gap
 
 # Sentence-end punctuation across Latin, CJK, Bengali, Arabic, Thai, Armenian, Hindi, etc.
 _SENTENCE_END = re.compile(
@@ -462,49 +462,15 @@ def segment_transcript(
     return [s.to_dict() for s in segments]
 
 
-def assign_speakers_from_diarization(
-    segments: List[dict],
-    diarization,
-) -> List[dict]:
-    """Replace speaker_id based on a pyannote diarization result (overlap-weighted)."""
-    for s in segments:
-        start, end = s["start"], s["end"]
-        mid = (start + end) / 2.0
-        overlap: dict[str, float] = {}
-        for turn, _, speaker in diarization.itertracks(yield_label=True):
-            left = max(start, turn.start)
-            right = min(end, turn.end)
-            if right > left:
-                overlap[speaker] = overlap.get(speaker, 0.0) + (right - left)
-        if overlap:
-            winner = max(overlap.items(), key=lambda kv: kv[1])[0]
-        else:
-            # fall back to midpoint membership
-            winner = None
-            for turn, _, speaker in diarization.itertracks(yield_label=True):
-                if turn.start <= mid <= turn.end:
-                    winner = speaker
-                    break
-        if winner is not None:
-            try:
-                idx = int(winner.split("_")[-1]) + 1
-                s["speaker_id"] = f"Speaker {idx}"
-            except ValueError:
-                s["speaker_id"] = winner
-    return segments
-
-
 def assign_speakers_from_turns(
     segments: List[dict],
     turns: List[dict],
 ) -> List[dict]:
     """Assign speaker_id by overlap against a list of ``{start, end, speaker}``
-    turns produced by an ASR backend that diarizes inline (e.g. FunASR's cam++).
+    turns returned by an ASR provider that includes speaker labels.
 
-    Mirrors :func:`assign_speakers_from_diarization`'s overlap-weighting (winner
-    = most-overlapping speaker; midpoint membership as fallback) without a
-    pyannote object. ``speaker`` is used verbatim — FunASR already labels its
-    speakers ``"Speaker N"``. Falls back to the silence-gap heuristic when no
+    Uses overlap-weighting (winner = most-overlapping speaker; midpoint
+    membership as fallback). Falls back to the silence-gap heuristic when no
     usable turns are supplied.
     """
     clean = [
@@ -551,8 +517,9 @@ def assign_speakers_heuristic(
     next label in the cycle, not their own), rapid exchanges with no
     > SPEAKER_GAP pause still collapse into one label, and N is an upper
     bound — audio with fewer gap boundaries than N yields fewer labels.
-    Real per-speaker attribution needs pyannote (or an inline-diarizing ASR
-    backend); callers should warn the user accordingly (see dub_core).
+    Accurate per-speaker attribution requires speaker turns from the selected
+    ASR provider; callers should warn the user when only this heuristic is
+    available.
     Invalid hints (non-int, < 1) fall back to the legacy two-speaker cycle.
     """
     try:
@@ -678,32 +645,10 @@ def _resplit_core(
     return out
 
 
-def _diar_speaker_label(raw) -> str:
-    """``SPEAKER_00`` → ``Speaker 1`` (mirrors assign_speakers_from_diarization)."""
-    try:
-        return f"Speaker {int(str(raw).split('_')[-1]) + 1}"
-    except (ValueError, AttributeError):
-        return str(raw)
-
-
-def resplit_segments_by_diarization(
-    segments: List[dict], words: Sequence["Word"], diarization,
-) -> List[dict]:
-    """Speaker-aware re-split using a pyannote diarization result (#486)."""
-    turns = [
-        (turn.start, turn.end, _diar_speaker_label(spk))
-        for turn, _, spk in diarization.itertracks(yield_label=True)
-    ]
-    return _resplit_core(segments, words, turns)
-
-
 def resplit_segments_by_turns(
     segments: List[dict], words: Sequence["Word"], turns: Sequence[dict],
 ) -> List[dict]:
-    """Speaker-aware re-split using inline ASR speaker turns (FunASR cam++).
-
-    ``speaker`` is used verbatim (FunASR already labels ``"Speaker N"``), matching
-    :func:`assign_speakers_from_turns`."""
+    """Speaker-aware re-split using provider-supplied speaker turns."""
     norm = [
         (t["start"], t["end"], t["speaker"])
         for t in (turns or [])

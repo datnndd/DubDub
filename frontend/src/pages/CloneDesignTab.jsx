@@ -13,7 +13,6 @@ import ScriptPanel from '../components/clone/ScriptPanel';
 import AudioMethodPanel from '../components/clone/AudioMethodPanel';
 import DesignMethodPanel from '../components/clone/DesignMethodPanel';
 import ActionBar from '../components/clone/ActionBar';
-import EngineQuickSwitch from '../components/EngineQuickSwitch';
 
 export default function CloneDesignTab(props) {
   const {
@@ -330,7 +329,6 @@ export default function CloneDesignTab(props) {
                 {t('clone.voice_kicker', { defaultValue: 'Voice' })}
               </span>
               <div className="flex items-center gap-[6px]">
-                <EngineQuickSwitch />
                 <Segmented
                   size="sm"
                   value={defineMethod}

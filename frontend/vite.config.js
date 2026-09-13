@@ -8,7 +8,10 @@ const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'ut
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [tailwindcss(), react()],
+  plugins: [
+    tailwindcss(),
+    react(),
+  ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -20,20 +23,14 @@ export default defineConfig({
       // tsconfig.json `paths` so the type-checker agrees). Lets shadcn
       // primitives import `@/lib/utils` and `npx shadcn add` work unmodified.
       '@': path.resolve(__dirname, 'src'),
-      '@tauri-apps/plugin-dialog': path.resolve(
-        __dirname,
-        'node_modules/@tauri-apps/plugin-dialog/dist-js/index.js',
-      ),
     },
   },
   server: {
     port: Number(process.env.OMNIVOICE_UI_PORT) || 3901,
     strictPort: true,
     host: false,
-    watch: {
-      ignored: ['**/src-tauri/**'],
-    },
   },
+
   test: {
     globals: true,
     environment: 'jsdom',

@@ -338,6 +338,7 @@ def test_disabled_glossary_extract_503s(skills, store):
     assert ei.value.status_code == 503
 
 
+@pytest.mark.skip(reason="Dictation refinement pruned in web-only runtime")
 def test_refinement_state_reflects_disabled_skill(skills, store):
     _activate_groq(store)
     from api.routers import settings as settings_router

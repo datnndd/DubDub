@@ -612,34 +612,10 @@ def recommendations():
         if _model_curated(m, tags) and _model_supported(m)
     ]
 
-    if is_mac_arm:
-        rationale = (
-            "Apple Silicon preset: VoiceStudio (required) covers multilingual TTS + "
-            "cloning on its own. The optional picks are Metal-native: MLX Whisper "
-            "large-v3 for dubbing/transcription, Whisper Turbo (MLX) + Parakeet TDT "
-            "v3 for live dictation, Kokoro + KittenTTS for instant English TTS."
-        )
-    elif has_cuda:
-        rationale = (
-            "NVIDIA preset: VoiceStudio (required) runs standalone. Optional ASR picks "
-            "are CUDA-accelerated via CTranslate2 — Whisper large-v3 for dubbing "
-            "(best word timestamps), Turbo for 5× faster transcription, Parakeet TDT "
-            "v3 for live dictation. KittenTTS adds CPU-realtime English."
-        )
-    elif has_rocm:
-        rationale = (
-            "AMD/ROCm preset: VoiceStudio (required) runs standalone. CTranslate2 has "
-            "no ROCm backend, so the PyTorch Whisper large-v3 build is the "
-            "GPU-accelerated ASR route; faster-whisper works on CPU, and Parakeet "
-            "TDT v3 handles live dictation."
-        )
-    else:
-        rationale = (
-            "CPU preset: VoiceStudio (required) runs standalone. Optional picks favour "
-            "speed on CPU — Whisper large-v3 (int8) for accuracy, Turbo when speed "
-            "matters, Parakeet TDT v3 (int8 ONNX) for live dictation, KittenTTS for "
-            "instant English TTS."
-        )
+    rationale = (
+        "Web runtime preset: k2-fsa/OmniVoice is the only downloadable model. "
+        "Deepgram, Google Translate, and OpenAI-compatible LLM calls require explicit configuration."
+    )
 
     remote_inventory = _target_repo_inventory()
     cached_ids: set[str] = set()

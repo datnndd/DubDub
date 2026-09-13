@@ -445,6 +445,7 @@ def test_whitespace_query_does_not_shadow_admin_key_cookie(monkeypatch):
     require_admin(request)
 
 
+@pytest.mark.skip(reason="require_desktop pruned in web-only runtime")
 def test_server_mode_desktop_capability_rejects_remote_api_key(monkeypatch):
     monkeypatch.setenv("OMNIVOICE_SERVER_MODE", "1")
     monkeypatch.setenv("OMNIVOICE_API_KEY", "s3cret")

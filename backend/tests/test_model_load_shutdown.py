@@ -273,14 +273,18 @@ def test_preload_interrupted_by_shutdown_logs_info_only(monkeypatch, caplog):
     async def _boom():
         raise ModelLoadInterruptedByShutdown("shutdown during load")
 
+    monkeypatch.setattr(mm, "_headless_worker", lambda: False)
+    monkeypatch.setattr(mm, "_ram_available_bytes", lambda: 16 * 1024**3)
+    monkeypatch.setenv("OMNIVOICE_PRELOAD_TTS", "always")
     monkeypatch.setattr(mm, "model", None)
     monkeypatch.setattr(mm, "_model_lock", asyncio.Lock())
     monkeypatch.setattr(mm, "_checkpoint_in_local_cache", lambda c: True)
     monkeypatch.setattr(mm, "_load_model_with_timeout", _boom)
     with caplog.at_level(logging.INFO, logger="omnivoice.model"):
         asyncio.run(mm.preload_model())
-    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert any("shutdown during load" in r.getMessage() for r in caplog.records)
+    records = [r for r in caplog.records if r.name.startswith("omnivoice.model")]
+    assert not [r for r in records if r.levelno >= logging.WARNING]
+    assert any("shutdown during load" in r.getMessage() for r in records)
     assert mm.model is None
 
 
@@ -340,6 +344,9 @@ def test_lifespan_shutdown_mid_load_is_clean_and_clears_sentinel(
         monkeypatch.setattr(live_mm, "model", None)
         monkeypatch.setattr(live_mm, "_model_lock", asyncio.Lock())
         monkeypatch.setattr(live_mm, "_checkpoint_in_local_cache", lambda c: True)
+        monkeypatch.setattr(live_mm, "_headless_worker", lambda: False)
+        monkeypatch.setattr(live_mm, "_ram_available_bytes", lambda: 16 * 1024**3)
+        monkeypatch.setenv("OMNIVOICE_PRELOAD_TTS", "always")
         monkeypatch.setenv("OMNIVOICE_PRELOAD_CAPTURE_ASR", "0")
         # A fresh import inherits nothing from the previous lifespan, but an
         # in-place one would: arm loads explicitly so a leaked shutdown flag

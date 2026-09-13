@@ -23,7 +23,7 @@ and [`palashdeb/omnivoice-studio` on Docker Hub](https://hub.docker.com/r/palash
 > Versioning rule: preview builds always come from `main` and never
 > version-sort below `:stable` — upgrades flow naturally.
 >
-> **Note on the update-channel toggle:** The update-channel UI (Settings → About → Update channel) is part of the Tauri desktop app's built-in auto-updater. It does **not** apply to the Docker image — the Docker image is the headless web-server build. To update your Docker deployment, pull the new image tag and recreate the container (`docker compose pull && docker compose up -d`).
+> To update, pull the new image tag and recreate the container (`docker compose pull && docker compose up -d`).
 
 ## Pull and run (CPU)
 
@@ -203,8 +203,8 @@ Two paths are worth persisting across container restarts:
 
 | Mount | Purpose | Why |
 |-------|---------|-----|
-| `omnivoice_data:/app/omnivoice_data` | Project DB, user voices, settings | Survives upgrade; encrypted HF token lives here |
-| `~/.cache/huggingface:/root/.cache/huggingface` | HF model cache | Re-using your host's cache saves ~2.4 GB of re-downloads |
+| `omnivoice_data:/app/omnivoice_data` | Project DB, user voices, settings | Survives upgrade |
+| `~/.cache/huggingface:/root/.cache/huggingface` | OmniVoice cache | Re-using the sole allowed `k2-fsa/OmniVoice` cache avoids a ~2.4 GB re-download |
 
 ## Troubleshooting
 
@@ -214,10 +214,8 @@ Two paths are worth persisting across container restarts:
   The running version is now shown in **Settings → About → Version** (read live
   from the backend), so the web UI no longer displays a dash in Docker.
 - **Checking which version is running:** `docker exec <container> python3 -c "import importlib.metadata; print(importlib.metadata.version('omnivoice'))"`, or hit the `/health` endpoint — it returns `{"status": "ok", "device": ..., "version": "0.3.x"}`. Use the container name listed by `docker compose ps` (or `omnivoice` for the `docker run` examples).
-- **"Loopback origin required" errors (and a blank version):** the desktop
-  build restricts the `/system/*` and `/api/settings/*` routes to a loopback
-  origin, but Docker's NAT makes every request look non-loopback, so the gate
-  used to 403 the whole admin UI (issue #261). The image now ships with
+- **"Loopback origin required" errors:** Docker's NAT makes every request look
+  non-loopback. The image ships with
   `OMNIVOICE_SERVER_MODE=1`, which relaxes that gate for the headless
   deployment — exposure is instead governed by your `-p` port mapping (keep the
   `127.0.0.1:` prefix to stay local) plus the optional share PIN. If you front

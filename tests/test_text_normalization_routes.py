@@ -77,6 +77,10 @@ def client():
 def fake_engine(monkeypatch):
     """Register a fresh fake engine in the REAL registry; reset the MM2-01
     active-backend cache so batch's resolve_generation_backend re-resolves."""
+    import core.provider_boundary as pb
+    monkeypatch.setattr(
+        pb, "ALLOWED_TTS_PROVIDERS", pb.ALLOWED_TTS_PROVIDERS | {"fake-norm-route"}
+    )
     tb = _tts_mod()
     tb.reset_active_backend()
     fake = _make_fake_engine()

@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { API } from '../api/client';
-import { listTranslationEngines, installTranslationEngine } from '../api/engines';
 import { dubQc } from '../api/dub';
 import toast from 'react-hot-toast';
 import { toastErrorWithReport } from '../utils/errorToast';
@@ -32,7 +31,6 @@ export default function DubTab(props) {
     dubLocalBlobUrl,
     transcribeElapsed,
     transcribeProgress,
-    asrInstall,
     translateProvider,
     setTranslateProvider,
     showTranscript,
@@ -47,7 +45,6 @@ export default function DubTab(props) {
     handleDubUpload,
     handleDubIngestUrl,
     handleDubRetryTranscribe,
-    handleInstallMissingAsr,
     handleDubStop,
     handleDubGenerate,
     handleDubImportSrt,
@@ -377,26 +374,6 @@ export default function DubTab(props) {
     return Math.max(0, Math.round(perSeg * (dubProgress.total - dubProgress.current)));
   })();
 
-  // Translation-engine availability → drives the Engine dropdown's disabled
-  // state and the inline Install chip. Lazy-fetched once; refreshed after
-  // any install/uninstall so the chip disappears on success.
-  const [engines, setEngines] = useState([]);
-  const [enginesSandboxed, setEnginesSandboxed] = useState(false);
-  const [engineInstalling, setEngineInstalling] = useState(null); // engine id being installed
-  const refreshEngines = useCallback(async () => {
-    try {
-      const res = await listTranslationEngines();
-      setEngines(res.engines || []);
-      setEnginesSandboxed(!!res.sandboxed);
-    } catch {
-      setEngines([]);
-    }
-  }, []);
-  useEffect(() => {
-    refreshEngines();
-  }, [refreshEngines]);
-  const activeEngineEntry = engines.find((e) => e.id === translateProvider);
-  const activeEngineUnavailable = activeEngineEntry && !activeEngineEntry.installed;
   // Changing the translation engine is a corrective action — clear any stale
   // translate/pipeline error banner so it doesn't outlive the choice that
   // caused it (same class-fix as clearing on a new translate attempt). Covers
@@ -408,38 +385,6 @@ export default function DubTab(props) {
     },
     [setDubError, setTranslateProvider],
   );
-  const handleInstallEngine = async (engineId) => {
-    if (!engineId || enginesSandboxed) return;
-    // Installing the missing package is corrective too — drop the banner that
-    // told the user to install it in the first place.
-    setDubError('');
-    setEngineInstalling(engineId);
-    const progressToast = toast.loading(t('dub.install_progress', { engine: engineId }));
-    try {
-      const res = await installTranslationEngine(engineId);
-      await refreshEngines();
-      if (res.restart_required) {
-        toast(t('dub.install_restart', { engine: engineId }), {
-          icon: '🔄',
-          id: progressToast,
-          duration: 7000,
-        });
-      } else if (res.status === 'already_installed') {
-        toast(t('dub.install_already', { engine: engineId }), { icon: 'ℹ️', id: progressToast });
-      } else {
-        toast.success(t('dub.install_ok', { engine: engineId }), { id: progressToast });
-      }
-    } catch (err) {
-      toast.dismiss(progressToast);
-      toastErrorWithReport(
-        t('dub.install_failed', { message: String(err.message || err).slice(0, 200) }),
-        err,
-      );
-    } finally {
-      setEngineInstalling(null);
-    }
-  };
-
   // Secondary settings (Language/ISO/Style/Engine/Quality/Multi-lang) are
   // expanded by default so the user can pick a target language and quality
   // without an extra click on first open. They stay an accordion so the
@@ -537,7 +482,7 @@ export default function DubTab(props) {
   }, [resetDub]);
   const pipelineBusy =
     isTranslating ||
-    ['uploading', 'installing-asr', 'transcribing', 'generating', 'stopping'].includes(dubStep);
+    ['uploading', 'transcribing', 'generating', 'stopping'].includes(dubStep);
   const pipelineSteps = pipelineBusy
     ? []
     : [
@@ -713,8 +658,6 @@ export default function DubTab(props) {
           dubJobId={dubJobId}
           dubStep={dubStep}
           dubFailure={dubFailure}
-          asrInstall={asrInstall}
-          handleInstallMissingAsr={handleInstallMissingAsr}
           handleDubRetryTranscribe={handleDubRetryTranscribe}
           handleDubImportSrt={handleDubImportSrt}
           onOpenHardsubDialog={handleOpenOcrDialog}
@@ -780,10 +723,14 @@ export default function DubTab(props) {
         onCancel={handleDubAbort}
       />
 
-      {dubStep === 'prepare' && ocrReview && (
+      {dubStep === 'prepare' && (ocrReview || (dubSegments && dubSegments.length > 0)) && (
         <OcrPrepareReview
-          videoUrl={ocrReview.videoUrl || (dubJobId ? `${API}/dub/media/${dubJobId}` : undefined)}
-          segments={ocrReview.segments}
+          videoUrl={
+            ocrReview?.videoUrl ||
+            dubLocalBlobUrl?.videoUrl ||
+            (dubJobId ? `${API}/dub/media/${dubJobId}` : undefined)
+          }
+          segments={ocrReview?.segments || dubSegments || []}
           onContinue={(segments) => {
             setDubSegments(segments);
             setOcrReview(null);
@@ -792,6 +739,9 @@ export default function DubTab(props) {
           onRescan={() => {
             setOcrReview(null);
             setOcrDialogOpen(true);
+          }}
+          onReplaceWithOcr={async (opts) => {
+            return await handleHardsubExtract?.({ ...opts, file: dubVideoFile });
           }}
         />
       )}
@@ -853,7 +803,6 @@ export default function DubTab(props) {
               dubLang={dubLang}
               dubLangCode={dubLangCode}
               translateQuality={translateQuality}
-              activeEngineUnavailable={activeEngineUnavailable}
               translateProvider={translateProvider}
               dubInstruct={dubInstruct}
               setDubInstruct={setDubInstruct}
@@ -868,11 +817,6 @@ export default function DubTab(props) {
               dubDialect={dubDialect}
               setDubDialect={setDubDialect}
               i18n={i18n}
-              enginesSandboxed={enginesSandboxed}
-              handleInstallEngine={handleInstallEngine}
-              engineInstalling={engineInstalling}
-              activeEngineEntry={activeEngineEntry}
-              engines={engines}
               setTranslateProvider={handleSelectTranslateProvider}
               setTranslateQuality={setTranslateQuality}
               multiLangMode={multiLangMode}

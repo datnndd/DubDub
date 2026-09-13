@@ -1,40 +1,13 @@
 import { apiJson, apiFetch, apiPost } from './client';
-import type { SystemInfo, ModelStatus, LogsResponse, ClearTauriResponse } from './types';
+import type { SystemInfo, ModelStatus, LogsResponse } from './types';
 
-// ── Tauri IPC helpers ────────────────────────────────────────────────────
-// Try native Tauri invoke() first — it's faster (no HTTP round-trip) and
-// works when the Python backend is still booting. Falls back to HTTP when
-// running in browser dev mode (no Tauri shell).
-
-let _invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
-
-async function getInvoke() {
-  if (_invoke !== null) return _invoke;
-  try {
-    const mod = await import('@tauri-apps/api/core');
-    _invoke = mod.invoke;
-    return _invoke;
-  } catch {
-    // Not running inside Tauri (browser dev mode)
-    _invoke = null as any;
-    return null;
-  }
-}
-
-/** Try Tauri invoke, fall back to HTTP. */
 async function invokeOrFetch<T>(
   command: string,
   args: Record<string, unknown> | undefined,
   httpFallback: () => Promise<T>,
 ): Promise<T> {
-  try {
-    const invoke = await getInvoke();
-    if (invoke) {
-      return (await invoke(command, args)) as T;
-    }
-  } catch {
-    // invoke failed — fall through to HTTP
-  }
+  void command;
+  void args;
   return httpFallback();
 }
 
@@ -171,20 +144,10 @@ export async function systemLogs(tail: number = 300): Promise<LogsResponse> {
   );
 }
 
-export async function systemLogsTauri(tail: number = 300): Promise<LogsResponse> {
-  return invokeOrFetch<LogsResponse>('read_log_tail', { source: 'tauri', tail }, () =>
-    apiJson<LogsResponse>(`/system/logs/tauri?tail=${tail}`),
-  );
-}
-
 // ── Log clearing ─────────────────────────────────────────────────────────
 
 export async function clearSystemLogs(): Promise<unknown> {
   return apiPost('/system/logs/clear');
-}
-
-export async function clearTauriLogs(): Promise<ClearTauriResponse> {
-  return apiPost<ClearTauriResponse>('/system/logs/tauri/clear');
 }
 
 // ── Memory flush ─────────────────────────────────────────────────────────

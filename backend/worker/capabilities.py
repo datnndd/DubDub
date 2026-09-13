@@ -116,30 +116,8 @@ def repo_ids_for(entry: dict) -> list[str]:
     engine_id = entry.get("id") or ""
     if engine_id == "omnivoice":
         return ["k2-fsa/OmniVoice"]
-    fixed_repos = {
-        "voxcpm2": "openbmb/VoxCPM2",
-        "cosyvoice": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
-        "gpt-sovits": "lj1995/GPT-SoVITS",
-    }
-    if engine_id in fixed_repos:
-        return [fixed_repos[engine_id]]
-    if engine_id == "mlx-audio":
-        active = entry.get("active_model_id") or "kokoro"
-        for model in entry.get("curated_models") or []:
-            if model.get("key") == active and model.get("repo_id"):
-                return [model["repo_id"]]
-    try:
-        from services.sidecar_install import _user_managed_dir, get_spec  # noqa: PLC0415
-
-        spec = get_spec(engine_id)
-        if spec is not None and spec.weights_repo_id:
-            # A user-managed clone is intentionally opaque: its weights may be
-            # valid outside both the managed checkout and HF cache layout.
-            if _user_managed_dir(spec) is not None:
-                return []
-            return [spec.weights_repo_id]
-    except Exception:
-        logger.debug("Sidecar repository probe failed", exc_info=True)
+    if engine_id == "vienue":
+        return []
     return []
 
 
@@ -156,17 +134,6 @@ def _downloaded(repo_ids: list[str]) -> bool:
 
         by_id = {m.get("repo_id"): m for m in KNOWN_MODELS}
         for repo_id in repo_ids:
-            try:
-                from services.sidecar_install import SPECS, _weights_present  # noqa: PLC0415
-
-                managed = next((s for s in SPECS.values() if s.weights_repo_id == repo_id), None)
-                if managed is not None:
-                    if not _weights_present(managed):
-                        return False
-                    continue
-            except Exception:
-                # Cannot prove sidecar absence; compatibility wins.
-                return True
             if not is_cached(repo_id):
                 return False
             meta = by_id.get(repo_id, {"repo_id": repo_id})
@@ -181,7 +148,7 @@ def _downloaded(repo_ids: list[str]) -> bool:
 def model_id_for(entry: dict) -> str:
     """The stable, opaque, engine-scoped identifier for a backend's model.
 
-    ``<engine_id>:<model_key>`` — ``indextts:default``, ``mlx-audio:kokoro``.
+    ``<engine_id>:<model_key>`` — ``omnivoice:default``.
 
     Three things it deliberately is not:
 
@@ -197,10 +164,8 @@ def model_id_for(entry: dict) -> str:
         so a breaker or slot keyed on ``model_id`` alone cannot collide across
         two engines that both call their model "base".
 
-    ``default`` covers the one-model-per-engine case. mlx-audio multiplexes
-    curated models behind one id (#981) and ``list_backends`` already reports
-    which one is configured, so its key rides here — a different curated model
-    genuinely is a different model to schedule and to keep resident.
+    ``default`` covers the one-model-per-engine case used by the retained
+    providers.
     """
     engine_id = entry.get("id") or ""
     model_key = entry.get("active_model_id") or "default"

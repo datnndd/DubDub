@@ -68,7 +68,6 @@ export function _resolveApiBase(env: any, win: any): string {
   const override = stored || runtime || env?.VITE_OMNIVOICE_API || env?.VITE_API_URL;
   if (override) return String(override).replace(/\/+$/, '');
   if (!win) return `http://127.0.0.1:${port}`;
-  if (win.__TAURI__ || win.__TAURI_INTERNALS__) return `http://127.0.0.1:${port}`;
   if (env?.DEV) return `http://${win.location.hostname}:${port}`;
   return win.location.origin;
 }

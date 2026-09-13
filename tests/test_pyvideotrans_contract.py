@@ -61,6 +61,15 @@ def _make_fake_engine(engine_id="fake-bridge-engine"):
     return _FakeEngine
 
 
+@pytest.fixture(autouse=True)
+def allow_fake_engines(monkeypatch):
+    import core.provider_boundary as pb
+    monkeypatch.setattr(
+        pb, "ALLOWED_TTS_PROVIDERS",
+        pb.ALLOWED_TTS_PROVIDERS | {"fake-bridge-engine", "fake-bridge-auto", "fake-bridge-long"}
+    )
+
+
 @pytest.fixture()
 def client():
     from fastapi.testclient import TestClient

@@ -86,8 +86,9 @@ def _fake_ffmpeg_factory(write_file: bool = True):
             # Positional cmd ends with "<output>" "-y" — scan for an abs path arg.
             out = None
             for arg in reversed(cmd):
-                if isinstance(arg, str) and arg.startswith("/") and "." in Path(arg).name:
-                    out = arg
+                s = str(arg)
+                if (s.startswith("/") or os.path.isabs(s)) and "." in Path(s).name:
+                    out = s
                     break
             if out:
                 Path(out).parent.mkdir(parents=True, exist_ok=True)

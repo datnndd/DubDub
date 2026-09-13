@@ -210,7 +210,7 @@ def system_info():
             "crash_log_path": CRASH_LOG_PATH,
             "idle_timeout_seconds": IDLE_TIMEOUT_SECONDS,
             "model_checkpoint": resolve_omnivoice_checkpoint(),  # #693: show the effective checkpoint, not a leaked raw value
-            "asr_model": os.environ.get("ASR_MODEL", "Systran/faster-whisper-large-v3"),
+            "asr_model": os.environ.get("DEEPGRAM_MODEL", "nova-2"),
             "translate_provider": os.environ.get("TRANSLATE_PROVIDER", "google"),
             "has_hf_token": _has_hf_token(),
             "fast_download": _fast_download_status(),
@@ -278,53 +278,6 @@ def _tail_file(path: str, tail: int):
     return all_lines[-tail:], len(all_lines)
 
 
-def _tauri_log_candidates():
-    """Likely paths for Tauri-side logs, most useful first.
-
-    Two distinct producers, both per-platform:
-
-    - `tauri-plugin-log` writes `tauri.log` to the app log dir
-      (`~/Library/Logs/<bundle_id>` on macOS, `$XDG_DATA_HOME/<bundle_id>/logs`
-      on Linux, `%LOCALAPPDATA%\\<bundle_id>\\logs` on Windows). Bundle id is
-      `com.debpalash.omnivoice-studio` (frontend/src-tauri/tauri.conf.json).
-    - backend.rs::backend_log_path() redirects the spawned backend's
-      stdout/stderr to `backend.log` / `backend_err.log` under
-      `~/Library/Logs/OmniVoice` (macOS), `$XDG_STATE_HOME/VoiceStudio` falling
-      back to `~/.local/state/OmniVoice` (Linux), and
-      `%LOCALAPPDATA%\\OmniVoice\\Logs` (Windows). This is where uvicorn
-      startup banners and hard-crash tracebacks land — keep all three OS
-      shapes listed or sidecar crashes become invisible off-macOS.
-    """
-    home = os.path.expanduser("~")
-    bid = "com.debpalash.omnivoice-studio"
-    if sys.platform == "darwin":
-        return [
-            os.path.join(home, "Library/Logs", bid, "tauri.log"),
-            os.path.join(home, "Library/Logs", bid, "VoiceStudio.log"),
-            os.path.join(home, "Library/Logs/OmniVoice/backend.log"),
-            os.path.join(home, "Library/Logs/OmniVoice/backend_err.log"),
-        ]
-    if sys.platform.startswith("linux"):
-        data_dir = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local/share")
-        state_dir = os.environ.get("XDG_STATE_HOME") or os.path.join(home, ".local/state")
-        return [
-            os.path.join(data_dir, bid, "logs", "tauri.log"),
-            os.path.join(home, ".config", bid, "logs", "tauri.log"),
-            os.path.join(state_dir, "OmniVoice", "backend.log"),
-            os.path.join(state_dir, "OmniVoice", "backend_err.log"),
-        ]
-    if sys.platform.startswith("win"):
-        appdata = os.environ.get("APPDATA", home)
-        localappdata = os.environ.get("LOCALAPPDATA") or os.path.join(home, "AppData", "Local")
-        return [
-            os.path.join(localappdata, bid, "logs", "tauri.log"),
-            os.path.join(appdata, bid, "logs", "tauri.log"),
-            os.path.join(localappdata, "OmniVoice", "Logs", "backend.log"),
-            os.path.join(localappdata, "OmniVoice", "Logs", "backend_err.log"),
-        ]
-    return []
-
-
 @router.get("/system/logs")
 async def system_logs(tail: int = 200):
     """Tail the rolling runtime log — everything Python logged since last rotation.
@@ -350,34 +303,9 @@ async def system_logs(tail: int = 200):
         )
 
 
-@router.get("/system/logs/tauri")
-async def system_logs_tauri(tail: int = 200):
-    """Tail the Tauri plugin log (or backend stdout redirect, whichever exists)."""
-    try:
-        tail = max(10, min(2000, int(tail)))
-    except Exception:
-        tail = 200
-    candidates = _tauri_log_candidates()
-    for p in candidates:
-        if os.path.exists(p):
-            try:
-                lines, total = await asyncio.to_thread(_tail_file, p, tail)
-                return {"lines": lines, "path": p, "exists": True, "total_lines": total}
-            except Exception as e:
-                error = public_failure(
-                    logger,
-                    "Could not read Tauri log",
-                    e,
-                    response="Could not read the Tauri log; check the backend log for details.",
-                    traceback=True,
-                )
-                return {"lines": [], "path": p, "exists": True, "error": error}
-    return {"lines": [], "path": None, "exists": False, "candidates": candidates}
-
-
 @router.get("/system/logs/stream")
 async def stream_logs(
-    source: str = Query("backend", description="'backend' or 'tauri'"),
+    source: str = Query("backend", description="backend runtime log"),
     interval: float = Query(1.0, ge=0.3, le=10.0, description="Poll interval in seconds"),
 ):
     """Server-Sent Events stream of new log lines.
@@ -391,11 +319,9 @@ async def stream_logs(
         const es = new EventSource('/system/logs/stream?source=backend');
         es.onmessage = (e) => { const lines = JSON.parse(e.data); ... };
     """
-    if source == "tauri":
-        candidates = _tauri_log_candidates()
-        path = next((p for p in candidates if os.path.exists(p)), None)
-    else:
-        path = LOG_PATH if os.path.exists(LOG_PATH) else CRASH_LOG_PATH
+    if source != "backend":
+        raise HTTPException(status_code=404, detail=f"Unknown log source: {source}")
+    path = LOG_PATH if os.path.exists(LOG_PATH) else CRASH_LOG_PATH
 
     if not path or not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"Log file not found for source={source}")
@@ -480,25 +406,6 @@ def _truncate_file(path: str):
     with open(path, "w") as f:
         f.truncate(0)
 
-
-@router.post("/system/logs/tauri/clear")
-async def clear_tauri_logs():
-    """Truncate whichever Tauri-side log files we know about. OS-level rotation may recreate them."""
-    cleared = []
-    failed = 0
-    for p in _tauri_log_candidates():
-        if os.path.exists(p):
-            try:
-                await asyncio.to_thread(_truncate_file, p)
-                cleared.append(p)
-            except OSError:
-                failed += 1
-    if failed:
-        raise HTTPException(
-            status_code=500,
-            detail="One or more desktop log files could not be cleared. Close any app using them and retry.",
-        )
-    return {"cleared": cleared, "failed": 0}
 
 @router.get("/sysinfo", response_model=SysinfoResponse)
 def get_sys_info():
@@ -872,16 +779,15 @@ async def set_env_var(body: dict):
 
     Persistent keys (proxy, FFMPEG_PATH, translation provider keys, …) are
     saved to ``prefs.json`` so they survive backend restarts (restored at
-    startup in ``main.py``). HF_TOKEN is persisted via
-    ``huggingface_hub.login()`` (and cleared via ``logout()``). Other keys
-    are set on ``os.environ`` for the running process.
+    startup in ``main.py``). Other keys are set on ``os.environ`` for the
+    running process.
 
     The loopback-origin gate that previously lived inline here is now applied
     at the router level via `dependencies=[Depends(require_admin)]` on
     `router` — see the top of this file. Every route on this router is
     gated, including this one. The 403 body and behavior are unchanged.
     """
-    ALLOWED_KEYS = PERSISTENT_KEYS | {"HF_TOKEN", "TRANSLATE_API_KEY"}
+    ALLOWED_KEYS = PERSISTENT_KEYS | {"TRANSLATE_API_KEY"}
     key = body.get("key", "")
     value = body.get("value", "")
 
@@ -911,39 +817,14 @@ async def set_env_var(body: dict):
         os.environ[key] = value
         logger.info("Environment variable set (length=%d)", len(value))
 
-        # Capability 1 / issue #35: HF_TOKEN persists across restarts via
-        # huggingface_hub.login() — writes the token to $HF_HOME/token so
-        # the next process pickup doesn't need an env var. add_to_git_credential
-        # stays False; we don't want to spew tokens into the user's git config.
-        if key == "HF_TOKEN":
-            try:
-                from huggingface_hub import login as _hf_login
-                _hf_login(token=value, add_to_git_credential=False)
-                logger.info("HF token persisted to $HF_HOME/token via login()")
-            except Exception as e:
-                # Non-fatal — the runtime env var is still set, so the
-                # current process will still see the token. We just lose
-                # persistence across restarts.
-                logger.warning("Could not persist HF token to disk: %s", log_safe(e))
     else:
         os.environ.pop(key, None)
         logger.info("Environment variable cleared")
 
-        # Mirror the persistence on clear — wipe the saved token file too.
-        if key == "HF_TOKEN":
-            try:
-                from huggingface_hub import logout as _hf_logout
-                _hf_logout()
-                logger.info("HF token cleared from $HF_HOME/token via logout()")
-            except Exception as e:
-                logger.warning("Could not clear HF token file: %s", e)
-
-    # HF_TOKEN persistence is handled above via huggingface_hub.login()/
-    # logout() — it never touches prefs.json. Everything else in
     # PERSISTENT_KEYS (proxy, FFMPEG_PATH, translation provider keys, …) is
     # saved to prefs.json so it survives backend restarts (restored at
     # startup in main.py). Non-persistent keys stay process-local.
-    if key != "HF_TOKEN" and key in PERSISTENT_KEYS:
+    if key in PERSISTENT_KEYS:
         prefs_key = f"env.{key}"
         if value:
             prefs_set(prefs_key, value)
@@ -955,7 +836,7 @@ async def set_env_var(body: dict):
 
 @router.post("/clean-audio")
 async def clean_audio(audio: UploadFile = File(...)):
-    """Accept a raw mic recording, run demucs vocal isolation, return clean WAV."""
+    """Normalize a microphone recording to a mono 24 kHz WAV."""
     clean_id = str(uuid.uuid4())[:8]
     tmp_dir = os.path.join(OUTPUTS_DIR, f"_clean_{clean_id}")
     os.makedirs(tmp_dir, exist_ok=True)
@@ -983,21 +864,6 @@ async def _do_clean_audio(audio, tmp_dir, clean_id):
         converted_path = raw_path
 
     clean_path = converted_path
-    try:
-        rc, _, _ = await run_ffmpeg(
-            [sys.executable, "-m", "demucs.separate", "--two-stems", "vocals", "-n", "htdemucs",
-             "-d", get_best_device(), converted_path, "-o", tmp_dir],
-            timeout=900.0,
-        )
-        if rc == 0:
-            demucs_out = os.path.join(tmp_dir, "htdemucs", "converted")
-            vocals_file = os.path.join(demucs_out, "vocals.wav")
-            if os.path.exists(vocals_file):
-                clean_path = vocals_file
-    except asyncio.TimeoutError:
-        logger.warning("Demucs timed out for mic audio, using raw")
-    except Exception as e:
-        logger.warning(f"Demucs failed for mic audio, using raw: {e}")
 
     clean_filename = f"mic_{clean_id}.wav"
     final_path = os.path.join(OUTPUTS_DIR, clean_filename)
@@ -1031,25 +897,6 @@ def asr_backends():
     return {
         "active": active_backend_id(),
         "backends": list_backends(),
-    }
-
-
-# ── Phase 1 AUTH-01 / AUTH-03 — HF token resolver state ──────────────────
-
-
-@router.get("/system/hf-token/state")
-def hf_token_state():
-    """Return the 3-source HF token cascade state for the Settings UI
-    (Wave 2 React panel consumes this). Never returns the raw token —
-    only a masked preview, whoami username, and per-source validity.
-    """
-    from dataclasses import asdict
-    from services import token_resolver
-
-    s = token_resolver.state()
-    return {
-        "active": s["active"],
-        "sources": [asdict(row) for row in s["sources"]],
     }
 
 

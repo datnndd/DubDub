@@ -18,7 +18,6 @@ from services.segmentation import (
     _apply_scene_cuts,
     segment_transcript,
     assign_speakers_heuristic,
-    assign_speakers_from_diarization,
 )
 
 
@@ -342,42 +341,6 @@ class TestSpeakerAssignment:
         ]
         out = assign_speakers_heuristic(segs, num_speakers=3)
         assert {s["speaker_id"] for s in out} == {"Speaker 1"}
-
-    def test_diarization_uses_overlap_weighted_assignment(self):
-        # Build a fake diarization with two overlapping turns for the same seg;
-        # the one with more overlap should win, not the one at midpoint.
-        class FakeTurn:
-            def __init__(self, start, end):
-                self.start = start
-                self.end = end
-
-        class FakeDiar:
-            def itertracks(self, yield_label=True):
-                # SPEAKER_00 covers 0.0–1.0 (1.0s overlap with seg 0–2)
-                # SPEAKER_01 covers 1.0–1.3 (0.3s overlap) — midpoint 1.0 → SPEAKER_01
-                yield FakeTurn(0.0, 1.0), None, "SPEAKER_00"
-                yield FakeTurn(1.0, 1.3), None, "SPEAKER_01"
-                yield FakeTurn(1.3, 2.0), None, "SPEAKER_00"
-
-        segs = [{"start": 0.0, "end": 2.0, "text": "x", "id": "1", "speaker_id": "?"}]
-        out = assign_speakers_from_diarization(segs, FakeDiar())
-        assert out[0]["speaker_id"] == "Speaker 1"  # SPEAKER_00 + 1
-
-    def test_diarization_falls_back_to_midpoint_when_no_overlap(self):
-        class FakeTurn:
-            def __init__(self, start, end):
-                self.start = start
-                self.end = end
-
-        class FakeDiar:
-            def itertracks(self, yield_label=True):
-                yield FakeTurn(10.0, 20.0), None, "SPEAKER_03"  # no overlap with 0–2
-
-        segs = [{"start": 0.0, "end": 2.0, "text": "x", "id": "1", "speaker_id": "?"}]
-        out = assign_speakers_from_diarization(segs, FakeDiar())
-        # No overlap, no midpoint match — speaker_id stays "?"
-        assert out[0]["speaker_id"] == "?"
-
 
 # ---------------------------------------------------------------------------
 # End-to-end contract

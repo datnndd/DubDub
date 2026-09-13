@@ -1309,7 +1309,7 @@ async def ingest_pipeline(
             yield prep_event("ready", job_id=job_id, duration=round(dur, 2), filename=filename)
 
         else:
-            # Full pipeline: demucs → scene → thumbnail.
+            # Web pipeline: keep the extracted mixed audio, then scan scenes.
             partial = {
                 "video_path": video_path,
                 "audio_path": audio_path,
@@ -1332,54 +1332,9 @@ async def ingest_pipeline(
                 return
             yield prep_event("extract_done", job_id=job_id, duration=round(dur, 2), filename=filename)
 
-            vocals_path = os.path.join(job_dir, "vocals.wav")
-            no_vocals_path = os.path.join(job_dir, "no_vocals.wav")
+            vocals_path = audio_path
+            no_vocals_path = None
             scene_cuts: list = []
-
-            yield prep_event("demucs_start")
-            try:
-                demucs_cmd = [sys.executable, "-m", "demucs.separate",
-                              "--two-stems", "vocals", "-n", "htdemucs", "-d", get_best_device(),
-                              audio_hq_path or audio_path, "-o", job_dir]
-                rc = -1
-                stderr_full = b""
-                last_pct = -1
-                # demucs writes a tqdm progress bar to stderr as
-                # "  42%|████      | …" — surface each new integer percent
-                # to the UI so the user sees the bar instead of a static
-                # spinner during the multi-minute separation step.
-                async for evt in run_proc_streaming_stderr(job_id, demucs_cmd, timeout=1800.0):
-                    if evt[0] == "stderr":
-                        m = re.search(r"(\d{1,3})%", evt[1])
-                        if m:
-                            pct = max(0, min(100, int(m.group(1))))
-                            if pct != last_pct:
-                                last_pct = pct
-                                yield prep_event("demucs_progress", percent=pct)
-                    elif evt[0] == "done":
-                        rc, stderr_full = evt[1], evt[2]
-                if rc != 0:
-                    raise Exception(stderr_full.decode(errors="replace")[:500])
-                # Stems land under the INPUT's basename ("audio_hq" when the
-                # full-quality extraction succeeded, "audio" on its fallback).
-                demucs_out = os.path.join(
-                    job_dir, "htdemucs",
-                    os.path.splitext(os.path.basename(audio_hq_path or audio_path))[0],
-                )
-                if os.path.exists(os.path.join(demucs_out, "vocals.wav")):
-                    shutil.move(os.path.join(demucs_out, "vocals.wav"), vocals_path)
-                    shutil.move(os.path.join(demucs_out, "no_vocals.wav"), no_vocals_path)
-                    shutil.rmtree(os.path.join(job_dir, "htdemucs"), ignore_errors=True)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.warning("Demucs failed for %s, falling back to mixed audio: %s", log_safe(job_id), log_safe(e))
-                # plan-04: surface the degradation (job continues with mixed audio).
-                yield prep_event("warning", **failure.build_failure(e, stage="demucs", include_diagnostic=False))
-                vocals_path = audio_path
-                no_vocals_path = None
-            yield prep_event("demucs_done",
-                             has_bg=bool(no_vocals_path and os.path.exists(no_vocals_path)))
 
             # Audio-only jobs (#119) have no video to scan or thumbnail. Skip
             # both ffmpeg passes but still emit scene_done (count=0) so the

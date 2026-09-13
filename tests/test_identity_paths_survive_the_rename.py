@@ -44,19 +44,7 @@ def _read(rel):
         return fh.read()
 
 
-def test_the_bundle_identifier_is_unchanged():
-    conf = json.loads(_read("frontend/src-tauri/tauri.conf.json"))
-    assert conf["identifier"] == "com.debpalash.omnivoice-studio", WHY
 
-
-def test_the_rust_mirror_of_the_identifier_agrees():
-    # config.rs carries its own copy; a rename that moved only one of the two
-    # would put the shell and its own config in different directories.
-    conf = json.loads(_read("frontend/src-tauri/tauri.conf.json"))
-    rust = _read("frontend/src-tauri/src/config.rs")
-    match = re.search(r'BUNDLE_IDENTIFIER:\s*&str\s*=\s*"([^"]+)"', rust)
-    assert match, "BUNDLE_IDENTIFIER const not found in config.rs"
-    assert match.group(1) == conf["identifier"], WHY
 
 
 def test_the_backend_data_directories_are_unchanged():
@@ -76,55 +64,9 @@ def test_the_database_filename_is_unchanged():
 
 
 @pytest.mark.parametrize(
-    "rel",
-    [
-        "frontend/src-tauri/src/setup.rs",     # default_data_dir / default_models_dir
-        "frontend/src-tauri/src/backend.rs",   # backend_log_path
-        "frontend/src-tauri/src/commands.rs",  # log path + data dir
-    ],
-)
-def test_no_rust_resolver_joins_the_brand_name_as_a_directory(rel):
-    """The Rust side builds these paths with `.join("OmniVoice")`.
-
-    A brand sweep renames that string as readily as any other, and the
-    original assertion here — "does the file mention OmniVoice anywhere" —
-    passed while three resolvers had been repointed at a directory that does
-    not exist. Assert the SHAPE that matters: no resolver may join the
-    product name.
-    """
-    rust = _read(rel)
-    assert 'join("VoiceStudio")' not in rust, (
-        f"{rel} resolves a user directory named after the brand. {WHY}"
-    )
-    assert 'join("OmniVoice")' in rust, (
-        f"{rel} no longer joins the real data directory name. {WHY}"
-    )
-
-
-def test_the_rust_data_dir_mirror_agrees_with_python():
-    # setup.rs::default_data_dir() is a hand-maintained mirror of
-    # get_app_data_dir(). If they drift, the shell and the backend disagree
-    # about where the user's data is.
-    rust = _read("frontend/src-tauri/src/setup.rs")
-    assert "Application Support/OmniVoice" in rust, WHY
-    assert ".omnivoice" in rust, WHY
-
-
-def test_no_windows_path_fixture_points_at_the_brand():
-    """The Rust uninstall/reset tests carry Windows path fixtures that are only
-    ABSOLUTE on Windows — so a rename there fails on the Windows runner alone,
-    hours later. Catch it here, on any platform."""
-    for rel in ("frontend/src-tauri/src/uninstall.rs", "frontend/src-tauri/src/reset.rs"):
-        rust = _read(rel)
-        for bad in ("Roaming\\VoiceStudio", "Roaming/VoiceStudio"):
-            assert bad not in rust, f"{rel} fixture points at a brand-named dir. {WHY}"
-
-
-@pytest.mark.parametrize(
     "rel,var",
     [
         ("scripts/smoke-test.sh", "OV_DATA"),
-        ("scripts/desktop-prod.sh", "BACKEND_DATA"),
     ],
 )
 def test_no_dev_script_resolves_a_brand_named_data_dir(rel, var):
@@ -157,13 +99,6 @@ def test_no_dev_script_resolves_a_brand_named_data_dir(rel, var):
         )
 
 
-def test_the_uninstall_allowlist_still_recognises_our_paths():
-    # is_recognizably_ours() refuses to delete anything it does not recognise.
-    # If the paths were renamed but this list was not, uninstall and reset stop
-    # removing anything — reporting success while leaving everything behind.
-    rust = _read("frontend/src-tauri/src/uninstall.rs")
-    for owned in ("OmniVoice", "omnivoice", ".omnivoice", "com.debpalash.omnivoice-studio"):
-        assert f'"{owned}"' in rust, f"{owned} dropped from the OWNED allowlist. {WHY}"
 
 
 def test_the_python_package_name_is_unchanged():
@@ -199,10 +134,6 @@ def test_the_public_env_var_prefix_is_unchanged(env_var):
 # ── and the half that DID change ───────────────────────────────────────────
 
 
-def test_the_product_name_is_the_new_one():
-    conf = json.loads(_read("frontend/src-tauri/tauri.conf.json"))
-    assert conf["productName"] == "VoiceStudio"
-    assert conf["app"]["windows"][0]["title"] == "VoiceStudio"
 
 
 def test_the_release_artifact_patterns_follow_the_product_name():
@@ -214,11 +145,4 @@ def test_the_release_artifact_patterns_follow_the_product_name():
     assert "VoiceStudio_" in manifest
 
 
-def test_the_dev_binary_name_still_cannot_match_the_release_app():
-    # The cargo package keeps the old name on purpose: the dev launcher's
-    # pkill matches it exactly, and must never match a user's installed app.
-    cargo = _read("frontend/src-tauri/Cargo.toml")
-    assert re.search(r'(?m)^name\s*=\s*"omnivoice-studio"', cargo)
-    common = _read("scripts/desktop-common.mjs")
-    assert 'DEV_APP_PROCESS_NAME = "omnivoice-studio"' in common
-    assert 'APP_NAME = "VoiceStudio"' in common
+

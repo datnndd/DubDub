@@ -23,8 +23,7 @@ import { streamDropError } from '../utils/backendCrash';
 import { playPing } from '../utils/media';
 import { toast } from 'react-hot-toast';
 import { toastErrorWithReport } from '../utils/errorToast';
-import { asrMissingPayload, installRecommendedAsr } from '../utils/asrModelMissing';
-import { cancelInstallModel } from '../api/setup';
+import { asrMissingPayload } from '../utils/asrModelMissing';
 import { addBreadcrumb } from '../utils/breadcrumbs';
 import { recordValueMoment } from '../utils/donationMoments';
 import i18next from 'i18next';
@@ -96,7 +95,7 @@ export default function useDubWorkflow({
   const glossaryTerms = useAppStore((s) => s.glossaryTerms);
   const dubDialect = useAppStore((s) => s.dubDialect);
 
-  const [translateProvider, setTranslateProvider] = useState('argos');
+  const [translateProvider, setTranslateProvider] = useState('google');
   const [showTranscript, setShowTranscript] = useState(false);
   const [previewAudios, setPreviewAudios] = useState({});
   const [transcribeStart, setTranscribeStart] = useState(null);
@@ -109,85 +108,23 @@ export default function useDubWorkflow({
   // true on a CUDA GPU and 50x wrong on a CPU, so it showed "~0s remaining" for
   // 45 minutes. A measured fraction is the only thing that can't lie.
   const [transcribeProgress, setTranscribeProgress] = useState(0);
-  const [asrInstall, setAsrInstall] = useState(null);
-
   const dubAbortCtrlRef = useRef(null);
   const dubClientJobIdRef = useRef(null);
-  const asrInstallTaskRef = useRef(null);
   const retryTranscribeRef = useRef(null);
 
   const _showMissingAsr = useCallback(
     (payload) => {
-      const rec = payload?.recommended;
-      setAsrInstall({
-        phase: 'missing',
-        percent: null,
-        payload,
-        repoId: rec?.repo_id || '',
-        label: rec?.label || rec?.repo_id || '',
-        sizeGb: rec?.size_gb,
-        jobId: useAppStore.getState().dubJobId,
-      });
-      setDubError(t('asr_missing.message'));
+      const message =
+        payload?.detail ||
+        t('asr_missing.message', {
+          defaultValue: 'Deepgram Cloud ASR requires an API key. Configure it in Settings.',
+        });
+      setDubError(message);
       setDubStep('idle');
       useAppStore.getState().dismissPill();
     },
     [setDubError, setDubStep],
   );
-
-  const handleInstallMissingAsr = useCallback(async () => {
-    if (!asrInstall?.payload || asrInstall.phase === 'installing') return;
-    const initiatingJobId = asrInstall.jobId;
-    const ctrl = new AbortController();
-    const installTask = {
-      ctrl,
-      repoId: asrInstall.repoId,
-      jobId: initiatingJobId,
-    };
-    asrInstallTaskRef.current = installTask;
-    setDubError('');
-    setDubStep('installing-asr');
-    setAsrInstall((current) => ({ ...current, phase: 'installing', percent: 0 }));
-    useAppStore
-      .getState()
-      .showPill('loading-model', t('dub.install_progress', { engine: asrInstall.label }), {
-        progress: 0,
-        cancellable: true,
-        homeMode: 'dub',
-      });
-    try {
-      await installRecommendedAsr(asrInstall.payload, {
-        signal: ctrl.signal,
-        onProgress: ({ percent }) => {
-          setAsrInstall((current) =>
-            current ? { ...current, phase: 'installing', percent } : current,
-          );
-          useAppStore.getState().setPillProgress(percent);
-        },
-      });
-      if (useAppStore.getState().dubJobId !== initiatingJobId) return;
-      setAsrInstall(null);
-      setDubError('');
-      setDubStep('idle');
-      useAppStore.getState().completePill(t('dub.install_ok', { engine: asrInstall.label }));
-      await retryTranscribeRef.current?.();
-    } catch (error) {
-      if (useAppStore.getState().dubJobId !== initiatingJobId) return;
-      const aborted = error?.name === 'AbortError';
-      const message = aborted
-        ? t('dub_workflow.retry_cancelled')
-        : t('asr_missing.install_failed', { message: error?.message || String(error) });
-      setDubStep('idle');
-      setDubError(message);
-      setAsrInstall((current) =>
-        current ? { ...current, phase: 'missing', percent: null } : current,
-      );
-      if (aborted) useAppStore.getState().dismissPill();
-      else useAppStore.getState().errorPill(message);
-    } finally {
-      if (asrInstallTaskRef.current === installTask) asrInstallTaskRef.current = null;
-    }
-  }, [asrInstall, setDubError, setDubStep]);
 
   // Reset a stale dub session (the persisted job is gone server-side, #660):
   // clear the dead id/state, drop any pill, and prompt a fresh upload with a
@@ -197,7 +134,6 @@ export default function useDubWorkflow({
     setDubTaskId('');
     setDubSegments([]);
     setDubError('');
-    setAsrInstall(null);
     setDubStep('idle');
     setTranscribeStart(null);
     try {
@@ -427,23 +363,6 @@ export default function useDubWorkflow({
               if (typeof m.duration === 'number') setDubDuration(m.duration);
               if (m.filename) setDubFilename(m.filename);
               break;
-            case 'demucs_start':
-              setDubPrepStage('demucs');
-              setDubPrepProgress({
-                percent: null,
-                speedBps: null,
-                etaS: null,
-                stageStartedAt: Date.now(),
-              });
-              break;
-            case 'demucs_progress':
-              setDubPrepProgress((prev) => ({
-                ...prev,
-                percent: typeof m.percent === 'number' ? m.percent : prev.percent,
-              }));
-              break;
-            case 'demucs_done':
-              break;
             case 'scene_start':
               setDubPrepStage('scene');
               setDubPrepProgress({
@@ -521,14 +440,8 @@ export default function useDubWorkflow({
   const handleDubUpload = useCallback(
     async (dubVideoFile) => {
       if (!dubVideoFile) return;
-      const pendingInstall = asrInstallTaskRef.current;
-      pendingInstall?.ctrl.abort();
-      if (pendingInstall?.repoId) {
-        void cancelInstallModel(pendingInstall.repoId).catch(() => {});
-      }
       addBreadcrumb('dub:upload');
       setDubStep('uploading');
-      setAsrInstall(null);
       setDubError('');
       setDubFailure(null);
       setDubTracks([]);
@@ -572,7 +485,7 @@ export default function useDubWorkflow({
         });
         await _waitForTranscribe(data.job_id, ctrl);
         setTranscribeStart(null);
-        setDubStep(opts.prepareReview ? 'prepare' : 'editing');
+        setDubStep('prepare');
         useAppStore.getState().completePill(t('dub_workflow.transcription_complete'));
         loadProjects();
         loadProfiles();
@@ -621,14 +534,8 @@ export default function useDubWorkflow({
     async (url, opts = {}) => {
       const clean = (url || '').trim();
       if (!clean) return;
-      const pendingInstall = asrInstallTaskRef.current;
-      pendingInstall?.ctrl.abort();
-      if (pendingInstall?.repoId) {
-        void cancelInstallModel(pendingInstall.repoId).catch(() => {});
-      }
       addBreadcrumb('dub:ingest-url');
       setDubStep('uploading');
-      setAsrInstall(null);
       setDubError('');
       setDubFailure(null);
       setDubTracks([]);
@@ -669,7 +576,7 @@ export default function useDubWorkflow({
         });
         await _waitForTranscribe(data.job_id, ctrl);
         setTranscribeStart(null);
-        setDubStep('editing');
+        setDubStep('prepare');
         useAppStore.getState().completePill(t('dub_workflow.transcription_complete'));
         loadProjects();
         loadProfiles();
@@ -687,7 +594,7 @@ export default function useDubWorkflow({
         } else {
           const cookieErrorKey =
             err?.code === DUB_COOKIE_TRANSPORT_ERROR
-              ? 'dub.cookie_transport_error'
+              ? 'errors.desc'
               : err?.code === DUB_COOKIE_SIZE_ERROR
                 ? 'dub.cookie_size_error'
                 : null;
@@ -721,14 +628,6 @@ export default function useDubWorkflow({
   );
 
   const handleDubAbort = useCallback(async () => {
-    const pendingInstall = asrInstallTaskRef.current;
-    if (pendingInstall) {
-      pendingInstall.ctrl.abort();
-      if (pendingInstall.repoId) {
-        await cancelInstallModel(pendingInstall.repoId).catch(() => {});
-      }
-      return;
-    }
     const jobId = dubClientJobIdRef.current || dubJobId;
     if (dubAbortCtrlRef.current) dubAbortCtrlRef.current.abort();
     if (jobId) await apiDubAbort(jobId);
@@ -736,7 +635,6 @@ export default function useDubWorkflow({
 
   const handleDubRetryTranscribe = useCallback(async () => {
     if (!dubJobId) return;
-    setAsrInstall(null);
     const ctrl = new AbortController();
     dubAbortCtrlRef.current = ctrl;
     setDubError('');
@@ -746,7 +644,7 @@ export default function useDubWorkflow({
     try {
       await _waitForTranscribe(dubJobId, ctrl);
       setTranscribeStart(null);
-      setDubStep('editing');
+      setDubStep('prepare');
       loadProjects();
     } catch (err) {
       setTranscribeStart(null);
@@ -901,7 +799,7 @@ export default function useDubWorkflow({
           setDubPrepStage(null);
         }
 
-        setDubStep('transcribing');
+        if (!opts.time_ranges) setDubStep('transcribing');
         useAppStore
           .getState()
           .showPill('transcribing', t('dub.hardsub_running_hint'), {
@@ -919,6 +817,7 @@ export default function useDubWorkflow({
             refine_fps: opts.refine_fps || undefined,
             refine: opts.refine ?? false,
             model_id: opts.model_id || 'rapidocr',
+            time_ranges: opts.time_ranges || undefined,
           });
         } catch (extractErr) {
           // If 404 (e.g. stale jobId from restored state) and we have a local file, upload and retry
@@ -948,6 +847,7 @@ export default function useDubWorkflow({
               refine_fps: opts.refine_fps || undefined,
               refine: opts.refine ?? false,
               model_id: opts.model_id || 'rapidocr',
+              time_ranges: opts.time_ranges || undefined,
             });
           } else {
             throw extractErr;
@@ -964,8 +864,10 @@ export default function useDubWorkflow({
           ...s,
           id: s.id != null ? String(s.id) : String(Math.random()),
         }));
-        if (!opts.prepareReview) setDubSegments(normalizedSegments);
-        setDubStep(opts.prepareReview ? 'prepare' : 'editing');
+        if (!opts.time_ranges) {
+          if (!opts.prepareReview) setDubSegments(normalizedSegments);
+          setDubStep(opts.prepareReview ? 'prepare' : 'editing');
+        }
         useAppStore.getState().completePill(t('dub_workflow.hardsub_done', { count: segs.length }));
         toast.success(t('dub_workflow.hardsub_done', { count: segs.length }), {
           duration: 6000,
@@ -1468,12 +1370,10 @@ export default function useDubWorkflow({
     setPreviewAudios,
     transcribeElapsed,
     transcribeProgress,
-    asrInstall,
     handleDubUpload,
     handleDubIngestUrl,
     handleDubAbort,
     handleDubRetryTranscribe,
-    handleInstallMissingAsr,
     handleDubStop,
     handleDubGenerate,
     handleCleanupSegments,

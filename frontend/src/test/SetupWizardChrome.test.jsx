@@ -114,21 +114,15 @@ describe('SetupWizard — the pinned action row stays on screen', () => {
     expect(checked).toBeGreaterThanOrEqual(2);
   });
 
-  it('keeps Continue and the HF-token card OUT of the scrolling region', async () => {
+  it('keeps the Continue action row OUT of the scrolling region', async () => {
     render(withI18n(<SetupWizard onReady={() => {}} />));
     fireEvent.click(await screen.findByText(/All good — continue/i));
-
-    // Models step: the token card and the action row are siblings of the
-    // scroller, not children of it — otherwise they scroll away instead of
-    // staying pinned.
-    const card = await screen.findByTestId('hf-token-card');
-    expect(card.className).toMatch(/shrink-0/);
 
     const cta = await screen.findByText(/Required models ready/i);
     const row = cta.closest('div');
     expect(row.className).toMatch(/shrink-0/);
 
-    let el = card;
+    let el = row;
     while (el) {
       expect(el.className || '').not.toMatch(/overflow-y-auto/);
       el = el.parentElement;

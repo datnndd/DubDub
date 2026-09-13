@@ -55,20 +55,6 @@ def test_socksio_declared_in_pyproject_dependencies():
     )
 
 
-def test_socksio_in_backend_spec_hiddenimports():
-    # httpx imports socksio lazily inside try/except — PyInstaller's static
-    # tracer never sees it, so a pyproject dep alone leaves the FROZEN
-    # installers broken. Comments are stripped so a mention in a comment
-    # can't satisfy the check.
-    code_lines = [
-        line.split("#", 1)[0]
-        for line in (PROJECT_ROOT / "backend.spec").read_text().splitlines()
-    ]
-    assert any("'socksio'" in line or '"socksio"' in line for line in code_lines), (
-        "#959 regression: 'socksio' must be listed in backend.spec "
-        "hiddenimports or the frozen installers ship without SOCKS support."
-    )
-
 
 def test_httpx_client_constructs_under_socks_proxy_env(monkeypatch):
     # Construction only — no network. FAILS (ImportError) in an env without
@@ -147,6 +133,7 @@ def test_preload_warms_up_from_cache_when_network_probe_fails(monkeypatch):
     import services.model_manager as mm
 
     _fail_model_info(monkeypatch)
+    monkeypatch.setattr(mm, "_ram_available_bytes", lambda: 16 * 1024**3)
     monkeypatch.setattr(mm, "model", None)
     monkeypatch.setattr(mm, "resolve_omnivoice_checkpoint", lambda: "k2-fsa/OmniVoice")
     monkeypatch.setattr(mm, "_checkpoint_in_local_cache", lambda cp: True)

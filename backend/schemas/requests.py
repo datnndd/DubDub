@@ -226,6 +226,24 @@ class HardsubExtractRequest(BaseModel):
     refine: bool = False
     text_score: float = 0.5
     soft_index: Optional[int] = None
+    time_ranges: Optional[list[list[float]]] = None
+
+    @field_validator("time_ranges")
+    @classmethod
+    def validate_time_ranges(cls, v):
+        if v is None:
+            return None
+        valid = []
+        for r in v:
+            if not isinstance(r, (list, tuple)) or len(r) != 2:
+                raise ValueError("Each time range must be a pair of [start, end] numbers.")
+            start, end = float(r[0]), float(r[1])
+            if start < 0:
+                raise ValueError("Time range start must be >= 0.")
+            if end < start:
+                raise ValueError(f"Time range end ({end}) must be >= start ({start}).")
+            valid.append([start, end])
+        return valid
 
 
 class ParseSubtitleTextRequest(BaseModel):

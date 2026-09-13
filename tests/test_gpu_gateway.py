@@ -293,7 +293,7 @@ async def test_legacy_positive_absence_without_repo_ids_stops_before_submit():
     class Worker:
         class Record:
             capabilities = [{
-                "engine": "cosyvoice", "model_id": "cosyvoice:default",
+                "engine": "omnivoice", "model_id": "omnivoice:default",
                 "supported": True, "installed": True, "downloaded": False,
                 "operations": ["tts"],
             }]
@@ -305,12 +305,12 @@ async def test_legacy_positive_absence_without_repo_ids_stops_before_submit():
 
     with pytest.raises(gpu_gateway.ModelNotDownloaded) as caught:
         await gpu_gateway.run(
-            "tts", local=local_call(), remote=remote_call(engine="cosyvoice"),
+            "tts", local=local_call(), remote=remote_call(engine="omnivoice"),
             decision=REMOTE, control_plane=plane,
         )
 
     assert scheduler.submitted == []
-    assert caught.value.repo_ids == ["FunAudioLLM/Fun-CosyVoice3-0.5B-2512"]
+    assert caught.value.repo_ids == ["k2-fsa/OmniVoice"]
     assert caught.value.target_label == "gpu2"
 
 

@@ -14,16 +14,14 @@ import {
   FileText,
   Heart,
   Mail,
-  Sparkles,
   Braces,
   Gem,
 } from 'lucide-react';
 
 import toast from 'react-hot-toast';
-import { clearSystemLogs, clearTauriLogs } from '../api/system';
+import { clearSystemLogs } from '../api/system';
 import {
   useSystemLogs,
-  useTauriLogs,
   useVisibleNotifications,
   isDismissibleNotification,
 } from '../api/hooks';
@@ -32,8 +30,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import NetworkToggle from './NetworkToggle';
 import ComputeQuickSettings from './ComputeQuickSettings';
-import EngineQuickSwitch from './EngineQuickSwitch';
-import { APP_VERSION, whatsNewPending } from '../utils/appVersion';
+import { APP_VERSION } from '../utils/appVersion';
 import DonateMomentPopover, { DONATE_POPOVER_AUTO_DISMISS_MS } from './DonateMomentPopover';
 import { DONATION_MOMENT_EVENT, optOutOfDonationMoments } from '../utils/donationMoments';
 
@@ -48,7 +45,6 @@ import { DONATION_MOMENT_EVENT, optOutOfDonationMoments } from '../utils/donatio
 const SOURCES = [
   { id: 'backend', label: 'Backend', icon: FileText },
   { id: 'frontend', label: 'Frontend', icon: FileText },
-  { id: 'tauri', label: 'Tauri', icon: FileText },
   // Notifications used to live here as a 4th pill but that duplicated the
   // header's bell+badge (single source of truth for notifications). The
   // footer is logs-only now; bell handles notifications.
@@ -229,25 +225,6 @@ export default function LogsFooter() {
   }
   const [collapsed, setCollapsed] = useState(true);
   const { t } = useTranslation();
-  // Update availability drives the footer version badge's notification dot.
-  const updateStatus = useAppStore((s) => s.updateStatus);
-  const updateVersion = useAppStore((s) => s.updateVersion);
-  const updateReady = updateStatus === 'available' || updateStatus === 'ready';
-  // One-time "What's new" affordance after an update (feat/safe-updates):
-  // non-blocking footer pill, never a startup modal. First run with no
-  // recorded version baselines silently; after an update the pill shows
-  // until the user opens the notes (or clicks it away).
-  const whatsNewSeen = useAppStore((s) => s.whatsNewSeenVersion);
-  useEffect(() => {
-    if (whatsNewSeen == null && APP_VERSION !== 'unknown') {
-      useAppStore.getState().setWhatsNewSeenVersion(APP_VERSION);
-    }
-  }, [whatsNewSeen]);
-  const showWhatsNew = whatsNewPending(whatsNewSeen, APP_VERSION);
-  const openWhatsNew = useCallback(() => {
-    useAppStore.getState().setWhatsNewSeenVersion(APP_VERSION);
-    useAppStore.getState().openSettingsTab?.('updates');
-  }, []);
   const [height, setHeight] = useState(() => {
     const v = Number(localStorage.getItem(LS_HEIGHT));
     return Number.isFinite(v) && v >= MIN_H && v <= MAX_H ? v : 300;
@@ -259,7 +236,7 @@ export default function LogsFooter() {
 
   // Raw log state per source. Backend / Tauri come from HTTP; frontend
   // comes from the in-process ring buffer in consoleBuffer.js.
-  const [lines, setLines] = useState({ backend: [], frontend: [], tauri: [] });
+  const [lines, setLines] = useState({ backend: [], frontend: [] });
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
 
@@ -283,7 +260,6 @@ export default function LogsFooter() {
   // While collapsed only the count badge is visible, so poll lazily (45s);
   // tighten to 10s when the panel is open (same throttle idea as pullFrontend).
   const backendLogs = useSystemLogs(300, true, collapsed ? 45_000 : 10_000);
-  const tauriLogs = useTauriLogs(300, true, collapsed ? 45_000 : 10_000);
 
   // Sync query data into local state for the rendering pipeline
   useEffect(() => {
@@ -291,12 +267,6 @@ export default function LogsFooter() {
       setLines((prev) => ({ ...prev, backend: backendLogs.data.lines || [] }));
     }
   }, [backendLogs.data]);
-
-  useEffect(() => {
-    if (tauriLogs.data) {
-      setLines((prev) => ({ ...prev, tauri: tauriLogs.data.lines || [] }));
-    }
-  }, [tauriLogs.data]);
 
   // Skip the setLines (and the re-render it forces) when the console ring
   // buffer hasn't changed since the last pull — same length + same last
@@ -317,10 +287,9 @@ export default function LogsFooter() {
   const refreshAll = useCallback(async () => {
     setLoading(true);
     backendLogs.refetch();
-    tauriLogs.refetch();
     pullFrontend();
     setLoading(false);
-  }, [backendLogs, tauriLogs, pullFrontend]);
+  }, [backendLogs, pullFrontend]);
 
   // Frontend logs still need a local interval (no API, reads from buffer)
   useEffect(() => {
@@ -373,7 +342,6 @@ export default function LogsFooter() {
     () => ({
       backend: countLevels(lines.backend),
       frontend: countLevels(lines.frontend),
-      tauri: countLevels(lines.tauri),
       notifications: {
         error: notifications.filter((n) => n.level === 'error').length,
         warn: notifications.filter((n) => n.level === 'warn').length,
@@ -423,7 +391,6 @@ export default function LogsFooter() {
   const onClear = async () => {
     try {
       if (active === 'backend') await clearSystemLogs();
-      else if (active === 'tauri') await clearTauriLogs();
       else if (active === 'frontend') clearFrontendLogs();
       setLines((prev) => ({ ...prev, [active]: [] }));
       toast.success(t('logs.log_cleared', { source: active }));
@@ -451,8 +418,7 @@ export default function LogsFooter() {
       `When: ${new Date().toISOString()}`,
       `UA: ${navigator.userAgent}`,
       `Counts: backend err=${counts.backend.error}/warn=${counts.backend.warn}, ` +
-        `frontend err=${counts.frontend.error}/warn=${counts.frontend.warn}, ` +
-        `tauri err=${counts.tauri.error}/warn=${counts.tauri.warn}`,
+        `frontend err=${counts.frontend.error}/warn=${counts.frontend.warn}`,
       '',
     ].join('\n');
     const body = SOURCES.map((s) => {
@@ -577,70 +543,8 @@ export default function LogsFooter() {
               </button>
             </div>
           )}
-          {showWhatsNew && (
-            <button
-              type="button"
-              data-testid="whats-new-pill"
-              className={
-                'shrink-0 inline-flex items-center gap-[4px] px-[7px] h-[var(--chrome-icon-btn)] rounded-[999px] cursor-pointer ' +
-                'text-[10px] tracking-[0.02em] border border-[color:var(--chrome-accent)] bg-transparent ' +
-                '[color:var(--chrome-accent)] hover:opacity-80 transition-opacity duration-150'
-              }
-              onClick={openWhatsNew}
-              title={t('updates.whats_new_in', {
-                version: APP_VERSION,
-                defaultValue: "What's new in v{{version}}",
-              })}
-              aria-label={t('updates.whats_new_in', {
-                version: APP_VERSION,
-                defaultValue: "What's new in v{{version}}",
-              })}
-            >
-              <Sparkles size={11} aria-hidden="true" />
-              {t('update.whats_new', { defaultValue: "What's new" })}
-            </button>
-          )}
-          <button
-            type="button"
-            className={
-              'shrink-0 px-[6px] h-[var(--chrome-icon-btn)] rounded-[4px] bg-transparent border-0 cursor-pointer ' +
-              'text-[11px] [font-variant-numeric:tabular-nums] tracking-[0.02em] transition-[opacity,color] duration-150 ' +
-              'hover:opacity-100 hover:[color:var(--chrome-accent)] hover:underline ' +
-              (updateReady
-                ? 'relative opacity-100 font-semibold [color:var(--chrome-accent)]'
-                : 'opacity-55 [color:var(--chrome-fg)]')
-            }
-            onClick={() => useAppStore.getState().openSettingsTab?.('updates')}
-            title={
-              updateReady
-                ? t('logs.update_available', {
-                    version: updateVersion || '',
-                    defaultValue: 'Update available ({{version}}) — click to update',
-                  })
-                : t('logs.version_updates', { defaultValue: 'Check for updates' })
-            }
-            aria-label={
-              updateReady
-                ? t('logs.update_available_aria', {
-                    version: updateVersion || '',
-                    defaultValue: 'Update available ({{version}}) — open updates',
-                  })
-                : t('logs.version_updates_aria', {
-                    defaultValue: 'Open updates — app version {{v}}',
-                    v: APP_VERSION,
-                  })
-            }
-          >
-            v{APP_VERSION}
-            {updateReady && (
-              <span
-                className="inline-block w-[6px] h-[6px] ml-[5px] rounded-full align-middle [background:var(--chrome-accent)] [animation:version-dot-pulse_2s_ease-in-out_infinite]"
-                aria-hidden="true"
-              />
-            )}
-          </button>
+          <span className="shrink-0 px-[6px] text-[11px] opacity-55">v{APP_VERSION}</span>
           <ComputeQuickSettings />
-          <EngineQuickSwitch shortcutTarget dropUp />
           <NetworkToggle />
           <button
             type="button"

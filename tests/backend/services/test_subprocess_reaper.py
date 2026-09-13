@@ -2,7 +2,7 @@
 
 A subprocess engine's sidecar holds a process (and, for GPU engines, VRAM) for
 the life of the backend. The reaper shuts down sidecars idle past a timeout;
-the next request respawns one. These tests drive the stdlib-only echo sidecar
+the next request respawns one. These tests drive the stdlib-only test sidecar
 (no torch) and assert the reaper (a) kills an idle sidecar, (b) NEVER touches
 one with an op in flight (lock held), (c) respawns transparently afterwards,
 and (d) is disabled at a non-positive timeout.
@@ -24,18 +24,18 @@ from services.subprocess_backend import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-ECHO_SCRIPT = REPO_ROOT / "backend" / "engines" / "_echo" / "main.py"
+TEST_SIDECAR_SCRIPT = REPO_ROOT / "tests" / "helpers" / "fake_sidecar.py"
 
 
-class EchoBackend(SubprocessBackend):
-    id = "_echo_reaper"
-    display_name = "Echo (reaper test)"
+class FixtureSidecarBackend(SubprocessBackend):
+    id = "test-sidecar-reaper"
+    display_name = "Test sidecar (reaper)"
     sample_rate = 24000
     supported_languages = ["en"]
 
     @classmethod
     def is_available(cls):
-        return (True, "ready") if ECHO_SCRIPT.is_file() else (False, "missing")
+        return (True, "ready") if TEST_SIDECAR_SCRIPT.is_file() else (False, "missing")
 
     @classmethod
     def venv_python(cls):
@@ -43,12 +43,12 @@ class EchoBackend(SubprocessBackend):
 
     @classmethod
     def sidecar_script(cls):
-        return ECHO_SCRIPT
+        return TEST_SIDECAR_SCRIPT
 
 
 @pytest.fixture
 def echo():
-    b = EchoBackend()
+    b = FixtureSidecarBackend()
     yield b
     try:
         b.shutdown()
@@ -56,7 +56,7 @@ def echo():
         pass
 
 
-def _spawn_alive(b: EchoBackend) -> None:
+def _spawn_alive(b: FixtureSidecarBackend) -> None:
     """Bring a sidecar up via a health ping and assert it's live."""
     ok, _ = b.health_check()
     assert ok

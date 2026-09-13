@@ -49,9 +49,9 @@ def client(monkeypatch):
     # Both ASR getters resolve to the same in-process stub so neither mode
     # touches a model. Patched at source — the handler imports them lazily.
     monkeypatch.setattr(
-        "services.asr_backend.get_capture_asr_backend", lambda: _StubBackend())
+        "services.asr_backend.get_capture_asr_backend", lambda *a, **kw: _StubBackend())
     monkeypatch.setattr(
-        "services.asr_backend.get_active_asr_backend", lambda: _StubBackend())
+        "services.asr_backend.get_active_asr_backend", lambda *a, **kw: _StubBackend())
 
     from main import app
     return TestClient(app, client=("127.0.0.1", 50000))

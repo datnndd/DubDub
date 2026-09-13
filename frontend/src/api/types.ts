@@ -154,10 +154,6 @@ export interface LogsResponse {
   candidates?: string[];
 }
 
-export interface ClearTauriResponse {
-  cleared: string[];
-}
-
 // ── Projects ─────────────────────────────────────────────────────────────
 export interface ProjectSummary {
   id: string;

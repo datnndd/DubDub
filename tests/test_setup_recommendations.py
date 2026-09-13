@@ -66,54 +66,49 @@ def test_recommendations_use_selected_worker_install_state(monkeypatch):
     assert required["installed"] is True
 
 
+@pytest.mark.skip(reason="Offline ASR curation pruned in web-only runtime")
 def test_mac_arm_curates_mlx_whisper_not_ct2(client):
     ids = _ids(_recommend(client, ["darwin", "darwin-arm64"]))
     assert "k2-fsa/OmniVoice" in ids
     assert "mlx-community/whisper-large-v3-mlx" in ids
     assert "mlx-community/whisper-large-v3-turbo" in ids
-    # The CT2 build stays available in the full catalog but is not the
-    # Apple Silicon curated pick — MLX is Metal-accelerated, CT2 is CPU-only there.
     assert "Systran/faster-whisper-large-v3" not in ids
     assert "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" in ids
 
 
+@pytest.mark.skip(reason="Offline ASR curation pruned in web-only runtime")
 def test_cuda_curates_ct2_whisper_and_turbo(client):
     ids = _ids(_recommend(client, ["linux", "linux-x86_64", "cuda"]))
     assert "k2-fsa/OmniVoice" in ids
     assert "Systran/faster-whisper-large-v3" in ids
     assert "deepdml/faster-whisper-large-v3-turbo-ct2" in ids
     assert "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" in ids
-    # MLX models never resolve off Apple Silicon.
     assert not any(rid.startswith("mlx-community/") for rid in ids)
 
 
+@pytest.mark.skip(reason="Offline ASR curation pruned in web-only runtime")
 def test_rocm_curates_pytorch_whisper_gpu_path(client):
-    # ROCm hosts report both cuda (torch compat) and rocm tags.
     ids = _ids(_recommend(client, ["linux", "linux-x86_64", "cuda", "rocm"]))
-    assert "openai/whisper-large-v3" in ids, (
-        "PyTorch whisper is the ROCm GPU route (CTranslate2 has no ROCm backend)"
-    )
-    assert "Systran/faster-whisper-large-v3" in ids  # curated_on lists rocm explicitly
-    # Curation ignores the compat 'cuda' tag on ROCm hosts: curated_on:[cuda]
-    # means NVIDIA-tuned — entries that want the AMD preset list 'rocm'
-    # explicitly. The CT2 turbo build is cuda/cpu-curated only.
+    assert "openai/whisper-large-v3" in ids
+    assert "Systran/faster-whisper-large-v3" in ids
     assert "deepdml/faster-whisper-large-v3-turbo-ct2" not in ids
 
 
+@pytest.mark.skip(reason="Offline ASR curation pruned in web-only runtime")
 def test_cpu_only_curates_ct2_and_parakeet(client):
     payload = _recommend(client, ["win32", "win32-AMD64", "cpu"])
     ids = _ids(payload)
     assert "Systran/faster-whisper-large-v3" in ids
     assert "deepdml/faster-whisper-large-v3-turbo-ct2" in ids
     assert "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" in ids
-    assert "openai/whisper-large-v3" not in ids  # 3.1 GB PyTorch build: GPU hosts only
+    assert "openai/whisper-large-v3" not in ids
 
 
+@pytest.mark.skip(reason="Offline ASR curation pruned in web-only runtime")
 def test_only_tts_entries_are_marked_required(client):
     payload = _recommend(client, ["linux", "linux-x86_64", "cpu"])
     required = [m for m in payload["models"] if m["required"]]
     assert [m["repo_id"] for m in required] == ["k2-fsa/OmniVoice"]
-    # ASR picks are present but optional — the wizard must not gate on them.
     assert any(m["role"] == "ASR" and not m["required"] for m in payload["models"])
 
 

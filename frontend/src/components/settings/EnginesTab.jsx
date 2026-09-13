@@ -5,11 +5,10 @@ import { addBreadcrumb } from '../../utils/breadcrumbs';
 import { useEngines, useSelectEngine } from '../../api/hooks';
 import { notifyEngineSelected } from '../../utils/engineSelectToast';
 import EngineCompatibilityMatrix from '../EngineCompatibilityMatrix';
-import AsrOpenAICompatPanel from './AsrOpenAICompatPanel';
 import AsrDeepgramPanel from './AsrDeepgramPanel';
 import { SETTINGS_SECTION_SURFACE } from './primitives';
 
-/** Model Catalogue → Engines: ONE section, one matrix, a TTS / ASR / LLM tab strip.
+/** Provider settings: a compact TTS / ASR / LLM selector.
  *
  *  The page used to stack three pinned per-family matrices; with every row
  *  free to grow (wrapping names, stacked badges, inline failure prose) a
@@ -22,11 +21,7 @@ import { SETTINGS_SECTION_SURFACE } from './primitives';
  *  `/model/loaded` probe. Switching tabs only re-slices that shared payload;
  *  selection and installs invalidate it for every consumer.
  *
- *  The ASR tab additionally mounts the OpenAI-compatible remote ASR config
- *  panel below the matrix — configure server URL / model / key, test the
- *  connection, then activate with the engine's own "Use" button. Saving in
- *  the panel bumps `configVersion`, which refetches the matrix so the
- *  engine's row flips unavailable → available without a manual Refresh. */
+ *  The ASR tab additionally mounts the Deepgram configuration panel. */
 export default function EnginesTab({ initialFamily = 'tts', onFamilyChange }) {
   const { t } = useTranslation();
   const [family, setFamily] = useState(initialFamily);
@@ -43,12 +38,10 @@ export default function EnginesTab({ initialFamily = 'tts', onFamilyChange }) {
   //
   // Review mode (the staged-checkpoint nudges) moved to Settings → General.
   const onSelect = useCallback(
-    // modelId is only ever set by mlx-audio's curated-model picker (#981) —
-    // every other call site (the "Use" button) omits it.
-    async (family, backendId, modelId) => {
+    async (family, backendId) => {
       try {
         addBreadcrumb(`engine:${family}=${backendId}`);
-        const r = await selectMutation.mutateAsync({ family, backendId, modelId });
+        const r = await selectMutation.mutateAsync({ family, backendId });
         // Consume the routing echo: warn (not a bare success) when the pick
         // lands on a CPU fallback on this host. See notifyEngineSelected.
         notifyEngineSelected(r, t, family);
@@ -79,7 +72,6 @@ export default function EnginesTab({ initialFamily = 'tts', onFamilyChange }) {
       </section>
       {family === 'asr' && (
         <>
-          <AsrOpenAICompatPanel onSaved={onAsrConfigSaved} />
           <AsrDeepgramPanel onSaved={onAsrConfigSaved} />
         </>
       )}

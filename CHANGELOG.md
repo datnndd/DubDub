@@ -3,27 +3,33 @@
 All notable changes to VoiceStudio.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
-`frontend/package.json` is the app-version source of truth; Cargo, Python, and
-the frozen-backend fallback mirror it for their toolchains.
+`frontend/package.json` is the app-version source of truth.
 
 ## [Unreleased]
 
-### Removed
+**Highlights**
 
-- **The Tauri desktop shell.** VoiceStudio is now web-first: `bun run dev` (or the kept `bun run desktop` alias) starts the backend on `:3900` and the web UI on `:3901`. `frontend/src-tauri/`, the desktop dev/prod scripts and the desktop release pipeline are gone; dormant Tauri-guarded frontend branches remain in place and never execute in the browser.
+- The app is now web-only — removed the Tauri desktop shell and consolidated runtime to seven core providers. (#1600)
+- **Hardsub OCR v2:** draw the OCR region on video preview and snap cue timing to ±0.1s. (#1590)
+- **VieNeu-TTS:** opt-in Vietnamese TTS engine with instant voice cloning from reference audio. (#1585)
 
 ### Added
 
-- **Hardsub OCR v2 — region + timing:** draw the OCR region on a video preview before scanning, two-pass boundary refinement (aHash at 10 fps, no extra OCR) snaps cue timing to ±0.1 s, and every scan saves a downloadable `hardsub.srt` in the job folder (`GET /dub/hardsub-srt/{job_id}`). Auto-suggests the subtitle band from edge density when no region is drawn.
-
-- **Extract subtitles already in the video** for dubbing: soft-sub streams are detected and extracted directly, burned-in (hardsub) subtitles are OCR'd frame-by-frame (RapidOCR, the ONNX build of PaddleOCR's PP-OCR models) and folded into the transcript — one button in the Dub workspace, progress in the task stream.
-- A new opt-in TTS engine for Vietnamese: **VieNeu-TTS** (a Vietnamese fine-tune of NeuTTS Air) with instant voice cloning from a short reference clip ? 48 kHz, runs on CPU (ONNX Runtime) or GPU, Windows included. All existing voice-management features (profiles, lock, gallery, personas, history, dub cloning) work with it out of the box. License care: Apache-2.0 variants only. Seeded generation now reaches subprocess-isolated engines too.
-- The Dub workspace can show its work before 
-- **Engine-aware TTS preload at boot.** `preload_tts` (auto/always/never, env `OMNIVOICE_PRELOAD_TTS`): `auto` only warms OmniVoice when it is the active engine and RAM has headroom ? the Deepgram/RapidOCR/LLM/VieNeu flow no longer holds ~3 GB of VRAM from boot for a model that gets evicted at the first non-OmniVoice generate.translating: preview the LLM translation brief (theme + terminology) for the target language, edit it, and only then start the translation — the reviewed brief replaces the hidden auto-extraction (`POST /dub/translate-context`, `translation_context` on `/dub/translate`).
+- **Hardsub OCR v2 — region + timing:** draw the OCR region on video preview, two-pass boundary refinement snaps timing to ±0.1s, and saves downloadable `hardsub.srt`. (#1590)
+- **Extract subtitles in video:** soft-sub streams detected and hardsub OCR (RapidOCR/PaddleOCR) folded into transcript. (#1588)
+- **VieNeu-TTS engine:** opt-in Vietnamese TTS engine (NeuTTS Air fine-tune) with voice cloning, running on CPU/GPU. (#1585)
+- **Translation brief in Dub:** preview and edit LLM translation brief (theme + terminology) before starting translation. (#1582)
+- **Engine-aware TTS preload at boot:** `preload_tts` warms OmniVoice only when active and memory is available. (#1580)
 
 ### Changed
 
-- `/dub/translate` responses now carry `context_source` — `user`, `auto`, or `none` — so it's always clear which brief the translator used.
+- **Consolidated to web-only 7-provider runtime:** Active providers bounded to OmniVoice, VieNeuTTS, Deepgram, Google Translate, OpenAI-compatible LLM, RapidOCR and PaddleOCR.
+- `/dub/translate` responses now carry `context_source` (`user`, `auto`, or `none`) indicating which brief the translator used.
+
+### Removed
+
+- **Tauri desktop shell and installers:** VoiceStudio is web-only; starts via `bun run dev` or Docker.
+- Non-allowlisted provider backends and dependencies pruned across backend and frontend.
 
 ## [0.5.0] — 2026-08-13
 

@@ -21,9 +21,7 @@ import { detectDeploymentMode } from '../utils/deploymentMode';
 const CASCADE_MS = 400 + 900 + 1600;
 
 describe('detectDeploymentMode', () => {
-  it('classifies the three runtime contexts', () => {
-    expect(detectDeploymentMode({}, { __TAURI__: {} })).toBe('desktop');
-    expect(detectDeploymentMode({ DEV: true }, { __TAURI_INTERNALS__: {} })).toBe('desktop');
+  it('classifies the runtime contexts', () => {
     expect(detectDeploymentMode({ DEV: true }, {})).toBe('dev');
     expect(detectDeploymentMode({}, {})).toBe('server');
     expect(detectDeploymentMode(undefined, undefined)).toBe('server');

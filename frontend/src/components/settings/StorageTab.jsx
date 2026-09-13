@@ -14,30 +14,15 @@
  * NOTE: the models *cache* directory lives in the Models category (StoragePanel).
  */
 import React from 'react';
-import { FolderOpen, HardDrive, Database, FolderOutput, FileText } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { HardDrive, Database, FolderOutput, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSystemInfo } from '../../api/hooks';
-import { exportReveal } from '../../api/exports';
-import { Button } from '../../ui';
 import { SettingsSection } from './primitives';
 import HistoryRetentionPanel from './HistoryRetentionPanel';
-import ResetPanel from './ResetPanel';
-import UninstallPanel from './UninstallPanel';
 
 export default function StorageTab() {
   const { t } = useTranslation();
   const { data: info } = useSystemInfo();
-
-  const openFolder = async (path) => {
-    try {
-      await exportReveal({ path });
-    } catch (e) {
-      toast.error(
-        e?.message || t('settings.open_folder_failed', { defaultValue: 'Could not open folder' }),
-      );
-    }
-  };
 
   const pathCard = (label, path, testId, Icon) => (
     <div className="flex min-w-0 flex-col gap-[var(--space-3)] rounded-[var(--chrome-radius-pill)] bg-[var(--chrome-bg)] p-[var(--space-4)]">
@@ -52,19 +37,6 @@ export default function StorageTab() {
       <code className="min-h-[2.8em] break-words text-[length:var(--text-xs)] leading-[1.4] text-[var(--chrome-fg-dim)]">
         {path || '—'}
       </code>
-      {path && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          leading={<FolderOpen size={12} />}
-          onClick={() => openFolder(path)}
-          title={path}
-          data-testid={testId}
-        >
-          {t('settings.storage_open_folder', { defaultValue: 'Open folder' })}
-        </Button>
-      )}
     </div>
   );
 
@@ -101,11 +73,6 @@ export default function StorageTab() {
 
       <HistoryRetentionPanel />
 
-      {/* Scoped reset: preferences → settings → assets → everything. */}
-      <ResetPanel />
-
-      {/* The door out (#1089): everything, including the Python env, then quit. */}
-      <UninstallPanel />
     </>
   );
 }

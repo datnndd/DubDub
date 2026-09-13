@@ -8,13 +8,9 @@ from packaging.version import Version
 
 
 PYTHON_FLOORS = {
-    "aiohttp": "3.14.3",
     "cryptography": "50.0.0",
-    "gradio": "6.15.1",
     "mako": "1.3.12",
     "mcp": "1.28.1",
-    "msgpack": "1.2.1",
-    "nltk": "3.10.0",
     "pillow": "12.3.0",
     "pydantic-settings": "2.14.2",
     "pygments": "2.20.0",
@@ -24,7 +20,6 @@ PYTHON_FLOORS = {
     "transformers": "5.5.0",
     "yt-dlp": "2026.7.4",
 }
-CARGO_FLOORS = {"quinn-proto": "0.11.15"}
 
 
 def _resolved_versions(packages, names):
@@ -49,15 +44,6 @@ def test_python_security_floors_are_locked():
     resolved = _resolved_versions(lock["package"], PYTHON_FLOORS)
     assert resolved.keys() == PYTHON_FLOORS.keys()
     assert _versions_below_floors(resolved, PYTHON_FLOORS) == {}
-
-
-def test_quinn_security_floor_is_locked():
-    lock = tomllib.loads(
-        Path("frontend/src-tauri/Cargo.lock").read_text(encoding="utf-8")
-    )
-    resolved = _resolved_versions(lock["package"], CARGO_FLOORS)
-    assert resolved.keys() == CARGO_FLOORS.keys()
-    assert _versions_below_floors(resolved, CARGO_FLOORS) == {}
 
 
 def test_duplicate_lock_entries_cannot_hide_a_vulnerable_version():

@@ -48,6 +48,17 @@ def _install_fake_argos(monkeypatch):
     monkeypatch.setitem(sys.modules, "argostranslate.package", pkg)
     monkeypatch.setitem(sys.modules, "argostranslate.translate", tr)
 
+    class _FakeGoogleTranslator:
+        def __init__(self, source="auto", target="es", proxies=None):
+            self.target = target
+
+        def translate(self, text):
+            return f"[{self.target}]{text}"
+
+    dt = types.ModuleType("deep_translator")
+    dt.GoogleTranslator = _FakeGoogleTranslator
+    monkeypatch.setitem(sys.modules, "deep_translator", dt)
+
 
 # Three slots sized so the fake-argos output ("[es]" + text, es ≈ 15.5 cps)
 # lands squarely in each verdict bucket:

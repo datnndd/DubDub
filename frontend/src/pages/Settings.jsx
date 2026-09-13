@@ -1,23 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { copyText } from '../utils/copyText';
-import { normalizeChannel } from '../utils/updateChannel';
-import { ArrowDownToLine } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { API, apiFetch } from '../api/client';
 import { useTranslation } from 'react-i18next';
-import { systemLogs, systemLogsTauri, clearSystemLogs, clearTauriLogs } from '../api/system';
+import { systemLogs, clearSystemLogs } from '../api/system';
 import { useSysinfo, useModelStatus, useSystemInfo } from '../api/hooks';
 import { getFrontendLogs, clearFrontendLogs } from '../utils/consoleBuffer';
 import { resolveAboutVersion } from '../utils/appVersion';
-import { SettingsSection } from '../components/settings/primitives';
 import { useAppStore } from '../store';
 // Panels — re-hosted as-is; the redesign reorganizes them, not their logic.
 import PerformanceDeviceTab from '../components/settings/PerformanceDeviceTab';
-import RefinementPanel from '../components/settings/RefinementPanel';
-import AecPanel from '../components/settings/AecPanel';
-import VoicePanel from '../components/settings/VoicePanel';
 import AppearancePanel from '../components/settings/AppearancePanel';
-import StoragePanel from '../components/settings/StoragePanel';
 import StorageTab from '../components/settings/StorageTab';
 import UsageTab from '../components/settings/UsageTab';
 import StorageUsagePanel from '../components/settings/StorageUsagePanel';
@@ -28,18 +21,13 @@ import WorkersPanel from '../components/settings/WorkersPanel';
 import MCPBindingsPanel from '../components/settings/MCPBindingsPanel';
 import OpenApiPanel from '../components/settings/OpenApiPanel';
 import PronunciationPanel from '../components/settings/PronunciationPanel';
-import PermissionsPanel from '../components/settings/PermissionsPanel';
-import DictationDemo from '../components/DictationDemo';
-import UpdatesPanel from '../components/UpdatesPanel';
 import GeneralTab from '../components/settings/GeneralTab';
 // Engine selection + the model store moved to the Model Catalogue workspace
 // (pages/ModelCatalogue.jsx); these categories now signpost it.
 import CataloguePointer from '../components/settings/CataloguePointer';
-import HotkeyTab from '../components/settings/HotkeyTab';
 import TranslationTab from '../components/settings/TranslationTab';
 import NetworkTab from '../components/settings/NetworkTab';
 import AudioToolsPanel from '../components/settings/AudioToolsPanel';
-import ApiKeysPanel from '../components/settings/ApiKeysPanel';
 import LLMProvidersPanel from '../components/settings/LLMProvidersPanel';
 import LLMSkillsPanel from '../components/settings/LLMSkillsPanel';
 import AboutTab from '../components/settings/AboutTab';
@@ -53,7 +41,7 @@ import {
   matchCategories,
   resolveCategoryId,
 } from '../components/settings/settingsCategories';
-import { isTauri, askConfirm } from '../components/settings/native';
+import { askConfirm } from '../components/settings/native';
 
 // Persist the last-opened category so re-opening Settings lands where you left.
 const LS_CATEGORY = 'omnivoice.settings.category';
@@ -153,24 +141,7 @@ export default function Settings() {
   const { data: hw } = useSysinfo();
   const { data: status } = useModelStatus();
   const { data: info } = useSystemInfo();
-  const updateChannel = useAppStore((s) => s.updateChannel);
-
-  const [appVersion, setAppVersion] = useState(null);
-  const [tauriVersion, setTauriVersion] = useState(null);
-  const [updateState, setUpdateState] = useState('idle');
-
-  useEffect(() => {
-    if (!isTauri()) return;
-    (async () => {
-      try {
-        const app = await import('@tauri-apps/api/app');
-        setAppVersion(await app.getVersion());
-        if (app.getTauriVersion) setTauriVersion(await app.getTauriVersion());
-      } catch {
-        /* web preview */
-      }
-    })();
-  }, []);
+  const appVersion = null;
 
   // ── Diagnostics (About) ────────────────────────────────────────────────────
   const [selfCheck, setSelfCheck] = useState(null);
@@ -194,12 +165,6 @@ export default function Settings() {
       const r = await apiFetch(`${API}/system/diagnostic-bundle`, { method: 'POST' });
       const j = await r.json();
       toast.success(t('about.bundle_saved', { filename: j.filename }));
-      try {
-        const { exportReveal } = await import('../api/exports');
-        await exportReveal({ path: j.path });
-      } catch {
-        /* reveal is best-effort — the toast already names the file */
-      }
     } catch (e) {
       toast.error(t('about.bundle_failed', { message: e?.message || e }));
     } finally {
@@ -223,7 +188,6 @@ export default function Settings() {
       '### VoiceStudio diagnostics',
       '',
       `- **App version:** ${resolveAboutVersion(appVersion, info)}`,
-      `- **Tauri runtime:** ${tauriVersion || (isTauri() ? '—' : 'web preview')}`,
       `- **Platform:** ${info?.platform || '—'}`,
       `- **Architecture:** ${nav.userAgentData?.platform || nav.platform || '—'}`,
       `- **Locale / timezone:** ${lang} / ${tz}`,
@@ -236,16 +200,9 @@ export default function Settings() {
       `- **Active model:** ${status?.repo_id || info?.model_checkpoint || '—'}`,
       `- **ASR model:** ${info?.asr_model || '—'}`,
       `- **Translator:** ${info?.translate_provider || '—'}`,
-      `- **HF token set:** ${info?.has_hf_token ? 'yes' : 'no'}`,
       `- **Data directory:** ${info?.data_dir || '—'}`,
       `- **Outputs directory:** ${info?.outputs_dir || '—'}`,
       `- **Crash log:** ${info?.crash_log_path || '—'}`,
-      `- **Update channel:** ${updateChannel}`,
-      `- **Update endpoint:** ${
-        updateChannel === 'preview'
-          ? 'https://github.com/debpalash/VoiceStudio/releases/download/preview/latest.json'
-          : 'https://github.com/debpalash/VoiceStudio/releases/latest/download/latest.json'
-      }`,
       `- **User agent:** ${ua}`,
     ];
     try {
@@ -254,48 +211,7 @@ export default function Settings() {
     } catch (e) {
       toast.error(t('settings.copy_failed', { message: e?.message || e }));
     }
-  }, [appVersion, tauriVersion, info, status, hw, updateChannel, t]);
-
-  const checkForUpdates = useCallback(async () => {
-    if (!isTauri()) {
-      toast(t('settings.updater_desktop'), { icon: 'ℹ️' });
-      return;
-    }
-    setUpdateState('checking');
-    try {
-      const [{ invoke }, { relaunch }, { ask }] = await Promise.all([
-        import('@tauri-apps/api/core'),
-        import('@tauri-apps/plugin-process'),
-        import('@tauri-apps/plugin-dialog'),
-      ]);
-      const channel = normalizeChannel(updateChannel);
-      const update = await invoke('check_update', { channel });
-      if (!update) {
-        setUpdateState('uptodate');
-        toast.success(t('settings.latest_version'));
-        return;
-      }
-      const proceed = await ask(
-        t('settings.updater_available_body', {
-          version: update.version,
-          notes: update.notes || t('settings.updater_notes_fallback'),
-        }),
-        { title: t('settings.updater_available_title'), kind: 'info' },
-      );
-      if (!proceed) {
-        setUpdateState('idle');
-        return;
-      }
-      setUpdateState('downloading');
-      const tid = toast.loading(t('settings.updater_downloading', { version: update.version }));
-      await invoke('install_update', { channel });
-      toast.success(t('settings.updater_installed'), { id: tid });
-      await relaunch();
-    } catch (e) {
-      setUpdateState('error');
-      toast.error(t('settings.update_check_failed', { message: e?.message || e }));
-    }
-  }, [updateChannel, t]);
+  }, [appVersion, info, status, hw, t]);
 
   // ── Logs ────────────────────────────────────────────────────────────────────
   const [logSource, setLogSource] = useState('backend');
@@ -310,10 +226,6 @@ export default function Settings() {
         const r = await systemLogs(400);
         setLogs(r.lines || []);
         setLogMeta({ path: r.path || '', exists: !!r.exists });
-      } else if (logSource === 'tauri') {
-        const r = await systemLogsTauri(400);
-        setLogs(r.lines || []);
-        setLogMeta({ path: r.path || '—', exists: !!r.exists, candidates: r.candidates });
       } else {
         const entries = getFrontendLogs();
         const lines = entries.map((e) => {
@@ -351,22 +263,6 @@ export default function Settings() {
       setLogs([]);
       return;
     }
-    if (logSource === 'tauri') {
-      if (!(await askConfirm(t('settings.clear_tauri_confirm'), t('settings.clear_tauri_title'))))
-        return;
-      try {
-        const r = await clearTauriLogs();
-        if (!r?.cleared?.length) {
-          toast(t('settings.nothing_to_clear'), { icon: 'ℹ️' });
-        } else {
-          toast.success(t('settings.cleared_tauri', { count: r.cleared.length }));
-          setLogs([]);
-        }
-      } catch (e) {
-        toast.error(t('settings.clear_tauri_failed', { message: e.message }));
-      }
-      return;
-    }
     if (!(await askConfirm(t('settings.clear_backend_confirm'), t('settings.clear_backend_title'))))
       return;
     try {
@@ -396,21 +292,12 @@ export default function Settings() {
         // them is the Model Catalogue's Models pane.
         return (
           <>
-            <StoragePanel />
             <HFMirrorPanel />
             <CataloguePointer area="models" />
           </>
         );
       case 'dictation':
-        return (
-          <>
-            <VoicePanel />
-            <DictationDemo />
-            <HotkeyTab />
-            <RefinementPanel />
-            <AecPanel />
-          </>
-        );
+        return null;
       case 'pronunciation':
         return <PronunciationPanel />;
       case 'translation':
@@ -430,8 +317,6 @@ export default function Settings() {
             <StorageTab />
           </>
         );
-      case 'permissions':
-        return <PermissionsPanel />;
       case 'network':
         return <NetworkTab />;
       case 'audio-tools':
@@ -448,18 +333,10 @@ export default function Settings() {
         return <WorkersPanel />;
       case 'openapi':
         return <OpenApiPanel />;
-      case 'credentials':
-        return <ApiKeysPanel />;
       case 'llm-providers':
         return <LLMProvidersPanel />;
       case 'llm-skills':
         return <LLMSkillsPanel />;
-      case 'updates':
-        return (
-          <SettingsSection icon={ArrowDownToLine} title={t('settings.updates')}>
-            <UpdatesPanel />
-          </SettingsSection>
-        );
       case 'privacy':
         return <PrivacyTab info={info} />;
       case 'logs':
@@ -478,10 +355,7 @@ export default function Settings() {
         return (
           <AboutTab
             appVersion={appVersion}
-            tauriVersion={tauriVersion}
             info={info}
-            checkForUpdates={checkForUpdates}
-            updateState={updateState}
             selfCheck={selfCheck}
             selfCheckRunning={selfCheckRunning}
             runSelfCheck={runSelfCheck}

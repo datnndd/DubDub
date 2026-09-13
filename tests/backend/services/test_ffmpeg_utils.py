@@ -9,20 +9,32 @@ import os
 import pytest
 
 
+def _make_dummy_bin(tmp_path, name="ffprobe"):
+    if os.name == "nt":
+        f = tmp_path / f"{name}.bat"
+        f.write_text("@echo off\necho 1\n")
+    else:
+        f = tmp_path / name
+        f.write_text("#!/bin/sh\necho 1\n")
+        f.chmod(0o755)
+    return f
+
+
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
-    """Strip both ffprobe env vars before each test so we control the cascade."""
+    """Strip both ffprobe env vars and cached checks before each test."""
     monkeypatch.delenv("OMNIVOICE_FFPROBE_PATH", raising=False)
     monkeypatch.delenv("FFPROBE_PATH", raising=False)
+    from services import ffmpeg_utils
+    monkeypatch.setattr(ffmpeg_utils, "_acquired_bundled", lambda _t: None)
+    ffmpeg_utils._BINARY_OK.clear()
 
 
 def test_resolve_ffprobe_prefers_omnivoice_env_var(monkeypatch, tmp_path):
     """OMNIVOICE_FFPROBE_PATH set to a real file → that path wins."""
     from services import ffmpeg_utils
 
-    fake = tmp_path / "ffprobe"
-    fake.write_text("#!/bin/sh\necho 1\n")
-    fake.chmod(0o755)
+    fake = _make_dummy_bin(tmp_path, "ffprobe")
     monkeypatch.setenv("OMNIVOICE_FFPROBE_PATH", str(fake))
 
     assert ffmpeg_utils.resolve_ffprobe() == str(fake)
@@ -32,9 +44,7 @@ def test_resolve_ffprobe_falls_back_to_legacy_FFPROBE_PATH(monkeypatch, tmp_path
     """OMNIVOICE_FFPROBE_PATH absent but legacy FFPROBE_PATH set → legacy used."""
     from services import ffmpeg_utils
 
-    fake = tmp_path / "ffprobe-legacy"
-    fake.write_text("#!/bin/sh\necho 1\n")
-    fake.chmod(0o755)
+    fake = _make_dummy_bin(tmp_path, "ffprobe-legacy")
     monkeypatch.setenv("FFPROBE_PATH", str(fake))
 
     assert ffmpeg_utils.resolve_ffprobe() == str(fake)
@@ -46,11 +56,8 @@ def test_resolve_ffprobe_omnivoice_path_takes_precedence_over_legacy(
     """Both env vars set → OMNIVOICE_FFPROBE_PATH wins."""
     from services import ffmpeg_utils
 
-    canonical = tmp_path / "ffprobe-canonical"
-    legacy = tmp_path / "ffprobe-legacy"
-    for f in (canonical, legacy):
-        f.write_text("#!/bin/sh\necho 1\n")
-        f.chmod(0o755)
+    canonical = _make_dummy_bin(tmp_path, "ffprobe-canonical")
+    legacy = _make_dummy_bin(tmp_path, "ffprobe-legacy")
 
     monkeypatch.setenv("OMNIVOICE_FFPROBE_PATH", str(canonical))
     monkeypatch.setenv("FFPROBE_PATH", str(legacy))
@@ -86,16 +93,13 @@ def test_resolve_ffprobe_rejects_non_runnable_candidate(monkeypatch, tmp_path):
     broken = tmp_path / "ffprobe-broken"
     broken.write_bytes(b"\x00\x01not-a-binary")
     broken.chmod(0o755)
-    good = tmp_path / "ffprobe-good"
-    good.write_text("#!/bin/sh\necho 1\n")
-    good.chmod(0o755)
+    good = _make_dummy_bin(tmp_path, "ffprobe-good")
 
     monkeypatch.setenv("OMNIVOICE_FFPROBE_PATH", str(broken))
     monkeypatch.setattr(
         ffmpeg_utils, "shutil",
         _ShutilStub(lambda name: str(good) if name == "ffprobe" else None),
     )
-    ffmpeg_utils._BINARY_OK.clear()
 
     assert ffmpeg_utils.resolve_ffprobe() == str(good)
 
@@ -116,9 +120,7 @@ def test_resolve_ffprobe_env_var_with_command_name_resolves_via_which(
     work."""
     from services import ffmpeg_utils
 
-    fake = tmp_path / "ffprobe"
-    fake.write_text("#!/bin/sh\necho 1\n")
-    fake.chmod(0o755)
+    fake = _make_dummy_bin(tmp_path, "ffprobe")
 
     def _fake_which(name):
         if name == "ffprobe":

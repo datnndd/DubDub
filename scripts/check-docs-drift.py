@@ -36,7 +36,10 @@ import yaml
 # ``}`` or ``})`` (the registries are flat string-keyed dict literals).
 _TTS_MARKERS = ("_LAZY_REGISTRY: dict[str, tuple[str, str]] = {",
                 "_REGISTRY: dict[str, type[TTSBackend]] = _LazyRegistry({")
-_ASR_MARKERS = ("_REGISTRY: dict[str, type[ASRBackend]] = _LazyASRRegistry({",)
+_ASR_MARKERS = (
+    "_REGISTRY: dict[str, type[ASRBackend]] = _LazyASRRegistry({",
+    "_REGISTRY: dict[str, type[ASRBackend]] = {",
+)
 
 _KEY_RE = re.compile(r'^\s*"([^"]+)"\s*:')
 
@@ -45,14 +48,13 @@ def _registry_ids(source: str, markers: tuple[str, ...], *, path: str) -> set[st
     """Parse string keys out of the dict literal(s) following each marker."""
     ids: set[str] = set()
     lines = source.splitlines()
+    found_any = False
     for marker in markers:
         try:
             start = next(i for i, ln in enumerate(lines) if ln.strip() == marker.strip())
+            found_any = True
         except StopIteration:
-            raise SystemExit(
-                f"check-docs-drift: marker not found in {path}: {marker!r} — "
-                "the registry layout changed; update _TTS_MARKERS/_ASR_MARKERS."
-            )
+            continue
         for ln in lines[start + 1:]:
             stripped = ln.strip()
             if stripped in ("}", "})"):
@@ -62,6 +64,11 @@ def _registry_ids(source: str, markers: tuple[str, ...], *, path: str) -> set[st
             m = _KEY_RE.match(ln)
             if m:
                 ids.add(m.group(1))
+    if not found_any:
+        raise SystemExit(
+            f"check-docs-drift: marker not found in {path}: {markers!r} — "
+            "the registry layout changed; update _TTS_MARKERS/_ASR_MARKERS."
+        )
     return ids
 
 

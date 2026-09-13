@@ -190,7 +190,7 @@ def test_transformers_import_hint_names_the_package_that_actually_breaks():
     exist to prevent.
     """
     hint = failure._HINTS["TRANSFORMERS_IMPORT"]
-    assert "torchvision" in hint
+    assert "torchaudio" in hint
 
 
 def test_transformers_import_hint_versions_match_the_constraint_file():
@@ -213,18 +213,16 @@ def test_transformers_import_hint_versions_match_the_constraint_file():
     surfaces = {
         "core/failure.py hint": failure._HINTS["TRANSFORMERS_IMPORT"],
     }
-    with open(os.path.join(root, "backend", "services", "asr_backend.py")) as fh:
-        surfaces["asr_backend.py error"] = fh.read()
     with open(os.path.join(root, "docs", "install", "troubleshooting.md")) as fh:
         surfaces["troubleshooting.md"] = fh.read()
 
     # The COMMAND, not isolated substrings (CodeRabbit): a surface could carry
     # the right pin in a comment while its actual reinstall line says something
-    # else. Normalizing collapses the asr_backend source's string-literal line
-    # breaks so the assertion sees what the user sees.
+    # else. Normalizing collapses the string-literal line breaks so the
+    # assertion sees what the user sees.
     command = (
         f"uv pip install --python .venv --reinstall torch=={pins['torch']} "
-        f"torchaudio=={pins['torchaudio']} torchvision=={pins['torchvision']} "
+        f"torchaudio=={pins['torchaudio']} "
         f"transformers"
     )
 

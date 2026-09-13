@@ -45,7 +45,10 @@ _CORRUPTED_TOKEN = re.compile(r"_V_\d+__|__\w+_\d+__")
 # arrow in all 21 files, which is the bug this test exists to catch rather than
 # an exception to it (CodeRabbit, #1280). Add an entry only for a string no
 # translator could influence, with the reason inline.
-_PLACEHOLDER_ONLY_ALLOWLIST: set[str] = set()
+_PLACEHOLDER_ONLY_ALLOWLIST: set[str] = {
+    # engines.languagesMany: "{{first}} +{{count}}" — primary language + extras badge
+    "engines.languagesMany",
+}
 
 # Keys whose translations may deliberately omit en's placeholders.
 _PLACEHOLDER_ALLOWLIST = {
@@ -99,10 +102,10 @@ _ENGINE_AGNOSTIC_KEYS = (
 # Never raise one: if this fails after adding en.json keys, add the keys to
 # every locale (translated) in the same change instead.
 _MISSING_BASELINE = {
-    "ar": 495, "de": 495, "es": 495, "fr": 495, "hi": 495, "id": 495,
-    "it": 495, "ja": 495, "ko": 495, "nl": 495, "pl": 495, "pt": 495,
-    "ru": 495, "sv": 495, "th": 495, "tr": 495, "uk": 495, "vi": 495,
-    "zh-CN": 488, "zh-TW": 495,
+    "ar": 483, "de": 483, "es": 483, "fr": 483, "hi": 483, "id": 483,
+    "it": 483, "ja": 483, "ko": 483, "nl": 483, "pl": 483, "pt": 483,
+    "ru": 483, "sv": 483, "th": 483, "tr": 483, "uk": 483, "vi": 483,
+    "zh-CN": 476, "zh-TW": 483,
 }
 
 

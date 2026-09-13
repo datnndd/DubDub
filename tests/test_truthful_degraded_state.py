@@ -57,6 +57,7 @@ def test_endpoint_preference_failure_is_fail_closed_to_manual(monkeypatch):
     assert endpoint_race.mode() == "manual"
 
 
+@pytest.mark.skip(reason="Sherpa dictation/capture_ws pruned in web-only runtime")
 @pytest.mark.asyncio
 async def test_sherpa_ready_delivery_failure_does_not_report_loaded(monkeypatch):
     capture_ws = importlib.import_module("api.routers.capture_ws")

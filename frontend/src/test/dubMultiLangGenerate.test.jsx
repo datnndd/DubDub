@@ -30,8 +30,6 @@ vi.mock('../hooks/useTimelineOnsets', () => ({ default: () => ({ onsets: [] }) }
 vi.mock('../api/dub', () => ({ dubQc: vi.fn() }));
 // Never-resolving async deps keep the render synchronous (no post-test act noise).
 vi.mock('../api/engines', () => ({
-  listTranslationEngines: vi.fn(() => new Promise(() => {})),
-  installTranslationEngine: vi.fn(),
 }));
 vi.mock('../api/client', async (importOriginal) => {
   const mod = await importOriginal();

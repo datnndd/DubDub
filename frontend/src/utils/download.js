@@ -1,10 +1,6 @@
 // Shared browser-download helpers.
 //
-// Used by every "save this file" path that runs outside the Tauri desktop
-// shell (browser dev mode + the Docker web-server build). In Tauri we use the
-// native save dialog instead; calling that dialog when no Tauri runtime is
-// present throws "Cannot read properties of undefined (reading 'invoke')"
-// (issue #256), so callers must guard on isTauri and route here otherwise.
+// Used by every save path in the browser and Docker web runtime.
 import { apiFetch } from '../api/client';
 
 /**

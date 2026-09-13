@@ -9,17 +9,8 @@ handshake timeout.
 
 The bug this module exists to fix is what the probe did with *slowness*.
 
-``import indextts.infer_v2`` (and every peer) pulls in torch and transformers:
-seconds when the OS page cache is warm, but tens of seconds on a cold first
-run, a spinning disk, a network share, or Windows with real-time AV scanning
-every DLL it touches. The per-engine bounds were 10 s (IndexTTS) and 15 s (the
-rest), and a bound that elapsed was treated as a **negative**: the candidate
-was dropped exactly as if importing had raised. So on the machines where the
-import is slowest, a perfectly good ``OMNIVOICE_INDEXTTS_DIR`` install was
-silently discarded and the user got "IndexTTS-2 is not installed" or a 500 on
-the first generation after launch — reported with a precise root cause in
-#1414. A negative result is also not memoised, so every retry paid the whole
-probe again and failed the same way.
+Importing an optional sidecar module can take longer on a cold host. The probe treats a timeout as unproven rather than declaring a configured provider unavailable.
+
 
 A timeout is not evidence of breakage. It is the absence of evidence, so this
 returns three answers rather than two:
@@ -62,8 +53,7 @@ _GLOBAL_ENV = "OMNIVOICE_ENGINE_IMPORT_PROBE_TIMEOUT_S"
 def probe_timeout_s(engine: str) -> float:
     """Resolve the probe bound: per-engine env → global env → default.
 
-    ``engine`` is the short slug used in the env var, e.g. ``"indextts"`` →
-    ``OMNIVOICE_INDEXTTS_IMPORT_PROBE_TIMEOUT_S``. A malformed, non-positive
+    ``engine`` is the short slug used in the env var. A malformed, non-positive
     or non-finite value is ignored rather than honoured: disabling the bound
     would let one wedged candidate hang engine resolution forever, and
     ``inf`` in particular parses cleanly but makes ``subprocess.run`` raise

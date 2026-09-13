@@ -10,11 +10,6 @@ def test_translate_codes_cover_popular_iso():
         assert code in TRANSLATE_CODES, f"{code} missing from TRANSLATE_CODES"
 
 
-def test_flores_codes_cover_core_languages():
-    from api.routers.dub_translate import FLORES_CODES
-    for code in ('en', 'de', 'es', 'fr', 'hi', 'ja'):
-        assert code in FLORES_CODES
-
 
 def test_resolve_source_lang_priority(monkeypatch):
     from api.routers import dub_translate
@@ -229,43 +224,33 @@ async def test_empty_translation_preserves_original(monkeypatch):
 
 
 # ── P0: Cinematic/Autofit must run on the non-deep_translator engines ────────
-# Before this fix the argos/nllb/openai branches returned BEFORE
-# _maybe_cinematic, so picking Cinematic/Autofit on the DEFAULT Argos engine
+# Before this fix the google/openai branches returned BEFORE
+# _maybe_cinematic, so picking Cinematic/Autofit on the Google engine
 # silently produced plain Fast output (no quality_used/refine/rate badges).
 
 
-def _install_fake_argos(monkeypatch):
-    """Register a fake `argostranslate` package that translates en→es to
-    `[es]<text>` with a pre-installed package, so the argos branch runs offline."""
-    import sys
-    import types
+def _install_fake_google(monkeypatch):
+    """Register a fake translator that translates to `[to]<text>`, matching the
+    sanitized direct translator under the 7-provider boundary."""
+    class FakeTranslator:
+        def __init__(self, source="auto", target="es", **kwargs):
+            self.target = target
+        def translate(self, text):
+            return f"[{self.target}]{text}"
 
-    class _Pkg:
-        from_code = "en"
-        to_code = "es"
+    class FakeModule:
+        GoogleTranslator = FakeTranslator
 
-    pkg = types.ModuleType("argostranslate.package")
-    pkg.get_installed_packages = lambda: [_Pkg()]
-    pkg.update_package_index = lambda: None
-    pkg.get_available_packages = lambda: []
-    pkg.install_from_path = lambda p: None
-    tr = types.ModuleType("argostranslate.translate")
-    tr.translate = lambda text, frm, to: f"[{to}]{text}"
-    root = types.ModuleType("argostranslate")
-    root.package = pkg
-    root.translate = tr
-    monkeypatch.setitem(sys.modules, "argostranslate", root)
-    monkeypatch.setitem(sys.modules, "argostranslate.package", pkg)
-    monkeypatch.setitem(sys.modules, "argostranslate.translate", tr)
+    monkeypatch.setitem(__import__('sys').modules, 'deep_translator', FakeModule)
 
 
 @pytest.mark.asyncio
-async def test_argos_cinematic_refines_with_llm(monkeypatch):
+async def test_google_cinematic_refines_with_llm(monkeypatch):
     """DEFAULT engine + Cinematic + a usable LLM → refine actually runs and the
     response carries quality_used=='cinematic' plus the literal/critique fields."""
     from api.routers import dub_translate
     from schemas.requests import TranslateRequest, TranslateSegment
-    _install_fake_argos(monkeypatch)
+    _install_fake_google(monkeypatch)
 
     async def fake_refine_many(pairs, **kw):
         return [
@@ -278,28 +263,28 @@ async def test_argos_cinematic_refines_with_llm(monkeypatch):
 
     req = TranslateRequest(
         segments=[TranslateSegment(id="s1", text="Hello")],
-        target_lang="es", provider="argos", source_lang="en", quality="cinematic",
+        target_lang="es", provider="google", source_lang="en", quality="cinematic",
     )
     resp = await dub_translate.dub_translate(req)
     assert resp["quality_used"] == "cinematic"
     row = resp["translated"][0]
-    assert row["literal"] == "[es]Hello"      # the argos literal is preserved
+    assert row["literal"] == "[es]Hello"      # the Google literal is preserved
     assert row["text"] == "CINE:[es]Hello"    # and it was actually refined
     assert row["critique"] == "crit"
 
 
 @pytest.mark.asyncio
-async def test_argos_cinematic_skipped_without_llm(monkeypatch):
+async def test_google_cinematic_skipped_without_llm(monkeypatch):
     """DEFAULT engine + Cinematic + NO LLM → degrades to Fast with an explicit
     cinematic_skipped flag (not a silent success)."""
     from api.routers import dub_translate
     from schemas.requests import TranslateRequest, TranslateSegment
-    _install_fake_argos(monkeypatch)
+    _install_fake_google(monkeypatch)
     monkeypatch.setattr(dub_translate, "cinematic_available", lambda: False)
 
     req = TranslateRequest(
         segments=[TranslateSegment(id="s1", text="Hello")],
-        target_lang="es", provider="argos", source_lang="en", quality="cinematic",
+        target_lang="es", provider="google", source_lang="en", quality="cinematic",
     )
     resp = await dub_translate.dub_translate(req)
     assert resp["cinematic_skipped"] == "no-llm-configured"
@@ -308,16 +293,16 @@ async def test_argos_cinematic_skipped_without_llm(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_argos_fast_stamps_rate_ratio(monkeypatch):
+async def test_google_fast_stamps_rate_ratio(monkeypatch):
     """Fast on the DEFAULT engine still reaches the rate-ratio stamping so the
     UI's seg-rate-badge has data (it used to return before _maybe_cinematic)."""
     from api.routers import dub_translate
     from schemas.requests import TranslateRequest, TranslateSegment
-    _install_fake_argos(monkeypatch)
+    _install_fake_google(monkeypatch)
 
     req = TranslateRequest(
         segments=[TranslateSegment(id="s1", text="Hello", slot_seconds=2.0)],
-        target_lang="es", provider="argos", source_lang="en", quality="fast",
+        target_lang="es", provider="google", source_lang="en", quality="fast",
     )
     resp = await dub_translate.dub_translate(req)
     assert resp["quality_used"] == "fast"

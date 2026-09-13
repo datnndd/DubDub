@@ -463,7 +463,7 @@ def test_session_can_mint_path_bound_ws_ticket():
 
     response = client.post(
         "/api/auth/ws-ticket",
-        json={"path": "/ws/transcribe"},
+        json={"path": "/ws/tts"},
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -478,7 +478,7 @@ def test_session_can_mint_path_bound_ws_ticket():
 def test_master_key_cannot_mint_ws_ticket():
     response = _client().post(
         "/api/auth/ws-ticket",
-        json={"path": "/ws/transcribe"},
+        json={"path": "/ws/tts"},
         headers=_master_headers(),
     )
 
@@ -521,48 +521,44 @@ def test_cookie_session_requires_csrf_for_ws_ticket():
 
 
 def test_cookie_session_csrf_guard_covers_all_unsafe_routes(monkeypatch):
-    from api.routers import settings
-    from services import token_resolver
+    from services import settings_store
 
     writes: list[str] = []
-    monkeypatch.setattr(token_resolver, "save_app_token", writes.append)
-    monkeypatch.setattr(settings, "_state_response", lambda: {"source": "app"})
+    monkeypatch.setattr(settings_store, "set_secret", lambda name, val: writes.append(val))
     client = _client()
     assert _issue_cookie(client).status_code == 204
 
-    missing = client.post("/api/settings/hf-token", json={"token": "hf_test"})
-    wrong_origin = client.post(
-        "/api/settings/hf-token",
-        json={"token": "hf_test"},
+    missing = client.put("/api/settings/asr-deepgram", json={"api_key": "dg_test"})
+    wrong_origin = client.put(
+        "/api/settings/asr-deepgram",
+        json={"api_key": "dg_test"},
         headers={"Origin": "http://voice.test.evil.test", "X-VoiceStudio-CSRF": "1"},
     )
-    allowed = client.post(
-        "/api/settings/hf-token",
-        json={"token": "hf_test"},
+    allowed = client.put(
+        "/api/settings/asr-deepgram",
+        json={"api_key": "dg_test"},
         headers=CSRF_HEADERS,
     )
 
     assert missing.status_code == 403
     assert wrong_origin.status_code == 403
     assert allowed.status_code == 200
-    assert writes == ["hf_test"]
+    assert writes == ["dg_test"]
 
 
 def test_bearer_session_is_not_subject_to_browser_csrf_headers(monkeypatch):
-    from api.routers import settings
-    from services import token_resolver
+    from services import settings_store
 
     writes: list[str] = []
-    monkeypatch.setattr(token_resolver, "save_app_token", writes.append)
-    monkeypatch.setattr(settings, "_state_response", lambda: {"source": "app"})
+    monkeypatch.setattr(settings_store, "set_secret", lambda name, val: writes.append(val))
     client = _client()
     token = _issue_bearer(client).json()["token"]
 
-    response = client.post(
-        "/api/settings/hf-token",
-        json={"token": "hf_test"},
+    response = client.put(
+        "/api/settings/asr-deepgram",
+        json={"api_key": "dg_test"},
         headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 200
-    assert writes == ["hf_test"]
+    assert writes == ["dg_test"]

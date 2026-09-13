@@ -106,7 +106,6 @@ describe('StorageUsagePanel', () => {
     // Reclaim + housekeeping actions
     expect(screen.getByTestId('storage-manage-models')).toBeInTheDocument();
     expect(screen.getByTestId('storage-clear-logs')).toBeInTheDocument();
-    expect(screen.getByTestId('storage-open-data')).toBeInTheDocument();
     // No warnings → no banner
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });

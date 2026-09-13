@@ -73,7 +73,7 @@ def _origin_tuple(value: str | None) -> tuple[str, str, int | None] | None:
     ):
         return None
     scheme = parsed.scheme.lower()
-    if scheme not in {"http", "https", "tauri"}:
+    if scheme not in {"http", "https"}:
         return None
     if port is None:
         if scheme == "http":
@@ -91,8 +91,7 @@ def configured_allowed_origins() -> frozenset[tuple[str, str, int | None]]:
         ui_port = 3901
     values = os.environ.get(
         "OMNIVOICE_ALLOWED_ORIGINS",
-        f"http://localhost:{ui_port},http://127.0.0.1:{ui_port},"
-        "tauri://localhost,http://tauri.localhost",
+        f"http://localhost:{ui_port},http://127.0.0.1:{ui_port}",
     ).split(",")
     return frozenset(
         origin

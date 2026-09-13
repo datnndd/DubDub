@@ -27,12 +27,6 @@ describe('PrivacyTab', () => {
     expect(screen.queryByText('Offline translator')).not.toBeInTheDocument();
   });
 
-  it('shows the green badge only for confirmed-offline providers', () => {
-    render(<PrivacyTab info={{ translate_provider: 'nllb' }} />);
-    expect(screen.getByText('Offline translator')).toBeInTheDocument();
-    expect(screen.queryByTestId('privacy-translator-unknown')).not.toBeInTheDocument();
-  });
-
   it('warns for online providers and deep-links to Translation settings', () => {
     render(<PrivacyTab info={{ translate_provider: 'google' }} />);
     expect(screen.getByText('Translator is online: google')).toBeInTheDocument();

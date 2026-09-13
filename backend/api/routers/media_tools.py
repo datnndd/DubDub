@@ -10,16 +10,11 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from api.dependencies import require_admin
 
 logger = logging.getLogger("omnivoice.api")
 router = APIRouter(dependencies=[Depends(require_admin)])
-
-
-class CustomPathRequest(BaseModel):
-    authorization: str
 
 
 def _svc():
@@ -57,19 +52,6 @@ def media_tools_ytdlp_restore():
     """Drop the overlay — the app-tested, locked yt-dlp takes over on next
     start. Always safe (the locked install is never modified)."""
     return _svc().restore_ytdlp()
-
-
-@router.post("/media-tools/{tool}/custom-path")
-def media_tools_custom_path(tool: str, body: CustomPathRequest):
-    from core.path_authorization import PathAuthorizationError, consume
-
-    try:
-        path = consume(body.authorization, tool)
-        return _svc().set_custom_path(tool, path)
-    except PathAuthorizationError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/media-tools/{tool}/use-system")

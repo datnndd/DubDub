@@ -1,20 +1,9 @@
-"""Settings API — HF token save/clear/state endpoints (Phase 1 AUTH-03 backend half).
-
-These endpoints are the backend half of the Wave 2 Settings → API Keys
-panel. Threat T-01-03 mitigation: the router-level `require_admin` dependency
-keeps desktop callers loopback-only and requires the long API key for every
-remote server-mode mutation. Read-only bare-Docker discovery remains available
-until an API key is configured; once configured, reads require it too.
-
-The state endpoint duplicates `/system/hf-token/state` (which lives on
-`system.py` for legacy-router compatibility); both return the same shape.
-"""
+"""Web application settings API."""
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
-from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -29,66 +18,6 @@ router = APIRouter(
     tags=["settings"],
     dependencies=[Depends(require_admin)],
 )
-
-
-class _HFTokenBody(BaseModel):
-    token: str = Field(..., min_length=1, description="HuggingFace access token")
-
-
-def _state_response() -> dict:
-    """Return the same shape the React panel renders. Never includes raw token."""
-    from services import token_resolver
-
-    s = token_resolver.state()
-    return {
-        "active": s["active"],
-        "sources": [asdict(row) for row in s["sources"]],
-    }
-
-
-@router.post("/hf-token")
-def save_hf_token(body: _HFTokenBody):
-    """Persist a new HF token to the encrypted settings store + the HF
-    canonical file (via huggingface_hub.login). Returns the updated
-    cascade state."""
-    token = body.token.strip()
-    if not token:
-        raise HTTPException(status_code=400, detail="token must be non-empty")
-    from services import token_resolver
-    try:
-        token_resolver.save_app_token(token)
-    except Exception:
-        logger.exception("save_app_token failed")
-        raise HTTPException(status_code=500, detail="Failed to save HF token")
-    return _state_response()
-
-
-@router.delete("/hf-token")
-def clear_hf_token(also_clear_hf_cli: bool = Query(False)):
-    """Clear the App-source token. Optionally also call huggingface_hub.logout
-    to clear the canonical HF file. Returns the updated cascade state."""
-    from services import token_resolver
-    try:
-        token_resolver.clear_app_token(also_clear_hf_cli=also_clear_hf_cli)
-    except Exception:
-        logger.exception("clear_app_token failed")
-        raise HTTPException(status_code=500, detail="Failed to clear HF token")
-    return _state_response()
-
-
-@router.get("/hf-token/state")
-def get_hf_token_state(fresh: bool = Query(False)):
-    """3-source HF token cascade state for the Settings UI.
-
-    ``fresh=1`` drops the resolver's whoami validation cache first so the
-    response re-runs whoami for every source — this is what the panel's
-    "Test now" button sends. Plain GETs (panel mounts) keep the 300s cache
-    so repeat Settings visits don't hammer the HF API.
-    """
-    from services import token_resolver
-    if fresh:
-        token_resolver.invalidate_cache()
-    return _state_response()
 
 
 # ── Performance settings (INST-12) ────────────────────────────────────────
@@ -171,54 +100,6 @@ def set_history_retention(body: _HistoryRetentionBody):
         logger.exception("set_history_retention failed")
         raise HTTPException(status_code=500, detail="Failed to persist setting")
     return _history_retention_state()
-
-
-# ── Dictation refinement (parity program Wave 2.1 / Spec 3 phase 2) ───────
-
-
-class _RefinementBody(BaseModel):
-    auto: bool | None = None
-    smart_cleanup: bool | None = None
-    self_correction: bool | None = None
-    preserve_technical: bool | None = None
-
-
-def _refinement_state():
-    from services.refinement import (
-        _skill_llm,
-        get_last_refine_status,
-        get_refinement_config,
-    )
-
-    cfg = get_refinement_config()
-    # `llm_ready` only means "an endpoint is CONFIGURED" — a placeholder/dead
-    # endpoint still reads ready. It's resolved through the LLM Skills registry
-    # so a disabled dictation_refinement skill / per-skill provider override
-    # reads the same here as on the actual refine path. The honesty layer is
-    # `last_refine_status`: {ok, reason, at} from the most recent final, so the
-    # panel can flag a configured-but-failing LLM (the real safety is the hard
-    # refine timeout, which keeps a dead endpoint from ever stalling the final).
-    cfg["llm_ready"] = _skill_llm().id != "off"
-    cfg["last_refine_status"] = get_last_refine_status()
-    return cfg
-
-
-@router.get("/dictation-refinement")
-def get_dictation_refinement():
-    """Current refinement config + whether an LLM backend is configured."""
-    return _refinement_state()
-
-
-@router.put("/dictation-refinement")
-def set_dictation_refinement(body: _RefinementBody):
-    from services.refinement import set_refinement_config
-
-    try:
-        set_refinement_config({k: v for k, v in body.model_dump().items() if v is not None})
-    except Exception:
-        logger.exception("set_dictation_refinement failed")
-        raise HTTPException(status_code=500, detail="Failed to persist setting")
-    return _refinement_state()
 
 
 # ── LLM endpoint (parity program Wave 2.4 / §R2 rung 4) ───────────────────
@@ -566,79 +447,6 @@ def set_llm_skill(skill_id: str, body: _LLMSkillBody):
     return list_llm_skills()
 
 
-# ── License acceptance (Phase 3 Plan 03-01 / TTS-05) ──────────────────────
-# Frontend ``SupertonicLicenseDialog`` flips the engine-license bit via this
-# endpoint. The handler is loopback-gated (router-level dep) and the
-# engine_id is allow-listed so an arbitrary string cannot be persisted.
-# Threat T-03-04 in the plan frontmatter: this is an honest-acknowledgment
-# gate, not a security boundary; the loopback + allow-list keeps the
-# attack surface tight regardless.
-
-
-#: Engines that have an in-tree acceptance dialog. Adding a new engine
-#: here means adding a corresponding frontend dialog + a license URLs
-#: dict in its constants module. Until that, the API refuses the write.
-_LICENSE_ALLOWED_ENGINES: frozenset[str] = frozenset({"supertonic3", "pockettts"})
-
-
-class _LicenseAcceptBody(BaseModel):
-    engine_id: str = Field(..., min_length=1, max_length=64)
-    accepted: bool = Field(..., description="True to accept the license terms")
-
-
-@router.post("/license")
-def post_license_acceptance(body: _LicenseAcceptBody) -> dict:
-    """Persist a per-engine license-acceptance boolean.
-
-    Returns ``{"ok": True, "engine_id": ..., "accepted": ...}`` so the
-    caller can update its UI without a second round-trip. Validation:
-    ``engine_id`` must be in the in-tree allow-list ‑‑ refuses arbitrary
-    keys so the settings table can't be polluted via this route.
-    """
-    eid = body.engine_id.strip().lower()
-    if eid not in _LICENSE_ALLOWED_ENGINES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"engine_id {eid!r} is not in the license allow-list "
-                f"{sorted(_LICENSE_ALLOWED_ENGINES)}"
-            ),
-        )
-    from services import settings_store
-    try:
-        settings_store.set_license_accepted(eid, body.accepted)
-    except Exception as exc:
-        logger.error("set_license_accepted failed for %s: %s", log_safe(eid), log_safe(exc))
-        raise HTTPException(status_code=500, detail="Failed to persist license acceptance")
-    return {"ok": True, "engine_id": eid, "accepted": bool(body.accepted)}
-
-
-@router.get("/license/{engine_id}")
-def get_license_acceptance(engine_id: str) -> dict:
-    """Return ``{"engine_id": ..., "accepted": bool}``.
-
-    Same allow-list as the POST handler so an unknown engine id is a
-    400 rather than a silent ``accepted=false`` for a non-existent
-    engine.
-    """
-    eid = engine_id.strip().lower()
-    if eid not in _LICENSE_ALLOWED_ENGINES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"engine_id {eid!r} is not in the license allow-list "
-                f"{sorted(_LICENSE_ALLOWED_ENGINES)}"
-            ),
-        )
-    from services import settings_store
-    try:
-        accepted = settings_store.get_license_accepted(eid)
-    except Exception as exc:
-        logger.error("get_license_accepted failed for %s: %s", log_safe(eid), log_safe(exc))
-        raise HTTPException(status_code=500, detail="Failed to read license acceptance")
-    return {"engine_id": eid, "accepted": bool(accepted)}
-
-
 # ── Storage: configurable models directory (#64) ──────────────────────────
 # Where HuggingFace / Torch download model weights. The user's choice is
 # persisted durably to the per-user env file as OMNIVOICE_CACHE_DIR, which
@@ -665,10 +473,6 @@ def _effective_models_dir() -> str:
     )
 
 
-class _ModelsDirBody(BaseModel):
-    authorization: str = Field(description="One-shot native desktop authorization")
-
-
 @router.get("/storage/models-dir")
 def get_models_dir():
     """Current models directory: the persisted choice (from the durable env
@@ -683,51 +487,6 @@ def get_models_dir():
         "default": _default_models_dir(),
         "restart_required": False,
     }
-
-
-@router.put("/storage/models-dir")
-def set_models_dir(body: _ModelsDirBody):
-    """Set (or clear, with an empty path) the models download directory.
-
-    Validates the directory is writable, then writes OMNIVOICE_CACHE_DIR to the
-    durable per-user env file so main.py applies it on the next launch. The env
-    file is the only persisted store, so GET can never diverge from what was
-    saved. Returns restart_required=True.
-    """
-    from core import user_env
-    from core.path_authorization import PathAuthorizationError, consume
-
-    try:
-        raw = consume(body.authorization, "models_dir").strip()
-    except PathAuthorizationError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    if not raw:
-        user_env.unset_user_env(_MODELS_DIR_ENV)
-        return {"configured": None, "default": _default_models_dir(), "restart_required": True}
-
-    # Tauri already validates this before issuing the capability. Keep the
-    # backend checks as defense in depth against a corrupt capability file.
-    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in raw):
-        raise HTTPException(status_code=400, detail="Path contains invalid control characters")
-
-    path = os.path.abspath(os.path.expanduser(raw))
-    try:
-        os.makedirs(path, exist_ok=True)
-        probe = os.path.join(path, ".omnivoice_write_test")
-        with open(probe, "w", encoding="utf-8") as f:
-            f.write("ok")
-    except OSError as e:
-        raise HTTPException(status_code=400, detail=f"Directory is not writable: {e}") from e
-    finally:
-        # Best-effort cleanup; a failed remove (concurrent process, perm change)
-        # must not leave the request hanging or mask the real error.
-        try:
-            os.remove(os.path.join(path, ".omnivoice_write_test"))
-        except OSError:
-            pass
-
-    user_env.set_user_env(_MODELS_DIR_ENV, path)
-    return {"configured": path, "effective": _effective_models_dir(), "restart_required": True}
 
 
 # ── Storage report (Settings → Storage) ────────────────────────────────────
@@ -926,68 +685,6 @@ def test_hf_mirror():
         logger.exception("hf-mirror endpoint test failed")
         raise HTTPException(status_code=500, detail="Endpoint test failed")
     return _hf_mirror_state()
-
-
-# ── OpenAI-compatible remote ASR (#877) ─────────────────────────────────────
-# A path to Qwen3-ASR/FunASR/SenseVoice — or OpenAI's own Whisper API — today,
-# without waiting on transformers to ship a direct Qwen3-ASR integration.
-# base_url/model are plain settings_store text rows; the key is encrypted via
-# settings_store.set_secret — same convention as /llm-providers, never
-# returned to the client, '' clears it, omitted/None leaves it unchanged.
-
-
-class _ASROpenAICompatBody(BaseModel):
-    base_url: str | None = None
-    model: str | None = None
-    api_key: str | None = Field(None, description="'' clears it, None leaves unchanged")
-
-
-@router.get("/asr-openai-compat")
-def get_asr_openai_compat():
-    from services import asr_backend
-
-    return {
-        "base_url": asr_backend.resolve_openai_compat_asr_base_url(),
-        "model": asr_backend.resolve_openai_compat_asr_model(),
-        "has_key": asr_backend.openai_compat_asr_has_key(),
-    }
-
-
-@router.put("/asr-openai-compat")
-def set_asr_openai_compat(body: _ASROpenAICompatBody):
-    from services import asr_backend, settings_store
-
-    if body.base_url is not None:
-        url = body.base_url.strip().rstrip("/")
-        if url and not url.startswith(("http://", "https://")):
-            raise HTTPException(status_code=400, detail="Base URL must start with http(s)://")
-        settings_store.set_text(asr_backend._ASR_OPENAI_COMPAT_BASE_URL_KEY, url)
-    if body.model is not None:
-        settings_store.set_text(
-            asr_backend._ASR_OPENAI_COMPAT_MODEL_KEY, body.model.strip() or "whisper-1"
-        )
-    if body.api_key is not None:
-        settings_store.set_secret(
-            asr_backend._ASR_OPENAI_COMPAT_SECRET_NAME, body.api_key.strip()
-        )
-    return get_asr_openai_compat()
-
-
-@router.post("/asr-openai-compat/test")
-def test_asr_openai_compat():
-    """Cheap connectivity probe for the "Test connection" button.
-
-    GET {base_url}/models against the PERSISTED config — the panel saves
-    first, then tests, same stale-config contract as
-    /llm-providers/{id}/test. No audio leaves the machine, nothing is
-    transcribed. Loopback-only via the router-level guard. Always 200 with a
-    structured verdict ({ok, status, latency_ms, ...} — see
-    services.asr_backend.probe_openai_compat_server) so the UI renders
-    success/latency or the exact failure without a raw 500. The key is never
-    logged or echoed back."""
-    from services import asr_backend
-
-    return asr_backend.probe_openai_compat_server()
 
 
 # ── Deepgram Cloud ASR ────────────────────────────────────────────────────────

@@ -190,15 +190,15 @@ def test_ws_handshake_rejected_without_key(key_env):
     """A non-loopback WS handshake without the key is closed, not accepted."""
     c = _client()
     with pytest.raises(WebSocketDisconnect) as exc_info:
-        with c.websocket_connect("/ws/transcribe"):
+        with c.websocket_connect("/ws/events"):
             pass
     assert exc_info.value.code == 1008
 
 
 def test_ws_handshake_accepted_with_query_key(key_env):
     c = _client()
-    # ws_remote_authorized reads ?api_key; the capture handler then accepts.
-    with c.websocket_connect("/ws/transcribe?api_key=s3cret-key") as ws:
+    # ws_remote_authorized reads ?api_key; the events handler then accepts.
+    with c.websocket_connect("/ws/events?api_key=s3cret-key") as ws:
         ws.close()
 
 
@@ -210,7 +210,7 @@ def test_ws_handshake_accepted_with_session_cookie(key_env):
     c.cookies.set("ov_session", session.token)
 
     with c.websocket_connect(
-        "/ws/transcribe",
+        "/ws/events",
         headers={"Origin": "http://testserver"},
     ) as ws:
         ws.close()
@@ -224,7 +224,7 @@ def test_ws_session_cookie_rejects_missing_or_wrong_origin(key_env):
         c = _client()
         c.cookies.set("ov_session", session.token)
         with pytest.raises(WebSocketDisconnect) as exc_info:
-            with c.websocket_connect("/ws/transcribe", headers=headers):
+            with c.websocket_connect("/ws/events", headers=headers):
                 pass
         assert exc_info.value.code == 1008
 
@@ -235,10 +235,10 @@ def test_ws_ticket_is_path_bound_single_use_and_origin_checked(key_env):
     session = admin_session_store.issue(key_env)
     ticket = admin_session_store.issue_ws_ticket(
         session.token,
-        "/ws/transcribe",
+        "/ws/events",
         key_env,
     )
-    url = f"/ws/transcribe?ws_ticket={ticket.token}"
+    url = f"/ws/events?ws_ticket={ticket.token}"
 
     with _client().websocket_connect(
         url,
@@ -268,7 +268,7 @@ def test_ws_ticket_wrong_path_consumes_ticket(key_env):
 
     with pytest.raises(WebSocketDisconnect) as wrong_path:
         with _client().websocket_connect(
-            "/ws/transcribe" + query,
+            "/ws/tts" + query,
             headers={"Origin": "http://testserver"},
         ):
             pass
@@ -288,13 +288,13 @@ def test_ws_ticket_rejects_untrusted_origin(key_env):
     session = admin_session_store.issue(key_env)
     ticket = admin_session_store.issue_ws_ticket(
         session.token,
-        "/ws/transcribe",
+        "/ws/events",
         key_env,
     )
 
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with _client().websocket_connect(
-            f"/ws/transcribe?ws_ticket={ticket.token}",
+            f"/ws/events?ws_ticket={ticket.token}",
             headers={"Origin": "http://evil.test"},
         ):
             pass

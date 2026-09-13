@@ -58,7 +58,7 @@ export default function OcrRegionEditor({ videoUrl, rect, onChange, disabled = f
               width: `${(rect.right - rect.left) * 100}%`, height: `${(rect.bottom - rect.top) * 100}%` }}>
             {!disabled && Object.entries(corners).map(([corner, classes]) =>
               <span key={corner} data-resize={corner} data-testid={`ocr-resize-${corner}`}
-                className={cn('absolute size-4 border-2 border-white bg-[var(--color-brand)]', classes)} />)}
+                className={cn('absolute size-4 ring-2 ring-white border-2 border-transparent bg-[var(--color-brand)]', classes)} />)}
           </div>}
         </div>
       </div>

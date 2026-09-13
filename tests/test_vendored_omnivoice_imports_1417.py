@@ -82,8 +82,10 @@ def _backend_imports_from_omnivoice() -> list[tuple[Path, int, str, str]]:
     """(file, lineno, module, symbol) for every `from omnivoice… import X`."""
     found: list[tuple[Path, int, str, str]] = []
     for py in _BACKEND.rglob("*.py"):
+        if any(p.startswith(".") or p == "site-packages" for p in py.parts):
+            continue
         try:
-            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+            tree = ast.parse(py.read_text(encoding="utf-8", errors="ignore"), filename=str(py))
         except SyntaxError:  # pragma: no cover - not our file to fix
             continue
         for node in ast.walk(tree):

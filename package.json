@@ -12,7 +12,6 @@
     "wait:frontend": "wait-on -t 120000 http://localhost:5173",
     "predev": "bun install && bun scripts/clear-dev-ports.mjs 3900 3901",
     "dev": "bun run setup:api && concurrently -n api,fe -c green,cyan --kill-others-on-fail \"bun run dev:api\" \"bun run dev:frontend\"",
-    "desktop": "bun run dev",
     "build": "turbo run build",
     "start": "turbo run start",
     "test:frontend": "node --test tests/frontend/*.test.mjs",

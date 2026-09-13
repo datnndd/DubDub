@@ -1,9 +1,9 @@
 """Tests for backend/services/subprocess_backend.py — Plan 02-01 Task 1.
 
-Covers the SubprocessBackend round-trip via the permanent echo sidecar at
-backend/engines/_echo/main.py.
+Covers the SubprocessBackend round-trip via the permanent test sidecar at
+tests/helpers/fake_sidecar.py.
 
-These tests intentionally spawn a real subprocess (the echo sidecar uses
+These tests intentionally spawn a real subprocess (the test sidecar uses
 the parent's `sys.executable` so no engine venv is required). They run on
 macOS, Linux, and Windows.
 """
@@ -32,17 +32,17 @@ from services.subprocess_backend import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-ECHO_SCRIPT = REPO_ROOT / "backend" / "engines" / "_echo" / "main.py"
+TEST_SIDECAR_SCRIPT = REPO_ROOT / "tests" / "helpers" / "fake_sidecar.py"
 
 
 # ── test-only subclass ─────────────────────────────────────────────────────
 
 
-class EchoBackend(SubprocessBackend):
-    """In-test subclass — runs the echo sidecar under `sys.executable`."""
+class FixtureSidecarBackend(SubprocessBackend):
+    """In-test subclass — runs the test sidecar under `sys.executable`."""
 
-    id = "_echo"
-    display_name = "Echo (test)"
+    id = "test-sidecar"
+    display_name = "Test sidecar"
 
     @property
     def sample_rate(self) -> int:
@@ -54,9 +54,9 @@ class EchoBackend(SubprocessBackend):
 
     @classmethod
     def is_available(cls) -> tuple[bool, str]:
-        if ECHO_SCRIPT.is_file():
+        if TEST_SIDECAR_SCRIPT.is_file():
             return True, "ready"
-        return False, f"echo sidecar missing at {ECHO_SCRIPT}"
+        return False, f"test sidecar missing at {TEST_SIDECAR_SCRIPT}"
 
     @classmethod
     def venv_python(cls) -> Path:
@@ -64,15 +64,15 @@ class EchoBackend(SubprocessBackend):
 
     @classmethod
     def sidecar_script(cls) -> Path:
-        return ECHO_SCRIPT
+        return TEST_SIDECAR_SCRIPT
 
 
 # ── fixtures ───────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
-def echo_backend():
-    backend = EchoBackend()
+def test_sidecar_backend():
+    backend = FixtureSidecarBackend()
     yield backend
     try:
         backend.shutdown()
@@ -83,17 +83,17 @@ def echo_backend():
 # ── round-trip tests ───────────────────────────────────────────────────────
 
 
-def test_echo_script_exists():
+def test_sidecar_fixture_exists():
     """Permanent CI regression infrastructure assertion."""
-    assert ECHO_SCRIPT.is_file(), (
-        f"Echo sidecar missing at {ECHO_SCRIPT}. This file is permanent "
+    assert TEST_SIDECAR_SCRIPT.is_file(), (
+        f"Test sidecar missing at {TEST_SIDECAR_SCRIPT}. This file is permanent "
         "CI regression infrastructure for SubprocessBackend — do not delete."
     )
 
 
-def test_echo_round_trip(echo_backend):
+def test_sidecar_round_trip(test_sidecar_backend):
     """Spawn → synthesize("hello") → expect 1 s of int16 silence as float32."""
-    audio = echo_backend.generate("hello")
+    audio = test_sidecar_backend.generate("hello")
     assert isinstance(audio, torch.Tensor)
     assert audio.shape == (1, 24000), f"got shape {tuple(audio.shape)}"
     assert audio.dtype == torch.float32
@@ -101,21 +101,21 @@ def test_echo_round_trip(echo_backend):
     assert torch.max(torch.abs(audio)).item() == 0.0
 
 
-def test_health_check_pings(echo_backend):
-    ok, msg = echo_backend.health_check()
+def test_health_check_pings(test_sidecar_backend):
+    ok, msg = test_sidecar_backend.health_check()
     assert ok, f"health_check failed: {msg}"
     assert msg == "pong"
 
 
-def test_no_zombie_after_shutdown(echo_backend):
+def test_no_zombie_after_shutdown(test_sidecar_backend):
     """Spawn → record PID → shutdown → assert PID is gone within 3 s."""
     # Trigger spawn via a ping.
-    ok, _ = echo_backend.health_check()
+    ok, _ = test_sidecar_backend.health_check()
     assert ok
-    assert echo_backend._proc is not None
-    pid = echo_backend._proc.pid
+    assert test_sidecar_backend._proc is not None
+    pid = test_sidecar_backend._proc.pid
 
-    echo_backend.shutdown()
+    test_sidecar_backend.shutdown()
 
     # Poll for up to 3 s; the sidecar should be reaped by wait()/kill().
     deadline = time.monotonic() + 3.0
@@ -146,26 +146,26 @@ def _is_zombie_or_dead(pid: int) -> bool:
         return True
 
 
-def test_shutdown_idempotent(echo_backend):
+def test_shutdown_idempotent(test_sidecar_backend):
     """Calling shutdown twice must not raise."""
-    echo_backend.health_check()
-    echo_backend.shutdown()
-    echo_backend.shutdown()  # second call is a no-op
+    test_sidecar_backend.health_check()
+    test_sidecar_backend.shutdown()
+    test_sidecar_backend.shutdown()  # second call is a no-op
 
 
 def test_env_forwarding_contract(monkeypatch, tmp_path):
     """HF_TOKEN, HF_HOME, HF_ENDPOINT, HF_HUB_CACHE all reach the sidecar.
 
     Locked Decision D5 — verifies the os.environ.copy() contract that Phase
-    2 Wave 2 (IndexTTS migration) relies on for cache discovery.
+    2 Wave 2 (sidecar integration) relies on for cache discovery.
     """
     monkeypatch.setenv("HF_TOKEN", "hf_test_abc")
     monkeypatch.setenv("HF_HOME", str(tmp_path / "hf_home"))
     monkeypatch.setenv("HF_ENDPOINT", "https://hf-mirror.com")
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hf_cache"))
-    monkeypatch.setenv("OMNIVOICE_ECHO_TEST_MODE", "1")
+    monkeypatch.setenv("OMNIVOICE_TEST_SIDECAR_MODE", "1")
 
-    backend = EchoBackend()
+    backend = FixtureSidecarBackend()
     try:
         # Use the raw send/recv path to invoke the test-only probe_env op.
         with backend._lock:
@@ -230,7 +230,7 @@ def test_oversize_frame_rejected():
     T-02-01 — defends against malicious sidecar sending 0xFFFFFFFF to make
     the parent allocate 4 GB.
     """
-    backend = EchoBackend()
+    backend = FixtureSidecarBackend()
     try:
         # Inject a fake proc whose stdout starts with a 100 MB length prefix.
         huge = MAX_FRAME_BYTES + 1
@@ -244,7 +244,7 @@ def test_oversize_frame_rejected():
 
 def test_short_read_rejected():
     """Length prefix says 100 bytes; only 50 arrive before EOF → IOError."""
-    backend = EchoBackend()
+    backend = FixtureSidecarBackend()
     try:
         bad = struct.pack("!I", 100) + b"\x00" * 50  # only 50 of 100 bytes
         backend._proc = _MockProc(bad)  # type: ignore[assignment]
@@ -257,12 +257,12 @@ def test_short_read_rejected():
 def test_op_allowlist_drops_unknown(monkeypatch):
     """An unknown sidecar op is logged and discarded; parent keeps reading.
 
-    T-02-04 — set up the echo sidecar to emit an `exfiltrate` op followed
+    T-02-04 — set up the test sidecar to emit an `exfiltrate` op followed
     by a legitimate `pong`; parent must silently drop the first and return
     the second.
     """
-    monkeypatch.setenv("OMNIVOICE_ECHO_TEST_MODE", "1")
-    backend = EchoBackend()
+    monkeypatch.setenv("OMNIVOICE_TEST_SIDECAR_MODE", "1")
+    backend = FixtureSidecarBackend()
     try:
         with backend._lock:
             backend._spawn()
@@ -290,16 +290,16 @@ def test_op_allowlist_constant_shape():
 # ── crash-recovery / GPU slot accounting ───────────────────────────────────
 
 
-def test_sidecar_crash_releases_resources(monkeypatch, echo_backend):
+def test_sidecar_crash_releases_resources(monkeypatch, test_sidecar_backend):
     """A sidecar that os._exit(1)'s mid-frame must not leave the parent
     holding state — `_proc` becomes detectable as dead and a fresh spawn
     works."""
-    monkeypatch.setenv("OMNIVOICE_ECHO_CRASH", "1")
-    monkeypatch.setenv("OMNIVOICE_ECHO_TEST_MODE", "1")
+    monkeypatch.setenv("OMNIVOICE_TEST_SIDECAR_CRASH", "1")
+    monkeypatch.setenv("OMNIVOICE_TEST_SIDECAR_MODE", "1")
 
     # First generate causes the sidecar to crash after sending the audio
     # frame (the crash hook fires after frames_handled >= 1).
-    audio = echo_backend.generate("hello")
+    audio = test_sidecar_backend.generate("hello")
     assert audio.shape == (1, 24000)
 
     # Give the crashed child a moment to actually exit.
@@ -310,13 +310,13 @@ def test_sidecar_crash_releases_resources(monkeypatch, echo_backend):
     # spawn succeeds. We allow the generate to fail OR to succeed after
     # respawn; the invariant is "the backend doesn't deadlock or wedge".
     try:
-        echo_backend.shutdown()
+        test_sidecar_backend.shutdown()
     except Exception:
         pass
     # Disable the crash hook so the next spawn lives.
-    monkeypatch.delenv("OMNIVOICE_ECHO_CRASH", raising=False)
+    monkeypatch.delenv("OMNIVOICE_TEST_SIDECAR_CRASH", raising=False)
     # Fresh spawn works.
-    ok, msg = echo_backend.health_check()
+    ok, msg = test_sidecar_backend.health_check()
     assert ok, f"recovery failed: {msg}"
 
 

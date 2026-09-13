@@ -13,14 +13,12 @@ import { Badge, Button } from '../../ui';
 import { useAppStore } from '../../store';
 import { SettingsSection } from './primitives';
 import AnalyticsOptIn from './AnalyticsOptIn';
-import WatermarkControl from './WatermarkControl';
 
 // Providers that send dialogue text to a third-party service vs. the ones that
 // run fully on-device (backend/api/routers/dub_translate.py). Anything else —
 // including the backend's safe-defaults value 'unknown' or a missing
 // system-info payload — must NOT get the confident green "offline" claim.
-const ONLINE_PROVIDERS = ['google', 'deepl', 'mymemory', 'microsoft', 'openai'];
-const OFFLINE_PROVIDERS = ['nllb', 'argos', 'libretranslate'];
+const ONLINE_PROVIDERS = ['google', 'openai'];
 
 export default function PrivacyTab({ info }) {
   const { t } = useTranslation();
@@ -43,12 +41,6 @@ export default function PrivacyTab({ info }) {
           {t('privacy.change_translator', { defaultValue: 'Change translator' })}
         </Button>
       </span>
-    );
-  } else if (provider && OFFLINE_PROVIDERS.includes(provider)) {
-    translatorBadge = (
-      <Badge tone="success">
-        <CheckCircle size={11} /> {t('privacy.translator_offline')}
-      </Badge>
     );
   } else {
     // Backend down, errored (translate_provider: 'unknown'), or an
@@ -116,11 +108,7 @@ export default function PrivacyTab({ info }) {
       {/* Opt-in product analytics. Renders nothing when the build ships no
           destination, and is OFF until the user turns it on — so the
           "no tracking" default above stays true for everyone who doesn't. */}
-      {/* The provenance mark. ON by default (the opposite of analytics
-          below), and now actually controllable — errors.a_watermark has told
-          users it lives here since watermarking shipped. */}
       <div className="rounded-[var(--chrome-radius-pill)] bg-[var(--chrome-hover-bg)] px-[var(--space-4)] [&>[data-slot=setting-row]]:border-b [&>[data-slot=setting-row]]:border-[color-mix(in_srgb,var(--chrome-fg)_7%,transparent)] [&>[data-slot=setting-row]:last-of-type]:border-b-0">
-        <WatermarkControl />
         <AnalyticsOptIn />
       </div>
     </SettingsSection>

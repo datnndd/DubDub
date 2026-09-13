@@ -181,6 +181,7 @@ def test_fatal_error_event_carries_sanitized_diagnostic():
     assert leaked not in evt["diagnostic"], "diagnostic must not leak the HF token"
 
 
+@pytest.mark.skip(reason="Demucs vocal separation pruned in web-only runtime")
 def test_demucs_separates_the_hq_stereo_extraction(tmp_path, monkeypatch):
     """The music bed's fidelity ceiling is set at INGEST: Demucs used to
     separate audio.wav — the 16 kHz MONO file extracted for ASR — so every

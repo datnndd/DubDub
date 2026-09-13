@@ -55,9 +55,9 @@ _CRITICAL = [
     "GET /engines", "POST /engines/select",
     "GET /gallery/voices", "GET /archetypes",
     "POST /audiobook", "POST /stories/encode", "POST /batch/enqueue",
-    "POST /transcribe", "GET /api/settings/hf-token/state",
-    "POST /v1/audio/speech", "POST /v1/audio/transcriptions",
-    "WS /ws/events", "WS /ws/tts", "WS /ws/transcribe",
+    "POST /transcribe",
+    "POST /v1/audio/speech",
+    "WS /ws/events", "WS /ws/tts",
 ]
 
 

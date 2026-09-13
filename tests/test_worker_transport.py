@@ -370,7 +370,11 @@ class _Harness:
     async def _await_connection(self, timeout=10.0):
         deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
-            if len(self.pool) and self.servicer._sessions:
+            if (
+                len(self.pool)
+                and self.servicer._sessions
+                and (self.client is None or self.client._inline_threshold is not None)
+            ):
                 return
             await asyncio.sleep(0.05)
         raise AssertionError("worker never connected")
@@ -534,6 +538,7 @@ async def test_worker_at_capacity_rejects_without_penalty(harness):
     first = harness.scheduler.submit(operation=OP, engine=ENGINE, model_id=MODEL)
     await harness.servicer.dispatch(harness.scheduler.next_assignment())
     await asyncio.wait_for(started.wait(), timeout=10)
+    harness.client.config.max_concurrent_tasks = 1
 
     # Force a second assignment onto a worker the scheduler thinks has room.
     second = harness.scheduler.submit(operation=OP, engine=ENGINE, model_id=MODEL)

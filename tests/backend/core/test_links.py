@@ -43,14 +43,9 @@ def test_resolves_from_pyproject_repository():
     assert url.startswith("https://github.com/")
 
 
-def test_falls_back_to_pyproject_when_tauri_unreadable(monkeypatch, tmp_path):
-    """With the Tauri config set to a non-existent path, `_resolve()` falls
-    back to the pyproject Repository URL."""
+def test_falls_back_to_hardcoded_when_pyproject_unreadable(monkeypatch, tmp_path):
+    """With pyproject missing, `_resolve()` falls back to the hardcoded repository URL."""
     links = _fresh_links_module()
-    monkeypatch.setattr(links, "_TAURI_CONF", tmp_path / "missing.json")
-    # pyproject is read from the real repo root, which has a Repository URL.
+    monkeypatch.setattr(links, "_PYPROJECT", tmp_path / "missing.toml")
     url = links._resolve()
-    assert url.startswith("https://github.com/")
-    # Tauri path was missing → _from_tauri returned None → we ended up in
-    # the pyproject branch (or the hardcoded fallback). Both are acceptable
-    # https://github.com/... URLs.
+    assert url == "https://github.com/debpalash/VoiceStudio"

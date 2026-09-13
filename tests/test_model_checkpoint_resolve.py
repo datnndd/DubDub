@@ -69,7 +69,7 @@ def test_omnivoice_model_is_only_read_through_the_resolver():
     }
     offenders = []
     for py in backend.rglob("*.py"):
-        if "__pycache__" in py.parts:
+        if any(part.startswith(".") or "venv" in part or part == "node_modules" or part == "__pycache__" for part in py.parts):
             continue
         rel = py.relative_to(backend).as_posix()
         if rel in allowed:

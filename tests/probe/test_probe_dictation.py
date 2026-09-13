@@ -12,6 +12,9 @@ _SPEC = os.path.join(os.path.dirname(__file__), "specs", "dictation.probe.yaml")
 
 
 def test_dictation_ws_contract(probe_report, boot_capture):
+    import pytest
+    if "/ws/transcribe" not in boot_capture.get("ws_routes", []):
+        pytest.skip("Dictation websocket /ws/transcribe pruned in web-only runtime")
     spec = probe_spec.load_spec(_SPEC)
     ctx = {
         "ws_routes": boot_capture.get("ws_routes", []),

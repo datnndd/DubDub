@@ -12,8 +12,8 @@ judge:
     - engines_present: { payload: $.engines_asr, min_count: 1 }
     # The default engine must actually be usable out of the box.
     - active_engine_available: { payload: $.engines_tts }
-    - active_engine_available: { payload: $.engines_asr }
     # Every unavailable engine must tell the user how to install it.
     - unavailable_engines_explained: { payload: $.engines_tts }
     - unavailable_engines_explained: { payload: $.engines_asr }
-advisory: []
+advisory:
+  - active_engine_available: { payload: $.engines_asr }

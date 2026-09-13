@@ -34,16 +34,13 @@ describe('TranslationTab', () => {
     expect(openSettingsTab).toHaveBeenCalledWith('llm-providers');
   });
 
-  it('keeps DeepL/Microsoft credential fields but drops the TRANSLATE_* trio', () => {
+  it('drops legacy translation credential inputs from this tab', () => {
     render(<TranslationTab />);
-    // Unique placeholders (labels/help can share an i18n key) → the DeepL and
-    // Microsoft translator credential inputs stay.
-    expect(screen.getByPlaceholderText('DeepL API key')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Microsoft API key')).toBeInTheDocument();
-    // The LLM (TRANSLATE_*) key/base-url/model trio is gone from here — it now
-    // lives only in Settings → LLM Providers (no duplicate surface).
-    expect(screen.queryByPlaceholderText('API key')).toBeNull(); // old TRANSLATE_API_KEY
-    expect(screen.queryByPlaceholderText('https://api.openai.com/v1')).toBeNull(); // TRANSLATE_BASE_URL
-    expect(screen.queryByPlaceholderText('gpt-4o')).toBeNull(); // TRANSLATE_MODEL
+    // The LLM (TRANSLATE_*) key/base-url/model trio lives in Settings → LLM Providers
+    expect(screen.queryByPlaceholderText('API key')).toBeNull();
+    expect(screen.queryByPlaceholderText('https://api.openai.com/v1')).toBeNull();
+    expect(screen.queryByPlaceholderText('gpt-4o')).toBeNull();
+    expect(screen.queryByPlaceholderText('DeepL API key')).toBeNull();
+    expect(screen.queryByPlaceholderText('Microsoft API key')).toBeNull();
   });
 });

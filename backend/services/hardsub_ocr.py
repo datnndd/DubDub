@@ -107,6 +107,7 @@ def run_ocr_client(
     cancelled: Optional[Callable[[], bool]] = None,
     model_id: str = "rapidocr",
     checkpoint_path: Optional[str] = None,
+    time_ranges: Optional[list[list[float]]] = None,
 ) -> list[dict]:
     """Run the OCR sidecar over one video; return [{start, end, text}].
 
@@ -192,7 +193,8 @@ def run_ocr_client(
               "band_top": band_top, "text_score": text_score,
               "crop": crop, "refine_fps": refine_fps, "refine": refine,
               "out_dir": work_dir, "model_id": model_id,
-              "checkpoint_path": checkpoint_path})
+              "checkpoint_path": checkpoint_path,
+              "time_ranges": time_ranges})
         while True:
             msg = recv()
             if msg is None:

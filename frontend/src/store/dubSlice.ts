@@ -20,14 +20,13 @@ import type { EffectPreset } from '../api/engines';
 type DubStep =
   | 'idle'
   | 'uploading'
-  | 'installing-asr'
   | 'transcribing'
   | 'editing'
   | 'generating'
   | 'stopping'
   | 'done';
 
-type DubPrepStage = 'download' | 'extract' | 'demucs' | 'scene' | null;
+type DubPrepStage = 'download' | 'extract' | 'scene' | null;
 
 interface DubProgress {
   current: number;
@@ -35,7 +34,7 @@ interface DubProgress {
   text: string;
 }
 
-/** Per-stage progress for the prep pipeline (download, demucs). */
+/** Per-stage progress for the prep pipeline. */
 interface DubPrepProgress {
   percent: number | null; // 0–100, or null if not known yet
   speedBps: number | null; // download speed in bytes/sec, when relevant

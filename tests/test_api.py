@@ -583,21 +583,21 @@ def test_set_env_allows_loopback():
     from main import app
 
     loopback_client = TestClient(app, client=("127.0.0.1", 50000))
-    original = os.environ.get("HF_TOKEN")
-    os.environ.pop("HF_TOKEN", None)
+    original = os.environ.get("TRANSLATE_API_KEY")
+    os.environ.pop("TRANSLATE_API_KEY", None)
     try:
         res = loopback_client.post(
             "/system/set-env",
-            json={"key": "HF_TOKEN", "value": "hf_loopback_ok"},
+            json={"key": "TRANSLATE_API_KEY", "value": "test_loopback_key"},
         )
         assert res.status_code == 200
-        assert res.json() == {"key": "HF_TOKEN", "set": True}
-        assert os.environ.get("HF_TOKEN") == "hf_loopback_ok"
+        assert res.json() == {"key": "TRANSLATE_API_KEY", "set": True}
+        assert os.environ.get("TRANSLATE_API_KEY") == "test_loopback_key"
     finally:
         if original is None:
-            os.environ.pop("HF_TOKEN", None)
+            os.environ.pop("TRANSLATE_API_KEY", None)
         else:
-            os.environ["HF_TOKEN"] = original
+            os.environ["TRANSLATE_API_KEY"] = original
 
 
 def test_server_mode_remote_without_api_key_cannot_set_executable_path(monkeypatch, tmp_path):

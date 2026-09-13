@@ -9,12 +9,8 @@ _backend_dir = os.path.dirname(os.path.abspath(__file__))
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
-# Windows: run every child process (ffmpeg, engine sidecars, yt-dlp, demucs, …)
-# WITHOUT popping a console window. The backend itself is spawned console-less by
-# the Tauri shell, so on Windows each console subprocess it launches would
-# otherwise get a brand-new cmd window flashed on screen. Patch subprocess.Popen
-# once, before anything spawns, so our 70+ call sites AND third-party libraries
-# (imageio-ffmpeg, yt-dlp) are all covered. No-op off Windows. (#1178)
+# Windows: keep child tools (ffmpeg, engine sidecars and yt-dlp) from opening
+# a console window. No-op off Windows.
 from core.win_subprocess import install as _install_no_window  # noqa: E402
 
 _install_no_window()
@@ -85,27 +81,11 @@ try:
     if os.path.isfile(_project_env):
         dotenv.load_dotenv(_project_env, override=False)
     # Load the durable per-user config (the in-app Settings source of truth) so
-    # env vars set once survive Tauri/Finder launches that don't inherit a shell
-    # environment. This OVERRIDES launcher-injected defaults: the desktop app
-    # injects a stale OMNIVOICE_CACHE_DIR from its own config before startup, so
-    # without override a models dir changed in Settings was ignored forever (#480).
+    # env vars set once survive web-server restarts that don't inherit a shell
+    # environment.
     from core.user_env import load_into_environ as _load_user_env
     _load_user_env()
 except ImportError:
-    pass
-
-# ── cuDNN 8 library preload ─────────────────────────────────────────────
-# CTranslate2 (used by faster-whisper / WhisperX) requires cuDNN 8, but
-# PyTorch 2.8+ pulls cuDNN 9, so the bootstrap side-loads cuDNN 8 into
-# cudnn8_compat/ and we preload it here for CTranslate2's dlopen/LoadLibrary.
-# Lives in core.cudnn8 so the ASR sidecar — a child process with its own clean
-# import path — gets the same preload, and so `asr_backend` can ASK whether it
-# worked instead of walking into a native __fastfail (#1371).
-try:
-    from core.cudnn8 import preload as _preload_cudnn8
-
-    _preload_cudnn8()
-except Exception:  # noqa: BLE001 — never block startup on a best-effort preload
     pass
 
 # Route HF/Torch caches to a single external directory when requested.
@@ -198,7 +178,8 @@ except Exception:
     pass  # never block startup on the migration; it retries next launch
 _PERSISTED_ENV_PREFIX = "env."
 try:
-    from core.prefs import _load as _load_all_prefs
+    from core.prefs import _load as _load_all_prefs, migrate_provider_boundary
+    migrate_provider_boundary()
     _prefs = _load_all_prefs()
     for _k, _v in _prefs.items():
         if _k.startswith(_PERSISTED_ENV_PREFIX) and _v:
@@ -404,16 +385,12 @@ from api.routers import (
     describe_voice,
     community,
     batch,
-    watermark,
     events,
     capture,
-    capture_ws,
-    dictation,
     openai_compat,
     tts_stream,
     marketplace,
     personas,
-    sonitranslate,
     audiobook,
     longform_jobs,
     pronunciation,  # Expressive-TTS Spec 01: user pronunciation dictionary
@@ -697,58 +674,7 @@ async def lifespan(app: FastAPI):
     worker_task = asyncio.create_task(task_manager.worker())
     # Warm the TTS model in the background so first /generate is instant.
     preload_task = asyncio.create_task(preload_model())
-    # Dictation v2: the capture ASR warms in the background BY DEFAULT — a
-    # deferred (~30s post-boot) load off the event loop, so startup stays
-    # lean and the first dictation is instant instead of a cold model load.
-    # OMNIVOICE_PRELOAD_CAPTURE_ASR=0 opts out; the warm-up is also skipped
-    # under 4 GB free RAM (checked at warm time, not boot time).
-    capture_preload_task = None  # only assigned when the preload actually runs (#1000 class)
-    if _env_flag("OMNIVOICE_PRELOAD_CAPTURE_ASR", default=True):
-        async def _preload_capture_asr():
-            await asyncio.sleep(_capture_preload_delay_s())
-            if not _capture_preload_ram_ok():
-                logger.info(
-                    "Capture ASR preload skipped: <4GB free RAM; "
-                    "dictation ASR will load on first use.")
-                return
-            loading_detail = None
-            prev_loading_detail = None
-            try:
-                from services.model_manager import _gpu_pool, _loading_detail
-                loading_detail = _loading_detail
-                prev_loading_detail = dict(loading_detail)
-                loop = asyncio.get_running_loop()
-                def _warm():
-                    from services.asr_backend import (
-                        asr_model_missing_error,
-                        get_capture_asr_backend,
-                    )
-                    # TTS-only install: no dictation ASR model on disk. Warming
-                    # would silently auto-download weights at boot — skip; the
-                    # first dictation prompts for the download instead.
-                    if asr_model_missing_error(purpose="dictation") is not None:
-                        logger.info(
-                            "Capture ASR preload skipped: no ASR model installed; "
-                            "dictation will offer a download on first use.")
-                        return
-                    loading_detail["sub_stage"] = "loading_asr"
-                    loading_detail["detail"] = "Warming up ASR engine…"
-                    backend = get_capture_asr_backend()
-                    logger.info("Capture ASR backend selected: %s", backend.id)
-                    if hasattr(backend, 'warmup'):
-                        loading_detail["detail"] = f"Loading {backend.display_name}…"
-                        backend.warmup()
-                    loading_detail["sub_stage"] = "ready"
-                    loading_detail["detail"] = "ASR engine ready"
-                await loop.run_in_executor(_gpu_pool, _warm)
-            except Exception as e:
-                if loading_detail is not None and loading_detail.get("sub_stage") == "loading_asr":
-                    loading_detail.clear()
-                    loading_detail.update(prev_loading_detail or {})
-                logger.warning("Capture ASR preload skipped: %s", e)
-        capture_preload_task = asyncio.create_task(_preload_capture_asr())
-    else:
-        logger.info("Capture ASR preload disabled; dictation ASR will load on first use.")
+    capture_preload_task = None
 
     # ── MCP session manager (Wave 2.2) ────────────────────────────────────
     # FastMCP's Streamable-HTTP transport needs its session manager running for
@@ -1284,7 +1210,7 @@ def _ui_port() -> int:
 _ui = _ui_port()
 _allowed = os.environ.get(
     "OMNIVOICE_ALLOWED_ORIGINS",
-    f"http://localhost:{_ui},http://127.0.0.1:{_ui},tauri://localhost,http://tauri.localhost",
+    f"http://localhost:{_ui},http://127.0.0.1:{_ui}",
 ).split(",")
 
 # Inert unless a PIN is set. CORS is registered after both auth gates below so
@@ -1378,16 +1304,12 @@ app.include_router(archetypes.router)
 app.include_router(describe_voice.router)  # issue #317: free-text voice design
 app.include_router(community.router)
 app.include_router(batch.router)
-app.include_router(watermark.router)
 app.include_router(events.router)
 app.include_router(capture.router)
-app.include_router(capture_ws.router)
-app.include_router(dictation.router)
 app.include_router(openai_compat.router)
 app.include_router(tts_stream.router)
 app.include_router(marketplace.router)
 app.include_router(personas.router)
-app.include_router(sonitranslate.router)
 app.include_router(audiobook.router)
 app.include_router(longform_jobs.router)
 app.include_router(pronunciation.router)  # Expressive-TTS Spec 01: pronunciation dictionary

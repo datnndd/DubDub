@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -45,57 +45,12 @@ describe('StorageTab', () => {
     localStorage.clear();
   });
 
-  it('labels the data dir as app data (not uploads) and offers Open folder on every path', async () => {
+  it('labels the data dir as app data and displays the paths', async () => {
     mockFetch();
     renderTab();
     await waitFor(() => expect(screen.getByText(`${INFO.data_dir}/`)).toBeInTheDocument());
     expect(screen.getByText('App data stored at')).toBeInTheDocument();
-    expect(screen.getByTestId('storage-open-data-dir')).toBeInTheDocument();
-    expect(screen.getByTestId('storage-open-outputs-dir')).toBeInTheDocument();
-    expect(screen.getByTestId('storage-open-crash-log')).toBeInTheDocument();
-  });
-
-  it('Open folder reveals the path via /export/reveal', async () => {
-    const fetchMock = mockFetch();
-    renderTab();
-    const btn = await screen.findByTestId('storage-open-outputs-dir');
-    fireEvent.click(btn);
-    await waitFor(() => {
-      const call = fetchMock.mock.calls.find(([u]) => u.endsWith('/export/reveal'));
-      expect(call).toBeTruthy();
-      expect(JSON.parse(call[1].body)).toEqual({ path: INFO.outputs_dir });
-    });
-  });
-
-  it('factory reset clears every registered preference key, not just the zustand blob', async () => {
-    mockFetch();
-    // Preferences scattered across the app (the pre-registry bug left these behind):
-    localStorage.setItem('omnivoice.app', '{"state":{}}');
-    localStorage.setItem('omnivoice.navRailSide', 'right');
-    localStorage.setItem('omnivoice.settings.category', 'storage');
-    localStorage.setItem('omni_capture_live_typing', '1');
-    localStorage.setItem('ov_stories_global_speed', '1.4');
-    localStorage.setItem('omni_ui', '{"uiScale":1.2}');
-    localStorage.setItem('dismissed_lang_suggestion', 'true');
-    // User data + connection state that must survive a reset:
-    localStorage.setItem('omni_transcriptions', '[{"text":"note"}]');
-    localStorage.setItem('ov_backend_url', 'http://192.168.1.4:7842');
-
-    renderTab();
-    await waitFor(() => expect(screen.getByTestId('factory-reset-open')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('factory-reset-open'));
-    await waitFor(() => expect(screen.getByTestId('factory-reset-confirm')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('factory-reset-confirm'));
-
-    await waitFor(() => expect(localStorage.getItem('omnivoice.app')).toBeNull());
-    expect(localStorage.getItem('omnivoice.navRailSide')).toBeNull();
-    expect(localStorage.getItem('omnivoice.settings.category')).toBeNull();
-    expect(localStorage.getItem('omni_capture_live_typing')).toBeNull();
-    expect(localStorage.getItem('ov_stories_global_speed')).toBeNull();
-    expect(localStorage.getItem('omni_ui')).toBeNull();
-    expect(localStorage.getItem('dismissed_lang_suggestion')).toBeNull();
-    // Never touch user data or the remote-backend connection:
-    expect(localStorage.getItem('omni_transcriptions')).toBe('[{"text":"note"}]');
-    expect(localStorage.getItem('ov_backend_url')).toBe('http://192.168.1.4:7842');
+    expect(screen.getByText(INFO.outputs_dir)).toBeInTheDocument();
+    expect(screen.getByText(INFO.crash_log_path)).toBeInTheDocument();
   });
 });

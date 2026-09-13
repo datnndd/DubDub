@@ -100,8 +100,7 @@ export default function Sidebar(props) {
     restoreHistory,
     restoreDubHistory,
     handleSaveHistoryAsProfile,
-    handleNativeExport,
-    revealInFolder,
+    handleExport,
     deleteHistory,
     loadHistory,
     loadDubHistory,
@@ -646,7 +645,7 @@ export default function Sidebar(props) {
                             <button
                               className="history-action-btn history-action-icon"
                               onClick={(e) =>
-                                handleNativeExport(e, item.audio_path, item.audio_path, item.mode)
+                                handleExport(e, item.audio_path, item.audio_path, item.mode)
                               }
                               title="Export"
                             >
@@ -747,7 +746,6 @@ export default function Sidebar(props) {
                         key={item.id}
                         className="history-item"
                         style={{ '--row-accent': accent }}
-                        onClick={() => revealInFolder(item.destination_path)}
                       >
                         <div className="flex items-center justify-between gap-2 min-w-0">
                           <span
@@ -762,32 +760,10 @@ export default function Sidebar(props) {
                         <div className="history-subtitle">
                           {t('sidebar.in_folder', { folder: parentFolder })}
                         </div>
-                        <div className="history-actions">
-                          <button
-                            className="history-action-btn accent"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              revealInFolder(item.destination_path);
-                            }}
-                          >
-                            <FolderOpen size={10} /> {t('sidebar.show_in_folder')}
-                          </button>
-                        </div>
                       </div>
                     );
                   })}
 
-                {isSidebarCollapsed &&
-                  filteredExport.map((item) => (
-                    <div
-                      key={item.id}
-                      title={`Exported: ${item.filename}\nClick to open folder`}
-                      onClick={() => revealInFolder(item.destination_path)}
-                      className={`${SIDEBAR_TILE} ${item.mode === 'audio' ? 'text-[#83a598]' : 'text-[#8ec07c]'}`}
-                    >
-                      <FolderOpen size={18} />
-                    </div>
-                  ))}
               </>
             )}
           </>

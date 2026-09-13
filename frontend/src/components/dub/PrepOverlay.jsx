@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Loader, Square } from 'lucide-react';
 import { Button } from '../../ui';
 
-const PREP_FULL = ['download', 'extract', 'demucs', 'scene'];
+const PREP_FULL = ['download', 'extract', 'scene'];
 const PREP_CACHED = ['download', 'extract', 'cached'];
 
 function fmtBytesRate(bps) {
@@ -36,7 +36,6 @@ function PrepOverlay({ stage, progress, onAbort, large = false }) {
   const LABEL = {
     download: t('dub.prep_download'),
     extract: t('dub.prep_extract'),
-    demucs: t('dub.prep_demucs'),
     scene: t('dub.prep_scene'),
     cached: t('dub.prep_cached'),
   };
@@ -72,7 +71,7 @@ function PrepOverlay({ stage, progress, onAbort, large = false }) {
     speed,
     eta,
   ].filter(Boolean);
-  const note = stage === 'demucs' && !hasPct ? t('dub.prep_demucs_note') : null;
+  const note = null;
 
   const body = (
     <>

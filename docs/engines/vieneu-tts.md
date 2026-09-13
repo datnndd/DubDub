@@ -108,7 +108,7 @@ machine-specific; re-measure before quoting them anywhere.
 | Env var | Default | Meaning |
 |---|---|---|
 | `OMNIVOICE_VIENEU_MODE` | `v3turbo` | SDK mode: `v3turbo` (48 kHz, ONNX CPU) / `standard` (GGUF) / `fast` (LMDeploy GPU) / `remote` |
-| `OMNIVOICE_VIENEU_MODEL` | `pnnbao-ump/VieNeu-TTS-v3-Turbo` | HF repo id of the checkpoint |
+| `OMNIVOICE_VIENEU_MODEL_DIR` | required | Absolute path to a preinstalled local checkpoint; automatic model downloads are disabled |
 | `OMNIVOICE_VIENEU_DEVICE` | `auto` | `auto` / `cpu` / `cuda` |
 | `OMNIVOICE_VIENEU_LANGUAGES` | `vi` | Comma list the engine advertises + enforces |
 | `OMNIVOICE_VIENEU_VENV` | — | Use this existing venv directory instead of the package-owned one |

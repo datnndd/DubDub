@@ -56,6 +56,16 @@ _URL_SECRET_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Provider and subprocess errors frequently format an inline assignment rather
+# than echoing the value of an environment variable already present in this
+# process (for example, ``TOKEN=...``).  Treat those assignments as secrets at
+# every diagnostic boundary as well.
+_INLINE_SECRET_RE = re.compile(
+    r"\b([A-Za-z_][A-Za-z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL)[A-Za-z0-9_]*)"
+    r"\s*=\s*([^\s,;]+)",
+    re.IGNORECASE,
+)
+
 # Home-directory shapes for all three supported platforms. Matched
 # pattern-wise (not just this machine's $HOME) so paths quoted from a
 # user's pasted log on another OS get cleaned too.
@@ -106,7 +116,12 @@ def scrub_text(text: str | None) -> str:
     except Exception:
         return REDACTED
 
-    # 2. Credential-shaped substrings + URL query secrets.
+    # 2. Named inline assignments, credential-shaped substrings + URL query
+    # secrets.
+    try:
+        s = _INLINE_SECRET_RE.sub(lambda m: m.group(1) + "=" + REDACTED, s)
+    except Exception:
+        return REDACTED
     for pat in _TOKEN_PATTERNS:
         try:
             s = pat.sub(REDACTED, s)

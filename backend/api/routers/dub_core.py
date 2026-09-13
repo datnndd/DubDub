@@ -23,7 +23,7 @@ from schemas.requests import (
     HardsubExtractRequest,
     ParseSubtitleTextRequest,
 )
-from services.model_manager import get_model, _gpu_pool, _cpu_pool, get_diarization_pipeline, offload_tts_for_asr, restore_tts_after_asr, should_preload_tts_asr
+from services.model_manager import _gpu_pool, _cpu_pool, offload_tts_for_asr, restore_tts_after_asr
 from services.asr_backend import (
     ASR_TRANSCRIBE_TIMEOUT_S,
     ASRTimeoutError,
@@ -34,10 +34,8 @@ from services.audio_io import _safe_soundfile_write
 from services.ffmpeg_utils import find_ffmpeg
 from services.segmentation import (
     segment_transcript,
-    assign_speakers_from_diarization,
     assign_speakers_from_turns,
     assign_speakers_heuristic,
-    resplit_segments_by_diarization,
     resplit_segments_by_turns,
     _words_from_whisper,
     clean_up_segments,
@@ -409,9 +407,10 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
                 fps=req.fps, band_top=req.band_top, text_score=req.text_score,
                 crop=req.crop, refine_fps=req.refine_fps, refine=req.refine,
                 model_id=req.model_id,
-                checkpoint_path=os.path.join(os.path.dirname(video_path), "hardsub_ocr.checkpoint.json"),
+                checkpoint_path=None if req.time_ranges else os.path.join(os.path.dirname(video_path), "hardsub_ocr.checkpoint.json"),
                 progress_cb=_progress,
                 cancelled=lambda: cancel_event.is_set() or task_manager.is_cancelled(task_id),
+                time_ranges=req.time_ranges,
             )
             ocr_task = asyncio.create_task(ocr_future)
 
@@ -433,6 +432,9 @@ async def dub_hardsub_extract(job_id: str, req: HardsubExtractRequest):
             cues = await ocr_task
             if task_manager.is_cancelled(task_id):
                 yield _prep_event("cancelled")
+                return
+            if req.time_ranges:
+                yield _prep_event("hardsub_done", segments=cues, stats={"imported": len(cues), "clamped": 0})
                 return
             srt_text = hso.build_srt(cues)
             yield _prep_event("hardsub_progress", stage="saving", percent=None)
@@ -797,8 +799,16 @@ _prep_event_helper = dub_pipeline.prep_event  # alias; we keep the module-local 
 #: into one reference, which is how "made up" clone voices happen).
 CLONE_SKIP_HEURISTIC_MSG = (
     "auto voice cloning skipped: speaker labels are gap-based estimates — "
-    "set up diarization (Model Catalogue → Models → pyannote) for per-speaker clones"
+    "use provider-supplied speaker labels for per-speaker clones"
 )
+
+
+def should_preload_tts_asr() -> bool:
+    return False
+
+
+async def get_model():
+    return None
 
 
 def _clamp_num_speakers(value) -> Optional[int]:
@@ -832,14 +842,8 @@ async def dub_transcribe_stream(
     on the client can't read non-2xx response bodies — a 503 there surfaces
     as an opaque "network error" instead of the actionable message we want.
 
-    `num_speakers` is an optional hint passed straight to pyannote. Left unset,
-    pyannote auto-detects the count — but its auto-detect can collapse a
-    multi-speaker clip to a single speaker (issue #274). When the user knows
-    the exact count, supplying it forces pyannote to return that many speakers.
-    On paths that can't honor the hint exactly (inline ASR turns, the
-    silence-gap heuristic) it is never silently dropped: the heuristic cycles
-    the requested count and a `warning` SSE event tells the user how far the
-    labels can be trusted.
+    `num_speakers` is an optional hint for the silence-gap heuristic. Provider
+    speaker turns, when available, remain authoritative.
     """
     # Clamp to a sane range; ignore anything non-positive / absurd so a bad
     # query string can never break the diarization call. None → auto-detect.
@@ -926,142 +930,59 @@ async def dub_transcribe_stream(
         # otherwise leave it unbound and raise NameError instead of the real error.
         asr_on_vocals = False
 
-        if not job:
-            preflight_error = "Job not found. It may have been cleaned up or was never created."
-        else:
-            # The TTS core model is loaded here for exactly one reason: to harvest a
-            # preloaded `_asr_pipe` off it (passed to get_active_asr_backend below).
-            # That attribute is only ever set by VoiceStudio.from_pretrained under
-            # OMNIVOICE_PRELOAD_TTS_ASR, which is off by default — so in the default
-            # config this loaded ~3 GB, harvested None, and then offload_tts_for_asr()
-            # freed it again 60 lines below. On unified memory that offload is a full
-            # UNLOAD (#1119), so dub_generate later cold-reloaded the same model (~8s).
-            # Every dub paid load → unload → reload for an attribute that was always
-            # None. Load it only when there is actually something to harvest.
-            _model = None
-            if should_preload_tts_asr():
-                # Guard the model load: if it raises, the SSE stream would otherwise die
-                # before emitting any event, and the UI shows a misleading generic
-                # "stream dropped" message instead of the real cause (issue #255).
-                try:
-                    # Same keepalive treatment as the ASR load below: a cold
-                    # TTS load can outlast a reverse proxy's per-read idle
-                    # timeout (~60-120 s nginx/Caddy defaults) — the initial
-                    # open comment stops the browser's no-response clock but
-                    # does not reset a proxy's idle timer.
-                    _model_task = asyncio.ensure_future(get_model())
-                    _model_task.add_done_callback(
-                        lambda f: f.cancelled() or f.exception()
+        _model = None
+        if should_preload_tts_asr():
+            try:
+                _model_task = asyncio.ensure_future(get_model())
+                _model_task.add_done_callback(
+                    lambda f: f.cancelled() or f.exception()
+                )
+                while True:
+                    _done, _ = await asyncio.wait(
+                        {_model_task}, timeout=ASR_LOAD_KEEPALIVE_S
                     )
-                    while True:
-                        _done, _ = await asyncio.wait(
-                            {_model_task}, timeout=ASR_LOAD_KEEPALIVE_S
-                        )
-                        if _done:
-                            break
-                        yield b": tts-load keepalive\n\n"
-                    _model = _model_task.result()
-                except Exception as e:
-                    logger.error(
-                        "transcribe preflight: model load failed (job=%s): %s",
-                        log_safe(job_id), log_safe(e),
-                    )
-                    from core.failure import build_failure
-                    f = build_failure(e, stage="transcribe-preflight", include_diagnostic=False)
-                    preflight_error = f["reason"] + (f" — {f['hint']}" if f.get("hint") else "")
-                    _model = None
-            if preflight_error is None:
-                asr_audio_target = job.get("vocals_path")
-                if not asr_audio_target or not os.path.exists(asr_audio_target):
-                    asr_audio_target = job.get("audio_path")
-                # #963: onset snapping is only trustworthy on the Demucs vocals
-                # track. When separation failed/was skipped, dub_pipeline sets
-                # vocals_path to the mixed audio_path — so compare paths instead
-                # of trusting the key's presence.
+                    if _done:
+                        break
+                    yield b": tts-load keepalive\n\n"
+                _model = _model_task.result()
+            except Exception as e:
+                logger.error(
+                    "transcribe preflight: model load failed (job=%s): %s",
+                    log_safe(job_id), log_safe(e),
+                )
+                from core.failure import build_failure
+                f = build_failure(e, stage="transcribe-preflight", include_diagnostic=False)
+                preflight_error = f["reason"] + (f" — {f['hint']}" if f.get("hint") else "")
+                _model = None
+
+        if preflight_error is None:
+            if not job:
+                preflight_error = "Job not found. It may have been cleaned up or was never created."
+            else:
+                asr_audio_target = job.get("vocals_path") or job.get("audio_path")
                 asr_on_vocals = bool(asr_audio_target) and asr_audio_target != job.get("audio_path")
                 if not asr_audio_target or not os.path.exists(asr_audio_target):
                     preflight_error = "No audio available for transcription."
                 else:
                     from services.asr_backend import (
                         ASRModelMissingError,
-                        active_backend_id,
                         asr_model_missing_detail,
                         asr_model_missing_error,
                         load_active_asr_backend,
                     )
-                    # TTS-only install: no ASR model on disk. Bail BEFORE any
-                    # backend is constructed/loaded — the whisper backends would
-                    # otherwise silently auto-download multi-GB weights from HF.
-                    # Typed payload → the UI renders a one-click download CTA.
-                    # A preloaded `_asr_pipe` only substitutes for the
-                    # *pytorch-whisper* backend (its sole consumer) — any other
-                    # active backend still loads its own weights, so the preflight
-                    # must run for them even when the pipe is present.
-                    _missing = None
-                    _skip_preflight = (
-                        getattr(_model, "_asr_pipe", None) is not None
-                        and active_backend_id() == "pytorch-whisper"
-                    )
-                    if not _skip_preflight:
-                        _missing = await asyncio.get_running_loop().run_in_executor(
-                            None, asr_model_missing_error
-                        )
-                    if _missing is not None:
-                        preflight_error = asr_model_missing_detail(_missing)
-                        preflight_payload = _missing
-                    if _missing is None:
+                    missing = await asyncio.to_thread(asr_model_missing_error)
+                    if missing is not None:
+                        preflight_error = asr_model_missing_detail(missing)
+                        preflight_payload = missing
+                    else:
                         try:
-                            # Free recoverable TTS VRAM before ASR chooses its
-                            # device. Probing first falsely routed Whisper to
-                            # CPU even when this offload made CUDA viable.
-                            try:
-                                await asyncio.get_running_loop().run_in_executor(
-                                    _cpu_pool, offload_tts_for_asr
-                                )
-                                _tts_offloaded["v"] = True
-                            except Exception as e:
-                                logger.warning("offload_tts_for_asr failed (continuing): %s", e)
-                            # The PyTorch-Whisper backend lazily builds its own pipeline
-                            # when no preloaded `_asr_pipe` is present (issue #255), so it
-                            # no longer needs OMNIVOICE_PRELOAD_TTS_ASR=1.
-                            #
-                            # Select + eagerly load in ONE call so a real load failure
-                            # (e.g. WhisperX: missing weights, CTranslate2/cuDNN
-                            # mismatch, the torch-2.6 weights-only VAD regression)
-                            # surfaces once, with its actual cause, as a clean preflight
-                            # `error` event — instead of being buried in N cryptic
-                            # per-chunk failures and retried on every chunk (#578) —
-                            # and so a backend whose deep import chain is rotted (e.g.
-                            # `No module named 'lightning_fabric'` from a partial
-                            # install, #1185) is marked unavailable and skipped in
-                            # favor of the next engine instead of failing ASR init
-                            # wholesale. Run in a thread so the (blocking) load
-                            # doesn't stall the event loop.
-                            import functools
                             _load_fut = asyncio.get_running_loop().run_in_executor(
                                 _gpu_pool,
-                                functools.partial(
-                                    load_active_asr_backend,
-                                    asr_pipe=getattr(_model, "_asr_pipe", None),
-                                ),
+                                load_active_asr_backend,
                             )
-                            # On client disconnect the ASGI server cancels this
-                            # generator mid-wait; the executor load keeps
-                            # running (and still caches its result). Retrieve
-                            # its eventual exception so asyncio never logs
-                            # "Task exception was never retrieved" into the
-                            # crash forensics log.
                             _load_fut.add_done_callback(
                                 lambda f: f.cancelled() or f.exception()
                             )
-                            # Keepalive while the load runs (#1196): a first-run
-                            # load may download weights for minutes, and a
-                            # byte-silent stream gets severed by Chrome's
-                            # ~5 min no-response cap or a reverse proxy's idle
-                            # timeout — which the UI can only render as the
-                            # generic "stream dropped" guess. SSE comment
-                            # lines are invisible to EventSource, so no client
-                            # changes are needed.
                             while True:
                                 _done, _ = await asyncio.wait(
                                     {_load_fut}, timeout=ASR_LOAD_KEEPALIVE_S
@@ -1072,9 +993,6 @@ async def dub_transcribe_stream(
                             _asr_backend = _load_fut.result()
                             _loaded_asr["backend"] = _asr_backend
                         except ASRModelMissingError as e:
-                            # A broken primary fell through to a fallback whose
-                            # weights aren't installed — same typed payload
-                            # (and download CTA) as the initial preflight.
                             preflight_error = asr_model_missing_detail(e.payload)
                             preflight_payload = e.payload
                         except Exception as e:
@@ -1151,15 +1069,14 @@ async def dub_transcribe_stream(
         })
 
         all_segments: list[dict] = []
-        # Words (global-timeline) retained so diarization can re-split a segment
+        # Words (global-timeline) retained so provider speaker turns can re-split a segment
         # that spans two speakers' turns at the word boundary (#486).
         all_words: list = []
         detected_lang = None
         next_seg_id = 0
         chunk_errors: list[str] = []
         chunk_error_codes: list[str] = []
-        # Speaker turns from an ASR backend that diarizes inline (FunASR cam++).
-        # When present, _diarize() uses them and skips pyannote (Phase 2, #182).
+        # Speaker turns supplied by the ASR provider, when available.
         asr_speaker_turns: list[dict] = []
 
         for i in range(chunks_n):
@@ -1182,7 +1099,13 @@ async def dub_transcribe_stream(
                     tmp.close()
                     try:
                         _safe_soundfile_write(tmp.name, arr, local_sr)
-                        r = _asr_backend.transcribe(tmp.name, word_timestamps=True, language=source_language)
+                        kwargs = {"word_timestamps": True}
+                        if source_language:
+                            kwargs["language"] = source_language
+                        try:
+                            r = _asr_backend.transcribe(tmp.name, **kwargs)
+                        except TypeError:
+                            r = _asr_backend.transcribe(tmp.name, word_timestamps=True)
                     finally:
                         try: os.remove(tmp.name)
                         except OSError: pass
@@ -1192,8 +1115,7 @@ async def dub_transcribe_stream(
                         a0 = (ts[0] if ts[0] is not None else 0.0) + offset
                         a1 = (ts[1] if ts[1] is not None else 0.0) + offset
                         shifted.append({"text": c.get("text", ""), "timestamp": (a0, a1)})
-                    # Inline-diarization speaker turns (FunASR cam++), offset-shifted
-                    # to the full-audio timeline so _diarize() can use them.
+                    # Provider speaker turns, offset-shifted to the full-audio timeline.
                     turns = []
                     for seg in r.get("segments", []) or []:
                         spk = seg.get("speaker")
@@ -1208,10 +1130,10 @@ async def dub_transcribe_stream(
                     # than the generic "no segments" dead end.
                     is_memory = isinstance(exc, torch.OutOfMemoryError)
                     logger.error(
-                        "Chunk transcription failed (backend=%s; class=%s; details=%s)",
+                        "Chunk transcription failed (backend=%s; class=%s): %s",
                         _asr_backend.id,
                         type(exc).__name__,
-                        exc,
+                        log_safe(exc),
                     )
                     from core.public_errors import stream_failure
                     failure = stream_failure(
@@ -1377,223 +1299,38 @@ async def dub_transcribe_stream(
             """Returns (segments, warning_payload_or_None, labels_source).
 
             `labels_source` records where the speaker labels came from —
-            `"pyannote"` | `"turns"` | `"heuristic"` — so downstream
+            `"turns"` | `"heuristic"` — so downstream
             auto-clone extraction can refuse to cut reference audio from
             gap-based estimates (a mixed-speaker reference is how "made up"
             clone voices happen).
 
             `warning_payload` is a structured dict
-            `{detail, error_class, docs_url}` whenever we silently fell back
-            to the silence-gap heuristic (no HF_TOKEN, model unavailable,
-            license not accepted, or pyannote raised) — or whenever the
-            user's `num_speakers` hint could not be honored exactly. The
+            `{detail, error_class, docs_url}` whenever we use the silence-gap
+            heuristic or the user's `num_speakers` hint cannot be honored. The
             heuristic only detects speaker turns from >1.2s silences, so a
             rapid-fire man↔woman exchange will read as one speaker. Issue
             #78 — we attach an `error_class` so the front-end's errorDocsMap
             can render a "See docs" deeplink instead of a dead-end toast.
             """
-            from services.model_manager import (
-                DIARIZATION_ERR_LICENSE,
-                DIARIZATION_ERR_NO_TOKEN,
-            )
-            from core import error_docs_map
-
-            def _hint_suffix() -> str:
-                """Honest caveat appended to heuristic-fallback warnings when a
-                multi-speaker hint is set: the count is now honored, but the
-                heuristic can't attribute voices. (A hint of 1 IS fully
-                honored — one label — so it needs no caveat.)"""
-                if not num_speakers or num_speakers < 2:
-                    return ""
-                return (
-                    f" Your speaker-count setting ({num_speakers}) is only "
-                    f"approximately honored: the heuristic cycles "
-                    f"{num_speakers} speaker labels on silence gaps instead "
-                    f"of recognizing voices, so lines may be attributed to "
-                    f"the wrong speaker."
-                )
-
-            def _use_turns(crash: Exception | None = None, err_sentinel=None):
-                """Label from the ASR backend's inline speaker turns; warn when
-                that means the user's explicit count can't be enforced."""
-                logger.info(
-                    "Using inline ASR diarization (%d turns)%s.",
-                    len(asr_speaker_turns),
-                    "" if crash else "; skipping pyannote",
-                )
-                assigned = assign_speakers_from_turns(all_segments, asr_speaker_turns)
-                # #486: split any segment that spans two speakers' turns at the
-                # word boundary (single-speaker segments pass through unchanged).
-                resplit = resplit_segments_by_turns(assigned, all_words, asr_speaker_turns)
-                if not num_speakers:
-                    return resplit, None, "turns"
-                error_class = (
-                    "HF_AUTH_FAILED"
-                    if err_sentinel == DIARIZATION_ERR_NO_TOKEN
-                    else "PYANNOTE_LICENSE_REQUIRED"
-                )
-                if crash:
-                    detail = (
-                        f"Speaker diarization crashed mid-run "
-                        f"({type(crash).__name__}); falling back to the ASR "
-                        f"engine's built-in speaker turns. Speaker-count hint "
-                        f"ignored: the detected count may differ from the "
-                        f"{num_speakers} you set."
-                    )
-                else:
-                    detail = (
-                        f"Speaker-count hint ignored: pyannote diarization is "
-                        f"unavailable, so the ASR engine's built-in speaker "
-                        f"turns were used and the detected count may differ "
-                        f"from the {num_speakers} you set. Set up diarization "
-                        f"(Model Catalogue → Models → pyannote) to enforce an exact "
-                        f"speaker count."
-                    )
-                return resplit, {
-                    "detail": detail,
-                    "error_class": error_class,
-                    "docs_url": error_docs_map.lookup(error_class),
-                    "speaker_hint": {"requested": num_speakers, "status": "ignored"},
-                }, "turns"
-
-            # The active ASR backend already diarized inline (FunASR cam++):
-            # its turns are the fast path and skip pyannote entirely (#182) —
-            # but ONLY when the user didn't set an explicit speaker count.
-            # Inline turns can't be forced to N speakers through the shared ASR
-            # contract, so a set num_speakers prefers pyannote — the one engine
-            # that honors an exact count. When pyannote can't load, the turns
-            # are still the best labels available; use them and say so instead
-            # of silently eating the hint.
-            diar_pipe = None
-            err_sentinel = None
             if asr_speaker_turns:
-                if num_speakers:
-                    diar_pipe, err_sentinel = get_diarization_pipeline(return_error=True)
-                if not diar_pipe:
-                    return _use_turns(err_sentinel=err_sentinel)
-                logger.info(
-                    "num_speakers=%d set: preferring pyannote over %d inline "
-                    "ASR turns (only pyannote honors an exact count).",
-                    num_speakers, len(asr_speaker_turns),
-                )
-            else:
-                diar_pipe, err_sentinel = get_diarization_pipeline(return_error=True)
-            if not diar_pipe:
-                # Phase 1 AUTH-01: ask the resolver (App → Env → HF-CLI),
-                # not just the env var. This is the #35 fix — users who
-                # ran `huggingface-cli login` previously saw the "no
-                # HF_TOKEN" branch even though the library would have
-                # read the token. Now the cascade is honoured.
-                from services import token_resolver
-                resolved = token_resolver.resolve()
-
-                if err_sentinel == DIARIZATION_ERR_NO_TOKEN or not resolved:
-                    detail = (
-                        "Speaker diarization is disabled because no HuggingFace token "
-                        "was found in any source (Settings → API Keys, the HF_TOKEN "
-                        "env var, or ~/.cache/huggingface/token from `huggingface-cli "
-                        "login`). To detect multiple speakers, set a token in one of "
-                        "those places and accept the pyannote/speaker-diarization-3.1 "
-                        "license at huggingface.co. Falling back to a silence-gap "
-                        "heuristic — turns with no audible pause between them will "
-                        "be merged into one speaker."
-                    )
-                    error_class = "HF_AUTH_FAILED"
-                elif err_sentinel == DIARIZATION_ERR_LICENSE:
-                    who = resolved.username or "(whoami suppressed)"
-                    detail = (
-                        f"Speaker diarization model is gated — the "
-                        f"pyannote/speaker-diarization-3.1 license has not been "
-                        f"accepted on HuggingFace by this account "
-                        f"(source={resolved.source}, user={who}). Visit "
-                        f"huggingface.co/pyannote/speaker-diarization-3.1 AND "
-                        f"huggingface.co/pyannote/segmentation-3.0 while signed "
-                        f"in and click 'Agree and access repository' on both, "
-                        f"then restart this dub job. Falling back to a "
-                        f"silence-gap heuristic; rapid speaker turns may be "
-                        f"merged into one speaker."
-                    )
-                    error_class = "PYANNOTE_LICENSE_REQUIRED"
-                else:
-                    # err_sentinel == DIARIZATION_ERR_LOAD (or unexpected None
-                    # with a resolved token — historical safety net).
-                    who = resolved.username or "(whoami suppressed)"
-                    detail = (
-                        f"Speaker diarization model failed to load even though an HF "
-                        f"token was found (source={resolved.source}, user={who}). "
-                        f"Most common causes: the pyannote/speaker-diarization-3.1 "
-                        f"license has not been accepted on HuggingFace, or there is "
-                        f"a pyannote/torch version mismatch. See backend logs for "
-                        f"the underlying error. Falling back to a silence-gap "
-                        f"heuristic; rapid speaker turns may be merged."
-                    )
-                    error_class = "PYANNOTE_LICENSE_REQUIRED"
-                warning = {
-                    "detail": detail + _hint_suffix(),
-                    "error_class": error_class,
-                    "docs_url": error_docs_map.lookup(error_class),
-                }
-                if num_speakers:
-                    warning["speaker_hint"] = {
-                        "requested": num_speakers,
-                        "status": "approximate" if num_speakers > 1 else "honored",
-                    }
+                assigned = assign_speakers_from_turns(all_segments, asr_speaker_turns)
                 return (
-                    assign_speakers_heuristic(all_segments, num_speakers),
-                    warning,
-                    "heuristic",
+                    resplit_segments_by_turns(assigned, all_words, asr_speaker_turns),
+                    None,
+                    "turns",
                 )
-            try:
-                # Pass the user's speaker-count hint through to pyannote when
-                # provided (#274). pyannote's apply() accepts num_speakers;
-                # omit it entirely when None so we don't depend on the kwarg
-                # existing in every pyannote build.
-                if num_speakers:
-                    logger.info("Diarizing with num_speakers=%d (user hint)", num_speakers)
-                    diar = diar_pipe(asr_audio_target, num_speakers=num_speakers)
-                else:
-                    diar = diar_pipe(asr_audio_target)
-                assigned = assign_speakers_from_diarization(all_segments, diar)
-                # #486: split any segment that spans two speakers' turns at the
-                # word boundary (single-speaker segments pass through unchanged).
-                return resplit_segments_by_diarization(assigned, all_words, diar), None, "pyannote"
-            except Exception as e:
-                logger.exception("Diarization failed")
-                # Inline ASR turns beat the silence-gap heuristic as a crash
-                # fallback (this path is reachable with turns present since a
-                # set num_speakers routes turns-jobs through pyannote).
-                if asr_speaker_turns:
-                    return _use_turns(crash=e)
-                # Mid-run failure — classify against the same sentinels so a
-                # post-load 401 (rare but possible after a token rotation)
-                # still gets the right docs deeplink.
-                from services.model_manager import _classify_diarization_error
-                err_class_post = _classify_diarization_error(e)
-                error_class = (
-                    "PYANNOTE_LICENSE_REQUIRED"
-                    if err_class_post == DIARIZATION_ERR_LICENSE
-                    else "PYANNOTE_LICENSE_REQUIRED"  # LOAD failures land here too
-                )
+            warning = None
+            if num_speakers and num_speakers > 1:
                 warning = {
                     "detail": (
-                        f"Speaker diarization crashed mid-run "
-                        f"({type(e).__name__}); falling back to a silence-gap "
-                        f"heuristic. Rapid speaker turns may be merged."
-                        + _hint_suffix()
+                        "Deepgram returned no speaker turns; speaker labels were "
+                        "estimated from silence gaps."
                     ),
-                    "error_class": error_class,
-                    "docs_url": error_docs_map.lookup(error_class),
+                    "error_class": "ASR_DIARIZATION_UNAVAILABLE",
+                    "docs_url": None,
+                    "speaker_hint": {"requested": num_speakers, "status": "approximate"},
                 }
-                if num_speakers:
-                    warning["speaker_hint"] = {
-                        "requested": num_speakers,
-                        "status": "approximate" if num_speakers > 1 else "honored",
-                    }
-                return (
-                    assign_speakers_heuristic(all_segments, num_speakers),
-                    warning,
-                    "heuristic",
-                )
+            return assign_speakers_heuristic(all_segments, num_speakers), warning, "heuristic"
 
         fut_diar = loop.run_in_executor(_gpu_pool, _diarize)
         final_segs = None
@@ -1878,8 +1615,7 @@ async def dub_transcribe(
     """Legacy synchronous transcribe (kept for the headless CLI).
 
     `num_speakers` mirrors the SSE endpoint's query param (same 1–20 clamp):
-    an exact speaker count forwarded to pyannote, or cycled by the silence-gap
-    heuristic when pyannote is unavailable. None → auto-detect.
+    a silence-gap heuristic when provider speaker labels are unavailable.
     """
     num_speakers = _clamp_num_speakers(num_speakers)
     job = _get_job(job_id)
@@ -1890,27 +1626,13 @@ async def dub_transcribe(
     # OMNIVOICE_PRELOAD_TTS_ASR — and when it is off, that branch raises "fallback
     # is not preloaded" anyway. Loading ~3 GB to reach a None attribute (and then
     # having offload_tts_for_asr free it) was pure cost.
-    _model = await get_model() if should_preload_tts_asr() else None
-
-    # TTS-only install: no ASR model on disk → typed 409 with a download CTA,
-    # BEFORE any backend is constructed (the whisper backends auto-download
-    # multi-GB weights from HF on first load). Same gate as the SSE preflight:
-    # a preloaded `_asr_pipe` only substitutes for the *pytorch-whisper*
-    # backend (its sole consumer), so it only skips the preflight there.
-    from services.asr_backend import (
-        active_backend_id,
-        asr_model_missing_detail,
-        asr_model_missing_error,
-    )
-    if not (getattr(_model, "_asr_pipe", None) is not None
-            and active_backend_id() == "pytorch-whisper"):
-        missing = await asyncio.to_thread(asr_model_missing_error)
-        if missing is not None:
-            raise HTTPException(
-                status_code=409,
-                detail={**missing, "message": asr_model_missing_detail(missing)},
-            )
-
+    from services.asr_backend import asr_model_missing_detail, asr_model_missing_error
+    missing = await asyncio.to_thread(asr_model_missing_error)
+    if missing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={**missing, "message": asr_model_missing_detail(missing)},
+        )
     def _transcribe():
 
         asr_audio_target = job.get("vocals_path")
@@ -1920,46 +1642,19 @@ async def dub_transcribe(
         # falls back to the mixed audio_path when Demucs failed/skipped.
         asr_on_vocals = bool(asr_audio_target) and asr_audio_target != job.get("audio_path")
 
-        import torch
-
         detected_lang = None
 
-        # Route through services.asr_backend — picks WhisperX / faster-whisper
-        # / mlx / pytorch based on what's installed + user preference. Works
-        # identically on all platforms; the older mlx-vs-pytorch branching
-        # here duplicated the logic in asr_backend.py and skipped WhisperX.
-        # `load_*`, not `get_*`: the plain selector hands back engines whose
-        # shallow probe passed but whose deep import chain is broken, which
-        # then dies at `.transcribe()`. The loader degrades (#1185).
         from services.asr_backend import load_active_asr_backend
-        _asr = load_active_asr_backend(asr_pipe=getattr(_model, "_asr_pipe", None))
+        asr = load_active_asr_backend()
         try:
-            try:
-                logger.info("Transcribing full audio via %s ...", _asr.id)
-                result = _asr.transcribe(asr_audio_target, word_timestamps=True)
-                detected_lang = result.get("language")
-            except Exception as e:
-                logger.exception("ASR backend %s failed", _asr.id)
-                if getattr(_model, "_asr_pipe", None) is None:
-                    raise RuntimeError(
-                        f"ASR backend {_asr.id} failed and PyTorch Whisper fallback is not preloaded: {e}"
-                    ) from e
-                # Last-resort fallback — in-memory pytorch whisper via the TTS
-                # model's pipeline when explicitly preloaded.
-                audio_np, sr = sf.read(asr_audio_target, dtype="float32")
-                if audio_np.ndim > 1: audio_np = audio_np.mean(axis=1)
-                bs = 16 if torch.cuda.is_available() else 1
-                result = _model._asr_pipe(
-                    {"array": audio_np, "sampling_rate": sr},
-                    return_timestamps=True, chunk_length_s=15, batch_size=bs,
-                )
-                detected_lang = (result.get("language") if isinstance(result, dict) else None)
+            logger.info("Transcribing full audio via %s ...", asr.id)
+            result = asr.transcribe(asr_audio_target, word_timestamps=True)
+            detected_lang = result.get("language")
         finally:
             try:
-                _asr.unload()
-            except Exception as e:
-                logger.warning("Failed to unload ASR backend: %s", e)
-
+                asr.unload()
+            except Exception as exc:
+                logger.warning("Failed to unload ASR backend: %s", exc)
         job["source_lang"] = (detected_lang or "en").split("_")[0][:2].lower()
 
         scene_cuts = job.get("scene_cuts") or []
@@ -1976,24 +1671,7 @@ async def dub_transcribe(
         except Exception as e:
             logger.warning("onset alignment skipped: %s", e)
 
-        diar_pipe = get_diarization_pipeline()
-        if diar_pipe:
-            try:
-                diar_target = job.get("vocals_path") or job.get("audio_path")
-                # Same hint pass-through as the SSE endpoint (#274): omit the
-                # kwarg entirely when unset so we don't depend on it existing
-                # in every pyannote build.
-                if num_speakers:
-                    logger.info("Diarizing with num_speakers=%d (user hint)", num_speakers)
-                    diarization = diar_pipe(diar_target, num_speakers=num_speakers)
-                else:
-                    diarization = diar_pipe(diar_target)
-                segments = assign_speakers_from_diarization(segments, diarization)
-            except Exception:
-                logger.exception("Pyannote diarization failed during inference. Falling back to heuristic.")
-                segments = assign_speakers_heuristic(segments, num_speakers)
-        else:
-            segments = assign_speakers_heuristic(segments, num_speakers)
+        segments = assign_speakers_heuristic(segments, num_speakers)
 
         # Previously ran `segment_for_subtitles(segments)` here. Removed 2026-04-21 —
         # that splitter enforces Netflix's 17 CPS reading-speed ceiling which
@@ -2004,9 +1682,6 @@ async def dub_transcribe(
         for s in segments:
             s.setdefault("text_original", s.get("text", ""))
         job["full_transcript"] = " ".join(s["text"] for s in segments)
-
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
 
         return segments
 

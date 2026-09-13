@@ -34,12 +34,8 @@ import type { PillSlice } from './pillSlice';
 import { createPillSlice } from './pillSlice';
 import type { LongformSlice } from './longformSlice';
 import { createLongformSlice, genProjectId } from './longformSlice';
-import type { UpdaterSlice } from './updaterSlice';
-import { createUpdaterSlice } from './updaterSlice';
 import type { GallerySlice } from './gallerySlice';
 import { createGallerySlice } from './gallerySlice';
-import type { ReleasesSlice } from './releasesSlice';
-import { createReleasesSlice } from './releasesSlice';
 import type { DonationSlice } from './donationSlice';
 import { createDonationSlice } from './donationSlice';
 
@@ -50,9 +46,7 @@ export type AppStore = PrefsSlice &
   GenerateSlice &
   PillSlice &
   LongformSlice &
-  UpdaterSlice &
   GallerySlice &
-  ReleasesSlice &
   DonationSlice;
 
 /**
@@ -72,9 +66,7 @@ export const useAppStore = create<AppStore>()(
       ...createGenerateSlice(set, get, api),
       ...createPillSlice(set, get, api),
       ...createLongformSlice(set, get, api),
-      ...createUpdaterSlice(set, get, api), // transient — not in partialize
       ...createGallerySlice(set, get, api),
-      ...createReleasesSlice(set, get, api), // transient — not in partialize
       ...createDonationSlice(set, get, api),
     }),
     {
