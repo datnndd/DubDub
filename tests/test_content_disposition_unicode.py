@@ -109,7 +109,10 @@ def test_no_router_interpolates_a_filename_into_the_header():
     was written by f-string ten times; the eleventh must not compile."""
     offenders = []
     pattern = re.compile(r'"Content-Disposition"\s*:\s*f[\'"]')
-    for path in (REPO / "backend").rglob("*.py"):
+    # Response headers are assembled by HTTP routers. Scanning the whole
+    # backend also walks optional model/vendor trees and turns this inexpensive
+    # recurrence guard into minutes of filesystem I/O on Windows.
+    for path in (REPO / "backend" / "api").rglob("*.py"):
         if "test" in path.parts:
             continue
         for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):

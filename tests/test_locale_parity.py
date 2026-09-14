@@ -102,10 +102,10 @@ _ENGINE_AGNOSTIC_KEYS = (
 # Never raise one: if this fails after adding en.json keys, add the keys to
 # every locale (translated) in the same change instead.
 _MISSING_BASELINE = {
-    "ar": 483, "de": 483, "es": 483, "fr": 483, "hi": 483, "id": 483,
-    "it": 483, "ja": 483, "ko": 483, "nl": 483, "pl": 483, "pt": 483,
-    "ru": 483, "sv": 483, "th": 483, "tr": 483, "uk": 483, "vi": 483,
-    "zh-CN": 476, "zh-TW": 483,
+    "ar": 482, "de": 482, "es": 482, "fr": 482, "hi": 482, "id": 482,
+    "it": 482, "ja": 482, "ko": 482, "nl": 482, "pl": 482, "pt": 482,
+    "ru": 482, "sv": 482, "th": 482, "tr": 482, "uk": 482, "vi": 482,
+    "zh-CN": 475, "zh-TW": 482,
 }
 
 

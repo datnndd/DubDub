@@ -420,13 +420,7 @@ async def _run_batch_pipeline(job_id: str, job: dict):
         # embed is long enough that occupying a GPU worker with it stalled the
         # next language's segments on 1-worker hosts.
         from services.watermark import mark_synthetic
-        from services.model_manager import get_watermark_pool
-        import functools
-        full_audio = await loop.run_in_executor(
-            get_watermark_pool(),
-            functools.partial(mark_synthetic, full_audio, sr,
-                              context="batch.dub_track"),
-        )
+        full_audio = mark_synthetic(full_audio, sr, context="batch.dub_track")
 
         # Same assembly pattern as dub_generate.py:390 — `full_audio` is a
         # zero-init tensor that gets +='d from torch.cat-style slices, so

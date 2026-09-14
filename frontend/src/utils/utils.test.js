@@ -1,15 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-// Stub Tauri globals before import so isTauri is false
-delete globalThis.window?.__TAURI_INTERNALS__;
-delete globalThis.window?.__TAURI__;
-
 describe('media utils', () => {
-  it('isTauri is false in jsdom', async () => {
-    const { isTauri } = await import('../utils/media');
-    expect(isTauri).toBe(false);
-  });
-
   it('playPing does not throw in jsdom', async () => {
     const { playPing } = await import('../utils/media');
     // Should be a no-op (no AudioContext in jsdom), not an error

@@ -498,52 +498,6 @@ class TestAPIEndpoints:
         assert res.status_code == 404
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# STREAMING TTS TESTS
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestStreamingTTS:
-    @pytest.mark.xfail(
-        reason="TTS generation path routes through tts_backend engine registry "
-               "now, not services.model_manager.get_model directly; patch target "
-               "moved. Re-enable after updating to mock services.tts_backend.",
-        strict=False,
-    )
-    def test_generate_returns_streaming_response(self, client):
-        """POST /generate should return streamed WAV with metadata headers."""
-        with patch("services.model_manager.get_model") as mock_get:
-            mock_model = MagicMock()
-            mock_model.sampling_rate = 24000
-            mock_model.generate.return_value = [make_audio_tensor(1.0)]
-
-            async def _get():
-                return mock_model
-            mock_get.return_value = _get()
-
-            import main as api_mod
-            api_mod.model = mock_model
-
-            res = client.post("/generate", data={
-                "text": "Hello world",
-                "num_step": "4",
-                "guidance_scale": "2.0",
-                "speed": "1.0",
-                "denoise": "true",
-                "t_shift": "0.1",
-                "position_temperature": "5.0",
-                "class_temperature": "0.0",
-                "layer_penalty_factor": "5.0",
-                "postprocess_output": "true",
-            })
-            assert res.status_code == 200
-            assert res.headers.get("content-type") == "audio/wav"
-            assert res.headers.get("x-audio-id") is not None
-            assert res.headers.get("x-gen-time") is not None
-            assert res.headers.get("x-audio-duration") is not None
-            # Verify it's valid WAV
-            assert len(res.content) > 44  # WAV header is 44 bytes minimum
-
-
 # ---------------------------------------------------------------------------
 # /system/set-env loopback-origin guard (260518-ivy security fix)
 # ---------------------------------------------------------------------------

@@ -134,7 +134,7 @@ def test_timeout_message_names_the_small_card(monkeypatch):
     assert "GTX 1650 Ti" in msg
     assert "4.0 GB" in msg
     # It must not read as transient contention the user can flush away.
-    assert "lighter engine" in msg
+    assert "lighter supported engine" in msg
 
 
 def test_timeout_message_unchanged_on_a_large_card(monkeypatch):

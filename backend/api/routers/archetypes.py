@@ -358,15 +358,8 @@ async def _render_archetype_wav(a: dict, out_path: Path) -> None:
     # work that holds no VRAM, so it must not occupy a GPU worker ahead of the
     # next generate on 1-worker hosts.
     from services.watermark import mark_synthetic
-    from services.model_manager import get_watermark_pool
-    import functools
-    audio_tensor = await run_on_gpu_pool_guarded(
-        functools.partial(mark_synthetic, audio_tensor, model.sampling_rate,
-                          context="archetypes.render"),
-        what="Archetype watermark",
-        timeout=generate_timeout_s(""),
-        executor=get_watermark_pool(),
-    )
+    audio_tensor = mark_synthetic(audio_tensor, model.sampling_rate,
+                                  context="archetypes.render")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     _safe_torchaudio_save(str(out_path), audio_tensor, model.sampling_rate)

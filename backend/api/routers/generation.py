@@ -892,12 +892,7 @@ async def _finalize_generation(
     # worker with it only delays the next generate on 1-worker hosts.
     if not already_marked:
         from services.watermark import mark_synthetic
-        from services.model_manager import get_watermark_pool
-        audio_tensor = await loop.run_in_executor(
-            get_watermark_pool(),
-            functools.partial(mark_synthetic, audio_tensor, sample_rate,
-                              context="generate.finalize"),
-        )
+        audio_tensor = mark_synthetic(audio_tensor, sample_rate, context="generate.finalize")
     gen_time = round(time.time() - start_time, 2)
 
     audio_id = str(uuid.uuid4())[:8]
@@ -1832,12 +1827,8 @@ async def generate_speech(
                     # VRAM, and on a 1-worker host it used to serialize
                     # directly ahead of the next generate.
                     from services.watermark import mark_synthetic
-                    from services.model_manager import get_watermark_pool
-                    _preview = await asyncio.get_running_loop().run_in_executor(
-                        get_watermark_pool(),
-                        functools.partial(mark_synthetic, audio_tensor, sample_rate,
-                                          context="generate.stream_preview"),
-                    )
+                    _preview = mark_synthetic(audio_tensor, sample_rate,
+                                              context="generate.stream_preview")
                     yield _line({"type": "chunk", "seq": 0, "pcm": _pcm16_b64(_preview)})
                 else:
                     parts = []
@@ -1859,12 +1850,8 @@ async def generate_speech(
                         # (#1169 mark, #1190 placement): CPU-only AudioSeal
                         # work must not occupy a GPU worker between chunks.
                         from services.watermark import mark_synthetic
-                        from services.model_manager import get_watermark_pool
-                        preview = await asyncio.get_running_loop().run_in_executor(
-                            get_watermark_pool(),
-                            functools.partial(mark_synthetic, preview, sample_rate,
-                                              context="generate.stream_preview"),
-                        )
+                        preview = mark_synthetic(preview, sample_rate,
+                                                 context="generate.stream_preview")
                         if i == 0:
                             # After the first render so lazy-loading engines
                             # report their REAL sample rate (see /ws/tts).

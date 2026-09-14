@@ -66,11 +66,11 @@ describe('#695 — every dub handler resets on a stale job (regression of #660)'
     }
   });
 
-  it('handleDubUpload safely accepts opts parameter and avoids undefined opts reference', () => {
+  it('handleDubUpload has the web-only upload signature', () => {
     const start = src.indexOf('const handleDubUpload =');
     expect(start).toBeGreaterThan(-1);
     const body = src.slice(start, start + 3000);
-    expect(body).toMatch(/const handleDubUpload = useCallback\(\s*async\s*\([^)]*opts/);
-    expect(body).not.toMatch(/setDubStep\(opts\./);
+    expect(body).toMatch(/const handleDubUpload = useCallback\(\s*async\s*\(dubVideoFile\)/);
+    expect(body).not.toMatch(/\bopts\b/);
   });
 });

@@ -636,10 +636,6 @@ def test_wedged_chunk_goes_through_guarded_reset_with_actionable_error(tmp_path,
         "services.asr_backend.get_active_asr_backend",
         lambda *a, **k: _WedgedASR(),
     )
-    # Deterministic streak + recommendation: start at 0, active engine is not
-    # already the isolated one (prefs on the dev box must not leak in).
-    monkeypatch.setattr(asr_backend, "_timeout_streak", 0)
-    monkeypatch.setattr(asr_backend, "active_backend_id", lambda: "whisperx")
 
     async def _collect():
         resp = await dc.dub_transcribe_stream(job_id)
@@ -663,9 +659,8 @@ def test_wedged_chunk_goes_through_guarded_reset_with_actionable_error(tmp_path,
     assert "OMNIVOICE_TRANSCRIBE_CHUNK_TIMEOUT_S" in body, body
     # … not the old parallel mechanism's dead-end advice.
     assert "Try restarting the server" not in body, body
-    # Second consecutive timeout-with-reset → the crash-isolated engine
-    # recommendation surfaces in the error the user sees (Residual B).
-    assert "faster-whisper-isolated" in body, body
+    # The retained Deepgram-only contract must not suggest a removed local ASR.
+    assert "faster-whisper" not in body.lower(), body
     # Terminal error followed by done — stream still closes via named events.
     err_idx = body.rfind("event: error")
     done_idx = body.rfind("event: done")
