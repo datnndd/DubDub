@@ -173,6 +173,10 @@ class TaskCfgVTT(TaskCfgSTT, TaskCfgTTS, TaskCfgSTS):
     background_music: Union[os.PathLike,str]=None  # 手动添加的背景音频，整理后的完整路径
     subtitle_type: int = 0  # 软硬字幕嵌入类型 0=不嵌入，1=硬字幕，2=软字幕，3=双硬，4=双软
     only_out_mp4: bool = False  # 是否仅仅输出mp4,仅视频翻译使用
+    only_out_dubbed_audio: bool = False
+    subtitle_source: str = "audio_asr"  # subtitle source audio_asr|video_ocr
+    ocr_roi: Optional[tuple] = None  # normalized (x,y,w,h)
+    ocr_roi_confirmed: bool = False  # user confirmed ROI in dialog
     recogn2pass: bool = False  # 对配音音频再次识别
     output_srt: int = 0  # 转录并翻译 模式输出字幕类似，0=单字幕，1=目标语言在线双字幕，2=目标语言在上双字幕
     copysrt_rawvideo: bool = False  # 是否将生成的字幕复制到视频目录下

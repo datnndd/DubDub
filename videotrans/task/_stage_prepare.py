@@ -43,7 +43,15 @@ class PrepareMixin:
         if vail_file(raw_instrument):
             shutil.copy2(raw_instrument, self.cfg.instrument)
 
-        if not self.is_audio_trans and self.cfg.app_mode != 'tiqu':
+        needs_novoice_video = (
+            not self.is_audio_trans
+            and self.cfg.app_mode != 'tiqu'
+            and (
+                not getattr(self.cfg, 'only_out_dubbed_audio', False)
+                or getattr(self.cfg, 'video_autorate', False)
+            )
+        )
+        if needs_novoice_video:
             app_cfg.queue_novice[self.uuid] = 'ing'
             if not self.is_copy_video:
                 self.signal(text=tr("Video needs transcoded and take a long time.."))

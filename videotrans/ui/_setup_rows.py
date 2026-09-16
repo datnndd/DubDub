@@ -54,6 +54,23 @@ def _create_file_row(ui, parent):
     ui.only_out_mp4.setText(tr('Output only mp4'))
     ui.only_out_mp4.setToolTip(tr('only_out_mp4'))
 
+    ui.only_out_dubbed_audio = QtWidgets.QCheckBox()
+    ui.only_out_dubbed_audio.setObjectName('only_out_dubbed_audio')
+    ui.only_out_dubbed_audio.setText(tr('Output only dubbed audio'))
+    ui.only_out_dubbed_audio.setToolTip(tr('only_out_dubbed_audio'))
+
+    output_modes = (ui.only_out_mp4, ui.only_out_dubbed_audio)
+
+    def clear_other_output_mode(checked, selected_mode):
+        if checked:
+            for output_mode in output_modes:
+                if output_mode is not selected_mode:
+                    output_mode.setChecked(False)
+
+    for output_mode in output_modes:
+        output_mode.toggled.connect(
+            lambda checked, selected_mode=output_mode: clear_other_output_mode(checked, selected_mode))
+
     ui.shutdown = QtWidgets.QCheckBox()
     ui.shutdown.setObjectName("shutdown")
     ui.shutdown.setToolTip(
@@ -64,6 +81,7 @@ def _create_file_row(ui, parent):
     layout.addWidget(ui.btn_save_dir)
     layout.addWidget(ui.copysrt_rawvideo)
     layout.addWidget(ui.only_out_mp4)
+    layout.addWidget(ui.only_out_dubbed_audio)
     layout.addWidget(ui.shutdown)
     return layout
 
@@ -100,8 +118,21 @@ def _create_asr_row(ui, parent):
     ui.recogn2pass.setToolTip(tr("Secondary speech recognition of dubbing files"))
     ui.recogn2pass.setText(tr("STT again"))
 
+    ui.btn_ocr_roi = QtWidgets.QPushButton(parent)
+    ui.btn_ocr_roi.setObjectName("btn_ocr_roi")
+    ui.btn_ocr_roi.setText(tr("OCR Region"))
+    ui.btn_ocr_roi.setToolTip(tr("Set region of interest for hard-subtitle OCR"))
+    ui.btn_ocr_roi.setVisible(False)
+
+    ui.subtitle_source = QtWidgets.QComboBox(parent)
+    ui.subtitle_source.setObjectName("subtitle_source")
+    ui.subtitle_source.addItems([tr("Speech Recognition (STT)"), tr("Hard-Subtitle OCR")])
+    ui.subtitle_source.setToolTip(tr("Select subtitle source: Audio STT or Hard-Subtitle OCR"))
+
     layout.addWidget(ui.reglabel)
+    layout.addWidget(ui.subtitle_source)
     layout.addWidget(ui.recogn_type)
+    layout.addWidget(ui.btn_ocr_roi)
     layout.addWidget(ui.model_name_help)
     layout.addWidget(ui.model_name)
     layout.addWidget(ui.rephrase)
@@ -188,11 +219,18 @@ def _create_tts_row(ui, parent):
     ui.listen_btn.setEnabled(False)
     ui.listen_btn.setStyleSheet("""background-color:transparent""")
 
+    ui.btn_vieneu_voices = QtWidgets.QPushButton(parent)
+    ui.btn_vieneu_voices.setObjectName("btn_vieneu_voices")
+    ui.btn_vieneu_voices.setText(tr("Manage VieNeu voices"))
+    ui.btn_vieneu_voices.setToolTip(tr("Manage VieNeu voices"))
+    ui.btn_vieneu_voices.setVisible(False)
+
     layout.addWidget(ui.tts_text)
     layout.addWidget(ui.tts_type)
     layout.addWidget(ui.label_4)
     layout.addWidget(ui.voice_role)
     layout.addWidget(ui.listen_btn)
+    layout.addWidget(ui.btn_vieneu_voices)
     layout.addStretch()
     return layout
 

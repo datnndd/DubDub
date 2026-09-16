@@ -28,6 +28,20 @@ class WinActionConfigMixin:
             return False
         return True
 
+    def subtitle_source_change(self):
+        is_ocr = self.main.subtitle_source.currentIndex() == 1
+        self.main.recogn_type.setVisible(not is_ocr)
+        self.main.model_name_help.setVisible(not is_ocr)
+        self.main.model_name.setVisible(not is_ocr)
+        self.main.remove_noise.setVisible(not is_ocr)
+        self.main.recogn2pass.setVisible(not is_ocr)
+        self.main.btn_ocr_roi.setVisible(is_ocr)
+        self.main.recogn_type.setDisabled(is_ocr)
+        self.main.model_name.setDisabled(is_ocr)
+        self.main.model_name_help.setDisabled(is_ocr)
+        self.main.remove_noise.setDisabled(is_ocr)
+        self.main.recogn2pass.setDisabled(is_ocr)
+
     def recogn_type_change(self):
         recogn_type = self.main.recogn_type.currentIndex()
         if recogn_type == recognition.Faster_Whisper_XXL and not self.show_xxl_select():
@@ -81,6 +95,7 @@ class WinActionConfigMixin:
             self.main.show_tips.setText(str(is_allow_lang))
 
     def tts_type_change(self, type):
+        self.main.btn_vieneu_voices.setVisible(type == tts.VIENEU_TTS)
 
         lang = translator.get_code(show_text=self.main.target_language.currentText())
         if lang and lang != '-':

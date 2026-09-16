@@ -13,6 +13,7 @@ from videotrans.recognition import run as run_recogn, is_allow_lang as recogn_al
 from videotrans.util.help_ffmpeg import conver_to_16k, runffmpeg, cut_from_audio
 from videotrans.util.help_misc import vail_file, is_connect_hf
 from videotrans.util.help_srt import get_subtitle_from_srt, delete_punc
+from videotrans.ocr import scan_video_to_srt
 
 
 class RecognMixin:
@@ -23,6 +24,31 @@ class RecognMixin:
         if not self.should_recogn: return
         self.precent += 3
         self.signal(text=tr("kaishishibie"))
+        # Video OCR subtitle source
+        if getattr(self.cfg, "subtitle_source", "audio_asr") == "video_ocr":
+            if not getattr(self.cfg, "ocr_roi_confirmed", False):
+                raise SpeechToTextError(tr("ROI must be confirmed in the OCR preview dialog before starting"))
+            roi = getattr(self.cfg, "ocr_roi", None)
+            if not roi:
+                raise SpeechToTextError(tr("No ROI configured for video OCR"))
+            self.signal(text=tr("Hard-subtitle OCR scanning"))
+            srt_items, segments = scan_video_to_srt(
+                self.cfg.name,
+                roi=roi,
+                language=self.cfg.detect_language,
+                device="cuda" if self.cfg.is_cuda else "cpu",
+                checkpoint_path=f"{self.cfg.cache_folder}/ocr_ckpt.json",
+                on_progress=lambda p: self.signal(text=p.get("latest_text",""), type="ocr_progress"),
+                duration_ms=self.video_time,
+                coarse_interval_ms=500,
+            )
+            if self._exit(): return
+            if not srt_items:
+                raise SpeechToTextError(self.cfg.basename + tr("OCR found no subtitles"))
+            self._save_srt_target(srt_items, self.cfg.source_sub)
+            self.source_srt_list = srt_items
+            self._recogn_succeed()
+            return
         if vail_file(self.cfg.source_sub):
             self.source_srt_list = get_subtitle_from_srt(self.cfg.source_sub, is_file=True)
             if Path(self.cfg.target_dir + "/speaker.json").exists():
@@ -31,8 +57,7 @@ class RecognMixin:
             return
 
         if not vail_file(self.cfg.source_wav):
-            raise SpeechToTextError(tr("Failed to separate audio, please check the log or retry"))
-        from videotrans.util.help_down import down_file_from_hf
+            raise SpeechToTextError(tr("Failed to separate audio, please check the log or retry"))
         if self.cfg.remove_noise:
             _remove_noise_wav = f"{self.cfg.cache_folder}/remove_noise.wav"
             if vail_file(_remove_noise_wav):

@@ -1,6 +1,7 @@
 import platform
 
 from videotrans.configure.config import tr, defaulelang
+from videotrans import tts
 
 
 class WinActionBaseModeMixin:
@@ -33,6 +34,7 @@ class WinActionBaseModeMixin:
         self.main.label_4.show()
         self.main.voice_role.show()
         self.main.listen_btn.show()
+        self.main.btn_vieneu_voices.setVisible(self.main.tts_type.currentIndex() == tts.VIENEU_TTS)
         self.main.volume_label.show()
         self.main.volume_rate.show()
         self.main.volume_rate.setDisabled(False)
@@ -42,6 +44,7 @@ class WinActionBaseModeMixin:
 
         self.main.reglabel.show()
         self.main.only_out_mp4.show()
+        self.main.only_out_dubbed_audio.show()
         self.main.recogn_type.show()
         self.main.model_name_help.show()
         self.main.model_name.show()
@@ -92,11 +95,13 @@ class WinActionBaseModeMixin:
 
         self.main.recogn2pass.hide()
         self.main.only_out_mp4.hide()
+        self.main.only_out_dubbed_audio.hide()
         self.main.tts_text.hide()
         self.main.tts_type.hide()
         self.main.label_4.hide()
         self.main.voice_role.hide()
         self.main.listen_btn.hide()
+        self.main.btn_vieneu_voices.hide()
         self.main.volume_label.hide()
         self.main.volume_rate.hide()
         self.main.pitch_label.hide()
@@ -172,6 +177,7 @@ class WinActionBaseModeMixin:
         self.main.volume_rate.setDisabled(type)
         self.main.pitch_rate.setDisabled(type)
         self.main.only_out_mp4.setDisabled(type)
+        self.main.only_out_dubbed_audio.setDisabled(type)
         self.main.recogn2pass.setDisabled(type)
         self.main.btn_get_video.setDisabled(type)
         self.main.btn_save_dir.setDisabled(type)

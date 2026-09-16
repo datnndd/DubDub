@@ -304,6 +304,8 @@ class Ui_MainWindow(object):
         self.model_name.setToolTip(tr("Whisper can select models for related channels"))
         self.listen_btn.setToolTip(tr("shuoming01"))
         self.listen_btn.setText(tr("Trial dubbing"))
+        self.btn_vieneu_voices.setText(tr("Manage VieNeu voices"))
+        self.btn_vieneu_voices.setToolTip(tr("Manage VieNeu voices"))
         self.label_2.setText(tr("Speech language"))
         self.source_language.setToolTip(tr("The language used for the original video pronunciation"))
         self.label_3.setText(tr("Target lang"))
@@ -388,6 +390,7 @@ class Ui_MainWindow(object):
         self.actiondeepgram.setText(
             tr("Deepgram Speech Recognition API"))
         self.actionxxl.setText('Faster_Whisper_XXL.exe')
+        self.action_ocr.setText(tr("Hard-Subtitle OCR ROI"))
         self.actionzijierecognmodel_api.setText(tr("VolcEngine STT"))
         self.actiontts_gptsovits.setText("GPT-SoVITS TTS")
         self.actiontts_chatterbox.setText("ChatterBox TTS")

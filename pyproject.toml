@@ -265,13 +265,16 @@ dependencies = [
     "omnivoice",
     "qwen-asr-pvt",
     "qwen-tts-pvt",
+    "vieneu==3.2.3",
     "f5-tts",
     "gradio>=6.8.0",
     "inflect>=7.5.0",
     "chatterbox-tts>=0.1.7",
     "transformers>=5.3.0",
     "huggingface-hub>=1.10.0",
-	"pythonnet"
+    "pythonnet",
+    "paddlepaddle>=3.3.1",
+    "paddleocr>=2.10.0",
 ]
 
 [project.optional-dependencies]

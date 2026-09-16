@@ -31,6 +31,7 @@ class MainWindow(BindSignalsMixin, WinformMixin, LifecycleMixin, QMainWindow, Ui
         self.screen_size=screen_size
         self.setupUi(self)
         self.callback("SetupUI end...")
+        app_cfg.main_win = self
 
         self.worker_threads = []
         self.width = width
@@ -136,6 +137,7 @@ class MainWindow(BindSignalsMixin, WinformMixin, LifecycleMixin, QMainWindow, Ui
         self.fix_punc.setCurrentIndex(int(params.get('fix_punc', 0)))
         self.recogn2pass.setChecked(bool(params.get('recogn2pass', False)))
         self.only_out_mp4.setChecked(bool(params.get('only_out_mp4', False)))
+        self.only_out_dubbed_audio.setChecked(bool(params.get('only_out_dubbed_audio', False)))
         self.remove_silent_mid.setChecked(bool(params.get('remove_silent_mid', False)))
         self.align_sub_audio.setChecked(bool(params.get('align_sub_audio', True)))
         self.clear_cache.setChecked(bool(params.get('clear_cache', False)))

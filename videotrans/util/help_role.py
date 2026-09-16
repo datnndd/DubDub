@@ -281,6 +281,76 @@ def get_f5tts_role():
     return rolelist
 
 
+VIENEU_CUSTOM_ROLE_PREFIX = "Custom: "
+
+
+@lru_cache
+def get_vieneu_preset_roles():
+    try:
+        from importlib.resources import files
+        voice_file = files("vieneu").joinpath("assets").joinpath("voices_v3_turbo.json")
+        voice_data = json.loads(voice_file.read_text(encoding="utf-8"))
+        return list(voice_data.get("presets", {}).keys())
+    except (ImportError, ModuleNotFoundError, FileNotFoundError, AttributeError, OSError, json.JSONDecodeError):
+        return []
+
+
+def get_vieneu_custom_voice_map():
+    saved_roles = params.get("vieneu_roles", {})
+    if not isinstance(saved_roles, dict):
+        return {}
+    return {
+        str(name): str(audio_path)
+        for name, audio_path in saved_roles.items()
+        if str(name).strip() and str(audio_path).strip()
+    }
+
+
+def get_vieneu_role():
+    custom_roles = get_vieneu_custom_voice_map()
+    custom_names = sorted(custom_roles, key=str.casefold)
+    return ["No", "clone"] + get_vieneu_preset_roles() + [
+        f"{VIENEU_CUSTOM_ROLE_PREFIX}{name}" for name in custom_names
+    ]
+
+
+def get_vieneu_custom_voice_path(role):
+    if not str(role).startswith(VIENEU_CUSTOM_ROLE_PREFIX):
+        return None
+    name = str(role)[len(VIENEU_CUSTOM_ROLE_PREFIX):]
+    return get_vieneu_custom_voice_map().get(name)
+
+
+def save_vieneu_custom_voice(name, audio_path):
+    voice_name = " ".join(str(name).split())
+    if not voice_name:
+        raise ValueError(tr("VieNeu voice name is required"))
+    if voice_name.casefold() in {"no", "clone"}:
+        raise ValueError(tr("VieNeu voice name is reserved: {}", voice_name))
+    if voice_name.casefold() in {preset.casefold() for preset in get_vieneu_preset_roles()}:
+        raise ValueError(tr("VieNeu voice name conflicts with a preset voice: {}", voice_name))
+
+    reference_audio = Path(audio_path).expanduser()
+    if not reference_audio.is_file():
+        raise ValueError(tr("VieNeu reference audio file does not exist: {}", audio_path))
+
+    custom_roles = get_vieneu_custom_voice_map()
+    custom_roles[voice_name] = reference_audio.resolve().as_posix()
+    params["vieneu_roles"] = custom_roles
+    params.save()
+    return voice_name
+
+
+def remove_vieneu_custom_voice(name):
+    custom_roles = get_vieneu_custom_voice_map()
+    if str(name) not in custom_roles:
+        return False
+    del custom_roles[str(name)]
+    params["vieneu_roles"] = custom_roles
+    params.save()
+    return True
+
+
 # 获取clone-voice的角色列表
 def get_clone_role(set_p=False):
     from . import help_misc
@@ -348,6 +418,9 @@ def role_menu(tts_type, langcode=None) -> List:
 
     if tts_type == tts.QWEN3LOCAL_TTS:
         return list(get_qwenttslocal_rolelist().keys())
+
+    if tts_type == tts.VIENEU_TTS:
+        return get_vieneu_role()
 
     if tts_type in [tts.F5_TTS, tts.INDEX_TTS, tts.SPARK_TTS, tts.VOXCPM_TTS,  tts.OMNIVOICE_TTS,
                     tts.COSYVOICE_TTS, tts.FISHTTS, tts.MOSS_TTS,tts.CONFUCIUS_TTS,tts.ZIPVOICE_TTS]:

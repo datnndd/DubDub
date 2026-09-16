@@ -975,6 +975,11 @@ def build_ui():
 
                         cuda_accel = gr.Checkbox(label="启用 CUDA 加速", value=False)
                         channel_warning = gr.Markdown("", visible=False)
+                        only_out_dubbed_audio = gr.Checkbox(
+                            label="仅保存配音音频",
+                            value=bool(_user_params.get("only_out_dubbed_audio", False)),
+                            info="仅保存最终配音 WAV。选中视频慢速时，同时输出不含配音的慢速 MP4。",
+                        )
                         
                         start_btn = gr.Button("🚀 开始执行", variant="primary", size="lg")
 
@@ -1078,7 +1083,7 @@ def build_ui():
                                     voice_rate_val, volume_rate_val, pitch_rate_val,
                                     subtitle_type_name, remove_noise_val, fix_punc_name,
                                     is_separate_val, embed_bgm_val, loop_bgm_name, backaudio_volume_val,
-                                    cuda_val):
+                                    only_out_dubbed_audio_val, cuda_val):
                     print(f'{file_path=}')
                     if not file_path:
                         yield "❌ 请先选择一个视频或音频文件", None, [], _BTN_IDLE
@@ -1140,6 +1145,7 @@ def build_ui():
                             "align_sub_audio": True, "translate_type": translate_idx,
                             "is_separate": is_separate_val, "recogn2pass": False,
                             "subtitle_type": subtitle_val, 
+                            "only_out_dubbed_audio": only_out_dubbed_audio_val,
                             "clear_cache": True,
                             "embed_bgm": embed_bgm_val, "loop_backaudio": loop_bgm_val,
                             "backaudio_volume": backaudio_volume_val, "background_music": "",
@@ -1207,7 +1213,8 @@ def build_ui():
                             source_lang, target_lang, tts_choice, voice_role,
                             voice_autorate, video_autorate, voice_rate, volume_rate, pitch_rate,
                             subtitle_type, remove_noise, fix_punc,
-                            is_separate, embed_bgm, loop_bgm, backaudio_volume, cuda_accel],
+                            is_separate, embed_bgm, loop_bgm, backaudio_volume,
+                            only_out_dubbed_audio, cuda_accel],
                     outputs=[log_output, video_preview, result_files, start_btn])
 
             # === Tab 2: 渠道设置 ===

@@ -171,11 +171,13 @@ def _setup_actions_and_menus(ui, MainWindow):
         ui.actiontts_api, ui.actiontts_chatterbox,
     ])
 
+    _make_action(ui, "action_ocr")
+
     _fill_menu(ui.menu_RECOGN, [
         ui.actionzijierecognmodel_api, ui.actionopenairecognapi_key,
         ui.actionparakeet_key, ui.actionrecognapi, ui.actionai302_key,
         ui.actionsttapi, ui.actionwhisperx, ui.actiondeepgram,
-        ui.actionxxl,
+        ui.actionxxl, ui.action_ocr,
     ])
 
     _fill_menu(ui.menu, [

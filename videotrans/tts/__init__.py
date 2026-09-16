@@ -50,6 +50,7 @@ AZURE_TTS = 30
 AI302_TTS = 31
 CAMB_TTS = 32
 TTS_API = 33
+VIENEU_TTS = 34
 
 
 # 支持克隆的渠道
@@ -67,7 +68,8 @@ SUPPORT_CLONE = [
     OMNIVOICE_TTS,
     MOSS_TTS,
     CONFUCIUS_TTS,
-    ZIPVOICE_TTS
+    ZIPVOICE_TTS,
+    VIENEU_TTS,
 ]
 # 本地内置，在单视频模式下 校对配音时，需 is_redubb 特殊处理
 LOCAL_BUILTIN=[
@@ -129,8 +131,9 @@ _ID_NAME_DICT = {
     AZURE_TTS: ChannelProvider("Azure-TTS", "._azuretts", key_name="azure_speech_key", win="azuretts"),
     AI302_TTS: ChannelProvider("302.AI", "._ai302tts", key_name="ai302_key", win="ai302"),
     CAMB_TTS: ChannelProvider("CAMB AI TTS", "._cambtts", key_name="camb_api_key", win="cambtts"),
-    
-    TTS_API: ChannelProvider(tr("Customize API"), "._ttsapi", key_name="ttsapi_url", win="ttsapi")
+
+    TTS_API: ChannelProvider(tr("Customize API"), "._ttsapi", key_name="ttsapi_url", win="ttsapi"),
+    VIENEU_TTS: ChannelProvider("VieNeu-TTS", "._vieneutts"),
 }
 # 强制保持按照每个常量值大小排序
 _ID_NAME_DICT=dict(sorted(_ID_NAME_DICT.items(),key=lambda item:item[0]))
@@ -146,6 +149,9 @@ def is_allow_lang(langcode: str = None, tts_type: int = None):
     _lang2=langcode[:2]
     
     if tts_type in [CHATTTS,ZIPVOICE_TTS,VITSCNEN_TTS,INDEX_TTS,SPARK_TTS] and _lang2 not in ['zh', 'en']:
+        return name + tr('Dubbing channel') + ' ' +tr('may not support') + tr(langcode)
+
+    if tts_type == VIENEU_TTS and _lang2 not in ['vi', 'en']:
         return name + tr('Dubbing channel') + ' ' +tr('may not support') + tr(langcode)
     
     if tts_type==PIPER_TTS and _lang2 not in ["ar","cs","de","el","en","es","fa","fr","hi","hu","id","it","kk","nl","pl","pt","ro","ru","sv","tr","uk","ur","vi","zh"]:

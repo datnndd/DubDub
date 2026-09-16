@@ -19,7 +19,7 @@ class AssembleMixin:
 
     def assembling(self) -> None:
         _st=time.time()
-        if self._exit() or self.is_audio_trans or self.cfg.app_mode == 'tiqu' or not self.should_hebing:
+        if self._exit() or self.is_audio_trans or self.cfg.app_mode == 'tiqu' or getattr(self.cfg, 'only_out_dubbed_audio', False) or not self.should_hebing:
             return
         self.precent = self.precent + 3 if self.precent < 95 else self.precent
         self.signal(text=tr('kaishihebing'))
@@ -40,7 +40,7 @@ class AssembleMixin:
                 logger.warning('仅提取模式时，清理中间文件失败，跳过')
             return self.set_end(True)
 
-        if self.is_audio_trans and vail_file(self.cfg.target_wav):
+        if self.is_audio_trans and not getattr(self.cfg, 'only_out_dubbed_audio', False) and vail_file(self.cfg.target_wav):
             try:
                 shutil.copy2(self.cfg.target_wav,
                              f"{self.cfg.target_dir}/{self.cfg.target_language_code}-{self.cfg.noextname}.wav")
@@ -48,14 +48,47 @@ class AssembleMixin:
                 pass
 
         try:
-            if self.cfg.only_out_mp4:
+            if getattr(self.cfg, 'only_out_dubbed_audio', False):
+                self._export_dubbed_audio()
+                self._export_slowed_video()
+            elif self.cfg.only_out_mp4:
                 shutil.move(self.cfg.targetdir_mp4, Path(self.cfg.target_dir).parent / Path(self.cfg.targetdir_mp4).name)
                 shutil.rmtree(self.cfg.target_dir, ignore_errors=True)
         except OSError as e:
-            logger.exception(f'仅输出mp4时清理临时文件移动视频位置出错，跳过 {e}', exc_info=True)
+            logger.exception(f'清理仅输出模式文件时出错，跳过 {e}', exc_info=True)
 
         self.set_end(True)
         logger.debug(f'[{self.cfg.name}视频翻译任务结束，总耗时]:{time.time()-self.cost_duration}s')
+
+    def _export_dubbed_audio(self) -> None:
+        if not vail_file(self.cfg.target_wav):
+            raise VideoTransError(tr('Only dubbed audio output is missing: {}', self.cfg.target_wav))
+        shutil.copy2(
+            self.cfg.target_wav,
+            Path(self.cfg.target_dir) / f'{self.cfg.target_language_code}-dubbing.wav')
+        self._remove_dubbed_audio_intermediates()
+
+    def _export_slowed_video(self) -> None:
+        if not getattr(self.cfg, 'video_autorate', False):
+            return
+        if not vail_file(self.cfg.novoice_mp4):
+            raise VideoTransError(tr('Slow video output is missing: {}', self.cfg.novoice_mp4))
+        output_path = Path(self.cfg.target_dir) / f'{self.cfg.target_language_code}-slowed.mp4'
+        shutil.copy2(self.cfg.novoice_mp4, output_path)
+
+    def _remove_dubbed_audio_intermediates(self) -> None:
+        output_paths = [
+            self.cfg.source_sub,
+            self.cfg.target_sub,
+            getattr(self.cfg, 'source_wav_output', None),
+            getattr(self.cfg, 'target_wav_output', None),
+            self.cfg.targetdir_mp4,
+            Path(self.cfg.target_dir) / 'vocal.wav',
+            Path(self.cfg.target_dir) / 'instrument.wav',
+        ]
+        for output_path in output_paths:
+            if output_path:
+                Path(output_path).unlink(missing_ok=True)
 
     def _video_extend(self, duration_ms=1000):
         sec = duration_ms / 1000.0

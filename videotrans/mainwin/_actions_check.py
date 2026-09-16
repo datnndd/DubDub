@@ -167,7 +167,25 @@ class WinActionCheckMixin:
         self.cfg['recogn2pass'] = self.main.recogn2pass.isChecked()
         self.cfg['nums_diariz'] = self.main.nums_diariz.currentIndex()
 
-        if self.check_reccogn() is not True:
+        is_ocr = (
+            hasattr(self.main, "subtitle_source") and self.main.subtitle_source.currentIndex() == 1
+        ) or getattr(app_cfg, "subtitle_source", None) == "video_ocr"
+
+        if is_ocr:
+            if hasattr(self.main, "subtitle_source") and self.main.subtitle_source.currentIndex() != 1:
+                self.main.subtitle_source.setCurrentIndex(1)
+            self.cfg['subtitle_source'] = "video_ocr"
+            roi = getattr(app_cfg, 'ocr_roi', None)
+            if not roi:
+                show_error(tr("Please set an OCR region first"))
+                self.main.startbtn.setDisabled(False)
+                return
+            self.cfg['ocr_roi'] = roi
+            self.cfg['ocr_roi_confirmed'] = True
+        else:
+            self.cfg['subtitle_source'] = "audio_asr"
+
+        if not is_ocr and self.check_reccogn() is not True:
             self.main.startbtn.setDisabled(False)
             return
 

@@ -4,6 +4,7 @@ _module_map = {
 "ai302":".ai302",
 "ali":".ali",
 "azure":".azure",
+"ocr":".ocr",# hard-subtitle ROI
 "azuretts":".azuretts",
 "baidu":".baidu",
 "cambtts":".cambtts",
@@ -58,6 +59,7 @@ _module_map = {
 "tencent":".tencent",
 "transapi":".transapi",
 "ttsapi":".ttsapi",
+"vieneutts":".vieneutts",
 "zhipuai":".zhipuai",
 "zijiehuoshan":".zijiehuoshan",#字节火山大模型翻译
 "zijierecognmodel":".zijierecognmodel",#字节语音识别大模型极速版

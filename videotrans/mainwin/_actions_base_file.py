@@ -52,6 +52,9 @@ class WinActionBaseFileMixin:
         if len(mp4_list) > 0:
             self.main.source_mp4.setText(f'{len(mp4_list)} videos')
             self.queue_mp4 = mp4_list
+            ocr_dialog = app_cfg.child_forms.get("ocr")
+            if ocr_dialog and hasattr(ocr_dialog, "update_ui"):
+                ocr_dialog.update_ui()
 
     def get_save_dir(self):
         dirname = QtWidgets.QFileDialog.getExistingDirectory(self.main, tr('selectsavedir'),

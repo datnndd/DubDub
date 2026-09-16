@@ -9,6 +9,12 @@ from typing import List
 from videotrans.configure.config import logger, ROOT_DIR
 
 
+def _load_qwen3_asr_model():
+    from qwen_asr import Qwen3ASRModel
+
+    return Qwen3ASRModel
+
+
 
 #支持热词
 def qwen3asr_fun(
@@ -21,9 +27,10 @@ def qwen3asr_fun(
         hotword=None
 ):
     import torch
-    from qwen_asr import Qwen3ASRModel
     from videotrans.task.taskcfg import SrtItem
     from videotrans.process._stt_utils import _write_log
+
+    Qwen3ASRModel = _load_qwen3_asr_model()
 
     if is_cuda:
         device_map = f'cuda:{device_index}'

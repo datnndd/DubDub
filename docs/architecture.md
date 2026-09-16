@@ -560,6 +560,17 @@ def run(*, queue_tts, language, tts_type, ...) -> None:
 
 渠道子类可重写 `_exec()` 方法实现自定义调度。`BaseTTS` 默认调用 `__local_mul_thread()` → `_item_task()`。
 
+### 8.7 视频硬字幕 OCR 识别架构 (Hard-Subtitle OCR Source)
+
+`videotrans/ocr/` 模块实现了独立的本地/远程 OCR 识别引擎与视频帧提取扫描器：
+- `BaseOcrProvider`: 定义 `recognize(image, language)` 抽象接口。
+- `PaddleOcrProvider`: 基于 PaddleOCR 的本地 Core Provider，支持 GPU/CPU 优先选择与 fallback 机制。
+- **Windows 10/11 兼容性与 OneDNN 修复**:
+  - `_ensure_win_dlls()`: 自动注入 PyTorch DLL 目录 (`os.add_dll_directory`) 防止 WinError 127 `shm.dll` 异常。
+  - `paddle.set_flags({"FLAGS_use_onednn": False, "FLAGS_use_mkldnn": False})`: 禁用 Paddle C++ 核心 OneDNN 标志。
+  - **Monkeypatch `paddle.inference.create_predictor`**: 强制执行 `config.disable_mkldnn()`, `config.disable_onednn()`, `config.switch_ir_optim(False)`，彻底消除 Windows 平台 `OneDnnContext does not have the input Filter [operator < fused_conv2d > error]` 崩溃。
+- `VideoOcrScanner` & `SubtitleSegmentBuilder`: 粗粒度 (400-500ms) 帧差异采样 + 细粒度 (100-200ms) 边界精细化，构建带置信度与时间戳 stabilization 的 `SrtItem` 列表。
+
 ---
 
 ## 九、交互式单视频处理模式

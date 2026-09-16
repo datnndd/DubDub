@@ -32,6 +32,8 @@ class BindSignalsMixin:
         self.set_adv_status.clicked.connect(self.win_action.toggle_adv)
         self.btn_get_video.clicked.connect(self.win_action.get_mp4)
         self.listen_btn.clicked.connect(self.win_action.listen_voice_fun)
+        self.btn_vieneu_voices.clicked.connect(lambda: self.open_winform('vieneutts'))
+        self.subtitle_source.currentIndexChanged.connect(self.win_action.subtitle_source_change)
         self.recogn_type.currentIndexChanged.connect(self.win_action.recogn_type_change)
         self.model_name.currentIndexChanged.connect(self.win_action.model_type_change)
 
@@ -69,6 +71,8 @@ class BindSignalsMixin:
         self.actionwhisperx.triggered.connect(lambda: self.open_winform('whisperxapi'))
         self.actiondeepgram.triggered.connect(lambda: self.open_winform('deepgram'))
         self.actionxxl.triggered.connect(lambda: self.open_winform('xxl'))
+        self.action_ocr.triggered.connect(lambda: self.open_winform('ocr'))
+        self.btn_ocr_roi.clicked.connect(lambda: self.open_winform('ocr'))
         self.actionzijierecognmodel_api.triggered.connect(lambda: self.open_winform('zijierecognmodel'))
         self.actiontrans_api.triggered.connect(lambda: self.open_winform('transapi'))
         self.actiontts_gptsovits.triggered.connect(lambda: self.open_winform('gptsovits'))
