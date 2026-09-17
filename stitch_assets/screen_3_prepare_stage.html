@@ -1,0 +1,574 @@
+<!DOCTYPE html><html class="h-full" lang="en" style="width: 1280px; height: 1024px; overflow: hidden; position: relative;"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>DubDub — Stage 01: Prepare Media &amp; AI Model Setup</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#FAF8F5",
+            "surface-container": "#F3ECE2",
+            "surface-container-low": "#FAF6F0",
+            "surface-container-high": "#EDE5DA",
+            "surface-container-lowest": "#FFFFFF",
+            "on-surface": "#1F2328",
+            "on-surface-variant": "#595E68",
+            "outline": "#898174",
+            "outline-variant": "#E5DED4",
+            "primary": "#8d4b00",
+            "primary-hover": "#743d00",
+            "primary-container": "#b15f00",
+            "primary-light": "#FFF3E6",
+            "on-primary": "#FFFFFF",
+            "secondary": "#a13e28",
+            "tertiary": "#506053"
+          },
+          fontFamily: {
+            sans: ["Plus Jakarta Sans", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    @layer base {
+      html, body {
+        height: 100%;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+      }
+      ::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #D5CFC5;
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #B4ADA1;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col bg-[#F9F8F5] text-stone-800 font-sans antialiased select-none">
+<!-- 1. TOP COMMAND HEADER -->
+<header class="h-[52px] flex-shrink-0 bg-white border-b border-[#E7E4DC] px-4 flex items-center justify-between gap-4 z-30">
+<!-- Left: DubDub Branding & Workspace Nav -->
+<div class="flex items-center gap-3 min-w-0">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-amber-500/10 text-primary flex items-center justify-center border border-amber-500/25 shadow-2xs">
+<span class="material-symbols-outlined text-lg">graphic_eq</span>
+</div>
+<div class="flex flex-col leading-none">
+<span class="font-bold text-xs tracking-tight text-stone-900">DubDub</span>
+<span class="text-[10px] text-stone-400 font-medium mt-0.5">Voice &amp; Subtitles</span>
+</div>
+</div>
+<div class="h-4 w-px bg-stone-200"></div>
+<nav class="flex items-center gap-1 p-0.5 bg-stone-100/80 rounded-lg border border-stone-200/80 text-[11px]">
+<a class="px-2.5 py-1 rounded-md font-bold bg-white text-primary shadow-xs border border-amber-200/80 flex items-center gap-1 leading-none" href="#">
+<span class="material-symbols-outlined text-xs">videocam</span><span class="">Video Dub</span>
+</a>
+<a class="px-2.5 py-1 rounded-md font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center gap-1 leading-none" href="#">
+<span class="material-symbols-outlined text-xs text-stone-400">record_voice_over</span><span class="">Manage Voice</span>
+</a>
+<a class="px-2.5 py-1 rounded-md font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center gap-1 leading-none" href="#">
+<span class="material-symbols-outlined text-xs text-stone-400">auto_stories</span><span class="">Audio Book</span>
+</a>
+</nav>
+</div>
+<!-- Right: Auto-save & Warm GPU status -->
+<div class="flex items-center gap-3 flex-shrink-0">
+<div class="hidden sm:flex items-center gap-1 text-[11px] text-stone-500 font-medium">
+<span class="material-symbols-outlined text-xs text-stone-400">auto_fix_high</span>
+<span class="">Auto-saved 20s ago</span>
+</div>
+<div class="flex items-center gap-2 px-2.5 py-1 bg-stone-50 rounded-lg border border-stone-200">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="font-mono text-[10px] font-medium text-stone-600">42m Warm GPU</span>
+</div>
+</div>
+</header>
+<!-- SUB-HEADER: Breadcrumb + Workflow Stepper -->
+<div class="h-9 flex-shrink-0 bg-[#FAF8F5] border-b border-[#E7E4DC] px-4 flex items-center justify-between z-20">
+<div class="flex items-center gap-2">
+<div class="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-stone-200 text-stone-700 shadow-2xs">
+<span class="material-symbols-outlined text-xs text-stone-400">movie</span>
+<span class="font-mono text-[11px] font-medium truncate max-w-[220px]">TEDx_Talk_Future_of_AI_en.mp4</span>
+<span class="px-1.5 py-0.5 bg-stone-100 text-stone-600 border border-stone-200 rounded font-mono font-bold text-[9px] tracking-wide uppercase leading-none">1080p MP4</span>
+</div>
+</div>
+<!-- Stepper: 1 Prepare ACTIVE -->
+<div class="flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-[#E7E4DC] shadow-2xs">
+<div class="flex items-center gap-1 text-primary text-[11px] font-bold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+<span class="w-3.5 h-3.5 rounded-full bg-primary text-white flex items-center justify-center text-[9px] font-bold">1</span>
+<span class="">Prepare</span>
+</div>
+<span class="text-stone-300 text-[10px]">•</span>
+<div class="flex items-center gap-1 text-stone-400 text-[11px] font-medium">
+<span class="w-3.5 h-3.5 rounded-full bg-stone-200 text-stone-500 flex items-center justify-center text-[9px]">2</span>
+<span class="">Review Transcript</span>
+</div>
+<span class="text-stone-300 text-[10px]">•</span>
+<div class="flex items-center gap-1 text-stone-400 text-[11px] font-medium">
+<span class="w-3.5 h-3.5 rounded-full bg-stone-200 text-stone-500 flex items-center justify-center text-[9px]">3</span>
+<span class="">Review&nbsp; Translated</span>
+</div>
+<span class="text-stone-300 text-[10px]">•</span>
+<div class="flex items-center gap-1 text-stone-400 text-[11px] font-medium">
+<span class="w-3.5 h-3.5 rounded-full bg-stone-200 text-stone-500 flex items-center justify-center text-[9px]">4</span>
+<span class="">Edit Video</span>
+</div>
+</div>
+<div class="hidden xl:flex items-center gap-2 text-[11px] text-stone-500">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-medium text-stone-600">Stage 01: Pre-Flight Configuration</span>
+</div>
+</div>
+<!-- 2. MAIN SINGLE-SCREEN WORKSPACE -->
+<main class="flex-1 min-h-0 w-full p-3 flex flex-col gap-2.5 overflow-hidden">
+<!-- TOP HERO MEDIA STRIP: Video Player Card & Rich Metadata Card -->
+<section class="h-[38%] min-h-0 w-full grid grid-cols-12 gap-2.5">
+<!-- LEFT: 16:9 Video Snapshot & Live Waveform Preview (7 cols) -->
+<div class="col-span-12 lg:col-span-7 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+<!-- Card Header -->
+<div class="h-7 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] flex-shrink-0">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-sm">movie_filter</span>
+<span class="text-xs font-bold text-stone-900">Source Video &amp; Sound Canvas</span>
+<span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-primary uppercase tracking-wide">Audio Verified</span>
+</div>
+<div class="flex items-center gap-2 font-mono text-[10px] text-stone-500">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+<span class="">Audio Master: Stereo 48kHz</span>
+</div>
+</div>
+<!-- Widescreen Visual Preview -->
+<div class="relative flex-1 min-h-0 bg-neutral-950 flex items-center justify-center overflow-hidden group">
+<img alt="TEDx presentation stage with male speaker talking enthusiastically into microphone" class="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-[1.01]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAdw2oYibvlA_Z6ofNA2ic_IGcy9kFrw9CXigxphiomgTQrVilzO3B-RsHzuoK_uOBcMKomeOI3p0ZBGO9Ht95RZmprC7QLSxJ-dV0D-Wms50T6hieKj6GKnYUKlPFgnbNpHa3nkNCMZph4Ix6ryFk3npfM9bec-SuJubanr_mcfadH-lnT7PUTrBFeOBr4GO3m3u5ieaYBX3inE867dYZl1pGK6hBigQ6plLLpfi8FOoEhA-2Gf42NJw">
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/35 pointer-events-none"></div>
+<!-- Floating Badges Top -->
+<div class="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
+<div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-amber-300 font-mono text-[10px] border border-amber-400/20">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+<span class="">00:00.000 / 04:30.000</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-white font-mono text-[10px] border border-white/10">
+              Primary Speaker: Alex Carter
+            </span>
+<span class="px-2 py-0.5 rounded-full bg-emerald-600/90 text-white font-bold text-[9px] uppercase tracking-wider">
+              Ready
+            </span>
+</div>
+</div>
+<!-- Center Quick Play Overlay Button -->
+<button class="absolute z-10 w-11 h-11 rounded-full bg-primary/90 hover:bg-primary text-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 border border-amber-300/30">
+<span class="material-symbols-outlined text-2xl ml-0.5">play_arrow</span>
+</button>
+<!-- Bottom Preview Snippet -->
+<div class="absolute inset-x-2 bottom-1.5 z-10 flex justify-center text-center">
+<div class="w-full max-w-lg bg-black/75 backdrop-blur-md px-3 py-1 rounded-lg border border-white/10">
+<p class="text-white text-xs font-medium truncate">
+              Sample: “We are entering an era where artificial intelligence truly understands human nuances.”
+            </p>
+</div>
+</div>
+</div>
+<!-- Compact Audio Waveform Bar -->
+<div class="h-8 px-3 bg-[#FAF9F6] border-t border-[#E7E4DC] flex items-center gap-2.5 flex-shrink-0">
+<div class="flex items-center gap-1 font-mono text-[10px] text-stone-600">
+<span class="material-symbols-outlined text-xs text-primary">equalizer</span>
+<span class="">Waveform</span>
+</div>
+<div class="relative flex-1 h-3 flex items-center cursor-pointer">
+<svg class="w-full h-3 text-amber-300" fill="currentColor" preserveAspectRatio="none" viewBox="0 0 300 20">
+<rect height="6" rx="1" width="2" x="0" y="7"></rect><rect height="10" rx="1" width="2" x="4" y="5"></rect>
+<rect height="14" rx="1" width="2" x="8" y="3"></rect><rect height="5" rx="1" width="2" x="12" y="8"></rect>
+<rect height="16" rx="1" width="2" x="16" y="2"></rect><rect height="12" rx="1" width="2" x="20" y="4"></rect>
+<rect height="18" rx="1" width="2" x="24" y="1"></rect><rect height="8" rx="1" width="2" x="28" y="6"></rect>
+<rect height="15" rx="1" width="2" x="32" y="3"></rect><rect height="7" rx="1" width="2" x="36" y="7"></rect>
+<rect height="12" rx="1" width="2" x="40" y="4"></rect><rect height="17" rx="1" width="2" x="44" y="2"></rect>
+<rect height="10" rx="1" width="2" x="48" y="5"></rect><rect height="15" rx="1" width="2" x="52" y="3"></rect>
+<rect height="7" rx="1" width="2" x="56" y="7"></rect><rect height="14" rx="1" width="2" x="60" y="3"></rect>
+<rect height="9" rx="1" width="2" x="64" y="6"></rect><rect height="18" rx="1" width="2" x="68" y="1"></rect>
+<rect height="12" rx="1" width="2" x="72" y="4"></rect><rect height="7" rx="1" width="2" x="76" y="7"></rect>
+<rect height="16" rx="1" width="2" x="80" y="2"></rect><rect height="11" rx="1" width="2" x="84" y="5"></rect>
+<rect height="17" rx="1" width="2" x="88" y="2"></rect><rect height="9" rx="1" width="2" x="92" y="6"></rect>
+<rect height="14" rx="1" width="2" x="96" y="3"></rect><rect height="7" rx="1" width="2" x="100" y="7"></rect>
+<rect height="16" rx="1" width="2" x="104" y="2"></rect><rect height="11" rx="1" width="2" x="108" y="5"></rect>
+<rect height="18" rx="1" width="2" x="112" y="1"></rect><rect height="13" rx="1" width="2" x="116" y="4"></rect>
+<rect height="7" rx="1" width="2" x="120" y="7"></rect><rect height="16" rx="1" width="2" x="124" y="2"></rect>
+<rect height="10" rx="1" width="2" x="128" y="5"></rect><rect height="18" rx="1" width="2" x="132" y="1"></rect>
+<rect height="9" rx="1" width="2" x="136" y="6"></rect><rect height="15" rx="1" width="2" x="140" y="3"></rect>
+<rect height="7" rx="1" width="2" x="144" y="7"></rect><rect height="16" rx="1" width="2" x="148" y="2"></rect>
+<rect height="11" rx="1" width="2" x="152" y="5"></rect><rect height="18" rx="1" width="2" x="156" y="1"></rect>
+<rect height="12" rx="1" width="2" x="160" y="4"></rect><rect height="7" rx="1" width="2" x="164" y="7"></rect>
+<rect height="16" rx="1" width="2" x="168" y="2"></rect><rect height="11" rx="1" width="2" x="172" y="5"></rect>
+<rect height="17" rx="1" width="2" x="176" y="2"></rect><rect height="9" rx="1" width="2" x="180" y="6"></rect>
+<rect height="14" rx="1" width="2" x="184" y="3"></rect><rect height="7" rx="1" width="2" x="188" y="7"></rect>
+<rect height="16" rx="1" width="2" x="192" y="2"></rect><rect height="11" rx="1" width="2" x="196" y="5"></rect>
+<rect height="18" rx="1" width="2" x="200" y="1"></rect><rect height="12" rx="1" width="2" x="204" y="4"></rect>
+<rect height="7" rx="1" width="2" x="208" y="7"></rect><rect height="16" rx="1" width="2" x="212" y="2"></rect>
+<rect height="11" rx="1" width="2" x="216" y="5"></rect><rect height="18" rx="1" width="2" x="220" y="1"></rect>
+<rect height="9" rx="1" width="2" x="224" y="6"></rect><rect height="15" rx="1" width="2" x="228" y="3"></rect>
+<rect height="7" rx="1" width="2" x="232" y="7"></rect><rect height="16" rx="1" width="2" x="236" y="2"></rect>
+<rect height="11" rx="1" width="2" x="240" y="5"></rect><rect height="18" rx="1" width="2" x="244" y="1"></rect>
+<rect height="12" rx="1" width="2" x="248" y="4"></rect><rect height="7" rx="1" width="2" x="252" y="7"></rect>
+<rect height="16" rx="1" width="2" x="256" y="2"></rect><rect height="10" rx="1" width="2" x="260" y="5"></rect>
+<rect height="17" rx="1" width="2" x="264" y="2"></rect><rect height="9" rx="1" width="2" x="268" y="6"></rect>
+<rect height="14" rx="1" width="2" x="272" y="3"></rect><rect height="7" rx="1" width="2" x="276" y="7"></rect>
+<rect height="16" rx="1" width="2" x="280" y="2"></rect><rect height="11" rx="1" width="2" x="284" y="5"></rect>
+<rect height="18" rx="1" width="2" x="288" y="1"></rect><rect height="12" rx="1" width="2" x="292" y="4"></rect>
+<rect height="15" rx="1" width="2" x="296" y="3"></rect>
+</svg>
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded"></div>
+</div>
+<span class="font-mono text-[10px] text-stone-500 font-semibold">04:30.000</span>
+</div>
+</div>
+<!-- RIGHT: Rich File Metadata & Voice Diagnostics Card (5 cols) -->
+<div class="col-span-12 lg:col-span-5 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+<!-- Card Header -->
+<div class="h-7 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] flex-shrink-0">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-sm">description</span>
+<span class="text-xs font-bold text-stone-900">Media Ingest Diagnostics</span>
+</div>
+<span class="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-medium">Valid Ingest</span>
+</div>
+<div class="flex-1 min-h-0 p-3 flex flex-col justify-between">
+<!-- File identity -->
+<div class="flex items-start justify-between">
+<div>
+<h4 class="text-xs font-bold text-stone-900 truncate max-w-[280px]">TEDx_Talk_Future_of_AI_en.mp4</h4>
+<p class="text-[10px] text-stone-500 font-mono mt-0.5">342.5 MB • Container: MP4 (MPEG-4 Base)</p>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-primary font-mono text-[10px] font-bold">
+            1080p @ 60fps
+          </span>
+</div>
+<!-- 4 Grid Technical Specs -->
+<div class="grid grid-cols-4 gap-1.5 py-1">
+<div class="p-1.5 rounded-lg bg-stone-50 border border-stone-200/80">
+<span class="text-[9px] text-stone-400 block font-medium">Duration</span>
+<span class="text-[11px] font-mono font-bold text-stone-800">04m 30s</span>
+</div>
+<div class="p-1.5 rounded-lg bg-stone-50 border border-stone-200/80">
+<span class="text-[9px] text-stone-400 block font-medium">Video Codec</span>
+<span class="text-[11px] font-mono font-bold text-stone-800">H.264 AVC</span>
+</div>
+<div class="p-1.5 rounded-lg bg-stone-50 border border-stone-200/80">
+<span class="text-[9px] text-stone-400 block font-medium">Audio Codec</span>
+<span class="text-[11px] font-mono font-bold text-stone-800">AAC (48kHz)</span>
+</div>
+<div class="p-1.5 rounded-lg bg-stone-50 border border-stone-200/80">
+<span class="text-[9px] text-stone-400 block font-medium">Bitrate</span>
+<span class="text-[11px] font-mono font-bold text-stone-800">12.4 Mbps</span>
+</div>
+</div>
+<!-- Speaker Diarization Preview Chip -->
+<div class="p-2 rounded-lg bg-amber-50/60 border border-amber-200/90 flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-amber-500/20 text-primary flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-sm">record_voice_over</span>
+</div>
+<div class="min-w-0">
+<div class="text-[11px] font-bold text-stone-900 leading-none">2 Distinct Voices Identified</div>
+<div class="text-[10px] text-stone-600 truncate mt-0.5">Male Studio Vocal (86% coverage) + Female Interviewer (14%)</div>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center gap-2 pt-1 border-t border-stone-200">
+<button class="flex-1 py-1.5 px-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold border border-stone-200 transition-colors flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-sm text-stone-500">upload_file</span>
+<span class="">Replace Video</span>
+</button>
+<button class="flex-1 py-1.5 px-2 rounded-lg bg-amber-50 hover:bg-amber-100 text-primary text-xs font-bold border border-amber-200 transition-colors flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-sm">headphones</span>
+<span class="">Preview Audio Stems</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- BOTTOM CONFIGURATION GRID: 4-Quadrant Control Deck (62% Height) -->
+<section class="h-[62%] min-h-0 w-full grid grid-cols-12 gap-2.5">
+<!-- QUADRANT 1: Source & Target Languages (3 cols) -->
+<div class="col-span-12 md:col-span-6 lg:col-span-3 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+<div class="h-7 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-sm">translate</span>
+<h3 class="text-xs font-bold text-stone-900">1. Languages &amp; Mode</h3>
+</div>
+<span class="px-1.5 py-0.2 bg-stone-100 text-stone-600 rounded text-[9px] font-mono font-bold">Step 1A</span>
+</div>
+<div class="flex-1 min-h-0 p-3 flex flex-col justify-between overflow-y-auto space-y-2">
+<!-- Source Lang -->
+<div>
+<label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Source Audio Language</label>
+<div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-stone-200 text-stone-700 flex items-center justify-center text-[10px] font-bold">🇺🇸</span>
+<span class="text-xs font-bold text-stone-800">English (US)</span>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-mono font-bold">Auto-detected</span>
+</div>
+</div>
+<!-- Target Lang with Switcher -->
+<div>
+<div class="flex items-center justify-between mb-1">
+<label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider">Target Dubbing Language</label>
+<span class="material-symbols-outlined text-xs text-stone-400 hover:text-stone-700 cursor-pointer" title="Swap languages">swap_vert</span>
+</div>
+<div class="relative">
+<select class="w-full bg-white text-xs font-bold text-stone-800 py-1.5 pl-2.5 pr-7 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer shadow-2xs">
+<option selected="">Spanish (Latin America) — es-419</option>
+<option>Spanish (Castilian) — es-ES</option>
+<option>French (France) — fr-FR</option>
+<option>German (Standard) — de-DE</option>
+<option>Portuguese (Brazil) — pt-BR</option>
+<option>Japanese (Tokyo) — ja-JP</option>
+<option>Korean (Seoul) — ko-KR</option>
+</select>
+</div>
+</div>
+<!-- Translation Mode Toggle -->
+<div>
+<label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Translation &amp; Timing Mode</label>
+<div class="space-y-1.5">
+<label class="p-2 rounded-lg border-2 border-primary bg-amber-50/50 flex items-start gap-2 cursor-pointer transition-all">
+<input checked="" class="mt-0.5 text-primary focus:ring-0 border-stone-300 w-3.5 h-3.5" name="translation_mode" type="radio">
+<div>
+<span class="text-[11px] font-bold text-stone-900 block leading-tight">Idiomatic Dubbing</span>
+<span class="text-[10px] text-stone-600 block leading-snug">Adapts length for natural lip synchronization</span>
+</div>
+</label>
+<label class="p-2 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 flex items-start gap-2 cursor-pointer transition-all">
+<input class="mt-0.5 text-primary focus:ring-0 border-stone-300 w-3.5 h-3.5" name="translation_mode" type="radio">
+<div>
+<span class="text-[11px] font-bold text-stone-800 block leading-tight">Direct Subtitle Mode</span>
+<span class="text-[10px] text-stone-500 block leading-snug">Literal fidelity, best for academic accuracy</span>
+</div>
+</label>
+</div>
+</div>
+</div>
+</div>
+<!-- QUADRANT 2: Speech Recognition / ASR Engine (3 cols) -->
+<div class="col-span-12 md:col-span-6 lg:col-span-3 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+<div class="h-7 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-sm">hearing</span>
+<h3 class="text-xs font-bold text-stone-900">2. Speech Recognition (ASR)</h3>
+</div>
+<span class="px-1.5 py-0.2 bg-stone-100 text-stone-600 rounded text-[9px] font-mono font-bold">Transcribe</span>
+</div>
+<div class="flex-1 min-h-0 p-3 flex flex-col justify-between overflow-y-auto space-y-2">
+<div>
+<label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Select ASR Foundation Model</label>
+<!-- Modern Selector Tiles -->
+<div class="space-y-1.5">
+<!-- Whisper v3 Turbo (Selected) -->
+<div class="p-2 rounded-lg border-2 border-primary bg-amber-50/50 flex items-start gap-2 cursor-pointer">
+<input checked="" class="mt-0.5 text-primary focus:ring-0 border-stone-300 w-3.5 h-3.5" name="asr_engine" type="radio">
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="text-[11px] font-bold text-stone-900">Whisper v3 Turbo</span>
+<span class="text-[9px] font-mono font-bold text-primary bg-amber-100/90 px-1 rounded">Recommended</span>
+</div>
+<p class="text-[10px] text-stone-600 leading-snug mt-0.5">Precision timestamps (±15ms). Highest word accuracy on live lecture audio.</p>
+</div>
+</div>
+<!-- Conformer AI -->
+<div class="p-2 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 flex items-start gap-2 cursor-pointer">
+<input class="mt-0.5 text-primary focus:ring-0 border-stone-300 w-3.5 h-3.5" name="asr_engine" type="radio">
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="text-[11px] font-bold text-stone-800">Conformer AI</span>
+<span class="text-[9px] font-mono text-stone-500">Fast 2.4x</span>
+</div>
+<p class="text-[10px] text-stone-500 leading-snug mt-0.5">Multi-speaker overlap separation focus. Best for dense roundtables.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Audio Enhancements Checkboxes -->
+<div>
+<label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Pre-processing Filters</label>
+<div class="p-2 bg-stone-50 rounded-lg border border-stone-200/90 space-y-1.5">
+<label class="flex items-center justify-between cursor-pointer">
+<div class="flex items-center gap-1.5 text-xs text-stone-800">
+<input checked="" class="rounded border-stone-300 text-primary focus:ring-0 w-3.5 h-3.5 bg-white" type="checkbox">
+<span class="font-medium text-[11px]">Speaker Diarization</span>
+</div>
+<span class="text-[9px] font-mono text-stone-500">Auto-isolate</span>
+</label>
+<div class="h-px bg-stone-200"></div>
+<label class="flex items-center justify-between cursor-pointer">
+<div class="flex items-center gap-1.5 text-xs text-stone-800">
+<input checked="" class="rounded border-stone-300 text-primary focus:ring-0 w-3.5 h-3.5 bg-white" type="checkbox">
+<span class="font-medium text-[11px]">Remove Background Noise</span>
+</div>
+<span class="text-[9px] font-mono text-stone-500">-24 dB de-reverb</span>
+</label>
+</div>
+</div>
+</div>
+</div>
+<!-- QUADRANT 3: Translation LLM Engine (3 cols) -->
+<div class="col-span-12 md:col-span-6 lg:col-span-3 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+<div class="h-7 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-sm">psychology</span>
+<h3 class="text-xs font-bold text-stone-900">3. Translation LLM</h3>
+</div>
+<span class="px-1.5 py-0.2 bg-stone-100 text-stone-600 rounded text-[9px] font-mono font-bold">Reasoning</span>
+</div>
+<div class="flex-1 min-h-0 p-3 flex flex-col justify-between overflow-y-auto space-y-2">
+<div>
+<label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Target Engine Model</label>
+<div class="space-y-1.5">
+<!-- GPT-4o Dubbing Special (Selected) -->
+<div class="p-2 rounded-lg border-2 border-primary bg-amber-50/50 flex items-start gap-2 cursor-pointer">
+<input checked="" class="mt-0.5 text-primary focus:ring-0 border-stone-300 w-3.5 h-3.5" name="llm_engine" type="radio">
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="text-[11px] font-bold text-stone-900">GPT-4o Studio Dub</span>
+<span class="text-[9px] font-mono font-bold text-primary bg-amber-100/90 px-1 rounded">Lip-Sync</span>
+</div>
+<p class="text-[10px] text-stone-600 leading-snug mt-0.5">Syllable count matching for cinematic dubbing &amp; phonetic timing.</p>
+</div>
+</div>
+<!-- Claude 3.5 Sonnet -->
+<div class="p-2 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 flex items-start gap-2 cursor-pointer">
+<input class="mt-0.5 text-primary focus:ring-0 border-stone-300 w-3.5 h-3.5" name="llm_engine" type="radio">
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="text-[11px] font-bold text-stone-800">Claude 3.5 Sonnet</span>
+<span class="text-[9px] font-mono text-stone-500">Nuance</span>
+</div>
+<p class="text-[10px] text-stone-500 leading-snug mt-0.5">Superior literary cadence and subtle colloquial voice retention.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Tone Preset Pills -->
+<div>
+<label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Tone &amp; Register Preset</label>
+<div class="grid grid-cols-2 gap-1.5">
+<button class="py-1 px-1.5 rounded-lg text-[10px] font-bold bg-primary text-white shadow-2xs text-center">
+              Conversational ★
+            </button>
+<button class="py-1 px-1.5 rounded-lg text-[10px] font-medium bg-stone-50 hover:bg-stone-100 text-stone-700 border border-stone-200 text-center transition-colors">
+              Formal Lecture
+            </button>
+<button class="py-1 px-1.5 rounded-lg text-[10px] font-medium bg-stone-50 hover:bg-stone-100 text-stone-700 border border-stone-200 text-center transition-colors">
+              Colloquial Youth
+            </button>
+<button class="py-1 px-1.5 rounded-lg text-[10px] font-medium bg-stone-50 hover:bg-stone-100 text-stone-700 border border-stone-200 text-center transition-colors">
+              Technical / Science
+            </button>
+</div>
+</div>
+</div>
+</div>
+<!-- QUADRANT 4: Synthesis & Voice Clone Pre-flight (3 cols) -->
+<div class="col-span-12 md:col-span-6 lg:col-span-3 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+<div class="h-7 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-sm">settings_voice</span>
+<h3 class="text-xs font-bold text-stone-900">4. Voice Clone Pre-flight</h3>
+</div>
+<span class="px-1.5 py-0.2 bg-stone-100 text-stone-600 rounded text-[9px] font-mono font-bold">TTS Matrix</span>
+</div>
+<div class="flex-1 min-h-0 p-3 flex flex-col justify-between overflow-y-auto space-y-2">
+<div class="space-y-1.5">
+<label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block">Detected Voice Mapping</label>
+<!-- Voice 1: Alex Carter -->
+<div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="w-5 h-5 rounded-full bg-amber-500/15 text-primary font-mono text-[9px] font-bold flex items-center justify-center">AC</span>
+<span class="text-xs font-bold text-stone-900">Alex Carter</span>
+</div>
+<span class="text-[9px] font-mono text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">98% Clarity</span>
+</div>
+<div class="flex items-center justify-between text-[10px] pt-1 border-t border-stone-200/80">
+<span class="text-stone-500">Preset:</span>
+<select class="bg-white border border-stone-200 text-stone-800 text-[10px] font-semibold rounded px-1.5 py-0.5 focus:outline-none">
+<option selected="">Studio Warmth v4.2</option>
+<option>Authoritative Keynote</option>
+<option>Neutral Natural</option>
+</select>
+</div>
+</div>
+<!-- Voice 2: Elena Rostova -->
+<div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="w-5 h-5 rounded-full bg-orange-500/15 text-secondary font-mono text-[9px] font-bold flex items-center justify-center">ER</span>
+<span class="text-xs font-bold text-stone-900">Elena Rostova</span>
+</div>
+<span class="text-[9px] font-mono text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">99% Clarity</span>
+</div>
+<div class="flex items-center justify-between text-[10px] pt-1 border-t border-stone-200/80">
+<span class="text-stone-500">Preset:</span>
+<select class="bg-white border border-stone-200 text-stone-800 text-[10px] font-semibold rounded px-1.5 py-0.5 focus:outline-none">
+<option selected="">Crisp Broadcast</option>
+<option>Casual Host</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Pre-flight estimate telemetry box -->
+<div class="p-2 rounded-lg bg-stone-100/90 border border-stone-200/80">
+<div class="flex items-center gap-1 text-[10px] font-bold text-stone-700">
+<span class="material-symbols-outlined text-xs text-primary">speed</span>
+<span class="">Processing Estimate</span>
+</div>
+<p class="text-[10px] text-stone-600 font-mono mt-0.5">
+            AI Generation: <strong class="text-stone-900">~55s</strong> (1.8x real-time)
+          </p>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- 3. SLIM PERSISTENT BOTTOM ACTION DOCK -->
+<footer class="h-[46px] flex-shrink-0 bg-white border-t border-[#E7E4DC] px-4 flex items-center justify-between gap-3 z-30">
+<!-- Left: Verification Status Checkmark -->
+<div class="flex items-center gap-2 min-w-0">
+<div class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-xs font-bold">check</span>
+</div>
+<span class="text-xs font-bold text-stone-800 truncate">
+      All media &amp; engine parameters verified.
+      <span class="font-normal text-stone-500 hidden sm:inline">Ready for neural synthesis.</span>
+</span>
+</div>
+<!-- Right: Bottom Action Buttons -->
+<div class="flex items-center gap-2 flex-shrink-0">
+<button class="px-3.5 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs border border-stone-200 transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs text-stone-500">bookmark</span>
+<span class="">Save Profile Preset</span>
+</button>
+<button class="px-4 py-1.5 rounded-lg bg-primary hover:bg-[#743d00] text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 active:scale-98">
+<span class="">Start Processing &amp; Translate</span>
+<span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</footer>
+</body></html>

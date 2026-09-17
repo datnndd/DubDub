@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "core_version": "0.1.8",
+  "core_version": "0.1.10",
   "files": [
     {
       "path": "AGENTS.md",
-      "upstream_sha256": "3a917502e4e627a6195f91b48cd9cd7a8d01afdb59d8924c7fd034ea1e0f1769"
+      "upstream_sha256": "9fd64b3abf40b47c5d82fc27a461c6fdd9f425044acf8d928df301452ad0c2d3"
     },
     {
       "path": ".agents/skills/audit-onboarding-proposal/SKILL.md",
@@ -19,6 +19,14 @@
       "upstream_sha256": "80282a4e260dab314c417a5ee2d2f62aec747989343b7afb0d7f2dd7a7f1fc9a"
     },
     {
+      "path": ".agents/skills/encode-invariant/SKILL.md",
+      "upstream_sha256": "53643e98c60fac0cec76bdcd6282c67f53afbd0ba843461dc4286c748d0d243e"
+    },
+    {
+      "path": ".agents/skills/encode-invariant/agents/openai.yaml",
+      "upstream_sha256": "480be69346c2af2d8f6f381692add09a71593dc6746b8b1cd603412e40e75f2a"
+    },
+    {
       "path": ".agents/skills/improve-harness/SKILL.md",
       "upstream_sha256": "bcd87cb7775a3f2969b47e36f95b4ee4731714eec2fc3016778ce559d4cb15dd"
     },
@@ -28,7 +36,7 @@
     },
     {
       "path": ".agents/skills/onboard-repository/SKILL.md",
-      "upstream_sha256": "17df62151b02c660ce42106589a48618841c89e3ee6c8270ca4a99fa54818469"
+      "upstream_sha256": "15647f0019d8bbeb8696417f241ca0c406df3c2a0b6f9eb5fca03ac153ba64c3"
     },
     {
       "path": ".agents/skills/onboard-repository/agents/openai.yaml",
@@ -52,11 +60,15 @@
     },
     {
       "path": "docs/WORKFLOW.md",
-      "upstream_sha256": "ad71e22c6314d712461a4273b2469bf73b2bb6e3f1e58113d3591812abfa34d4"
+      "upstream_sha256": "1ffb0940195aadb0314f80d376023974ad89d63b5983040748f1a9b291b5abd1"
     },
     {
       "path": "docs/README.md",
-      "upstream_sha256": "29d1dc941082b89444c586254c30e0570785347083f5221b1bccc18457780537"
+      "upstream_sha256": "9f51a96fc3c62cd5483512fb501aee40c3801afdbfc318ad298cc9c52fbba6f0"
+    },
+    {
+      "path": "docs/patterns/encoding-invariants.md",
+      "upstream_sha256": "22f77be9570f2fe160029df405f8c4096e091a76ea119286b1d78e592c4aa93f"
     },
     {
       "path": "docs/product/README.md",

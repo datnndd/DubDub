@@ -125,6 +125,6 @@ class TransCreate(
                 time.sleep(1)
                 self.signal(text=f"{int(time.time() - t)}???{self.precent}", type="set_precent")
 
-        if app_cfg.exec_mode != 'cli':
+        if self.event_sink is None and app_cfg.exec_mode != 'cli':
             threading.Thread(target=runing, daemon=True).start()
 

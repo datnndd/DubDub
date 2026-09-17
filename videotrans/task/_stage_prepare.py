@@ -1,13 +1,17 @@
-import time,re,json,shutil
+import time,re,json,shutil,threading
 from pathlib import Path
 
 from videotrans.configure.config import tr, app_cfg, settings, logger
 from videotrans.configure.contants import UVR_URL_MS, UVR_URL_HF
 from videotrans.configure.excepts import VideoTransError
-from videotrans.task.simple_runnable_qt import run_in_threadpool
 from videotrans.util.help_ffmpeg import get_video_info, runffmpeg
 from videotrans.util.help_misc import vail_file
 from videotrans.util.help_srt import get_srt_from_list,get_subtitle_from_srt
+
+
+def run_in_threadpool(function):
+    """Run background preparation without requiring a Qt event loop."""
+    threading.Thread(target=function, daemon=True).start()
 
 class PrepareMixin:
 

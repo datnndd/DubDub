@@ -252,28 +252,23 @@ def sts_fun(params: dict) -> None:
 
 def vtv_fun(params: dict) -> None:
     """Execute full video translation task."""
-    from videotrans.configure.config import app_cfg
-    from videotrans.task.trans_create import TransCreate
-    from videotrans.task.taskcfg import TaskCfgVTT
+    from videotrans.task.orchestrator import EventKind, TaskRequest, TaskStatus, run
 
-    app_cfg.current_status = 'ing'
     print(f"\n{tr('exec_vtv_task')}")
     print(tr('process_file', params.get('name')))
-    try:
-        trk = TransCreate(cfg=TaskCfgVTT(**params))
-        trk.prepare()
-        trk.recogn()
-        trk.diariz()
-        trk.trans()
-        trk.dubbing()
-        trk.align()
-        trk.recogn2pass()
-        trk.assembling()
-        trk.task_done()
-        print(tr('done'))
-    except Exception as e:
-        print(tr('failed', str(e)), file=sys.stderr)
-        raise
+
+    def print_event(event):
+        if event.kind == EventKind.STAGE_STARTED:
+            print(f"[{event.stage}]")
+        elif event.kind == EventKind.LOG and event.message:
+            print(event.message)
+
+    result = run(TaskRequest(params), print_event)
+    if result.status == TaskStatus.FAILED:
+        raise RuntimeError(result.failure.message) from None
+    if result.status == TaskStatus.CANCELLED:
+        raise KeyboardInterrupt
+    print(tr('done'))
 
 
 # ---------------------------------------------------------------------------
@@ -430,9 +425,6 @@ def build_common_params(args: argparse.Namespace, output_dir: Optional[str] = No
 
     common_params = {'name': args.name, "cache_folder": _cache_folder}
     common_params.update(asdict(_file_obj))
-
-    Path(_cache_folder).mkdir(parents=True, exist_ok=True)
-    Path(_target_dir).mkdir(parents=True, exist_ok=True)
 
     return common_params
 
