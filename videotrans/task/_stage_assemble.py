@@ -335,7 +335,7 @@ class AssembleMixin:
                     raise VideoTransError(tr('Translation successful but transfer failed.', tmp_target_mp4)) from e
 
         while output_source_output is not True:
-            if app_cfg.exit_soft:return
+            if self._exit():return
             time.sleep(1)
         return
 
@@ -357,7 +357,7 @@ class AssembleMixin:
 
     def _hebing_pro(self, protxt) -> None:
         while 1:
-            if app_cfg.exit_soft or self.hasend or self.uuid in app_cfg.stoped_uuid_set: return
+            if self._exit() or self.hasend: return
             content = read_last_n_lines(protxt)
             if not content:
                 time.sleep(0.5)
@@ -462,7 +462,7 @@ class AssembleMixin:
     def _subprocess(self, cmd):
         logger.debug(f'[尝试硬件编解码执行命令]\n{" ".join(cmd)}\n')
         try:
-            if app_cfg.exit_soft: return
+            if self._exit(): return
             cmd = ["ffmpeg", '-nostdin'] + cmd
             subprocess.run(
                 cmd,

@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en" style="width: 1280px; height: 1024px; overflow: hidden; position: relative;"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>DubDub — Stage 2: Review Transcript (OCR Inspector &amp; Teleprompter Deck)</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#FAF8F5",
+            "surface-container": "#F3ECE2",
+            "surface-container-low": "#FAF6F0",
+            "surface-container-high": "#EDE5DA",
+            "surface-container-lowest": "#FFFFFF",
+            "on-surface": "#1F2328",
+            "on-surface-variant": "#595E68",
+            "outline": "#898174",
+            "outline-variant": "#E5DED4",
+            "primary": "#B45309",
+            "primary-container": "#FDE68A",
+            "primary-light": "#FEF3C7",
+            "on-primary": "#FFFFFF",
+            "on-primary-container": "#451A03",
+            "secondary": "#C2410C",
+            "tertiary": "#059669",
+            "tertiary-container": "#ECFDF5"
+          },
+          fontFamily: {
+            sans: ["Plus Jakarta Sans", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    @layer base {
+      html, body {
+        height: 100%;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #D5CFC5;
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #B4ADA1;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col bg-[#F9F8F5] text-stone-800 font-sans antialiased select-none">
+<!-- 1. INTEGRATED COMMAND HEADER (Brand + Nav + Workflow + GPU) -->
+<header class="h-[52px] flex-shrink-0 bg-white border-b border-[#E7E4DC] px-4 flex items-center justify-between gap-4 z-30">
+<!-- Left: DubDub Branding & Workspace Nav -->
+<div class="flex items-center gap-3 min-w-0">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-amber-500/10 text-primary flex items-center justify-center border border-amber-500/25 shadow-2xs">
+<span class="material-symbols-outlined text-lg">graphic_eq</span>
+</div>
+<div class="flex flex-col leading-none">
+<span class="font-bold text-xs tracking-tight text-stone-900">DubDub</span>
+<span class="text-[10px] text-stone-400 font-medium mt-0.5">Voice &amp; Subtitles Studio</span>
+</div>
+</div>
+<div class="h-4 w-px bg-stone-200"></div>
+<nav class="flex items-center gap-1 p-0.5 bg-stone-100/80 rounded-lg border border-stone-200/80 text-[11px]">
+<a class="px-2.5 py-1 rounded-md font-bold bg-white text-primary shadow-xs border border-amber-200/80 flex items-center gap-1 leading-none" href="#">
+<span class="material-symbols-outlined text-xs">videocam</span><span>Video Dub</span>
+</a>
+<a class="px-2.5 py-1 rounded-md font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center gap-1 leading-none" href="#">
+<span class="material-symbols-outlined text-xs text-stone-400">record_voice_over</span><span>Manage Voice</span>
+</a>
+<a class="px-2.5 py-1 rounded-md font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center gap-1 leading-none" href="#">
+<span class="material-symbols-outlined text-xs text-stone-400">auto_stories</span><span>Audio Book</span>
+</a>
+</nav>
+</div>
+<!-- Right: Auto-save & Warm GPU status -->
+<div class="flex items-center gap-3 flex-shrink-0">
+<div class="hidden sm:flex items-center gap-1 text-[11px] text-stone-500 font-medium">
+<span class="material-symbols-outlined text-xs text-stone-400">auto_fix_high</span>
+<span>Auto-saved 14s ago</span>
+</div>
+<div class="flex items-center gap-2 px-2.5 py-1 bg-stone-50 rounded-lg border border-stone-200">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="font-mono text-[10px] font-medium text-stone-600">42m Warm GPU</span>
+</div>
+</div>
+</header>
+<!-- SUB-HEADER: Active Video & Stage 2 Stepper Strip -->
+<div class="h-9 flex-shrink-0 bg-[#FAF8F5] border-b border-[#E7E4DC] px-3 flex items-center justify-between z-20">
+<div class="grid grid-cols-12 gap-2.5 w-full items-center">
+<div class="col-span-12 xl:col-span-7 flex items-center justify-between min-w-0 pr-1">
+<div class="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-stone-200 text-stone-700 shadow-2xs">
+<span class="material-symbols-outlined text-xs text-stone-400">movie</span>
+<span class="font-mono text-[11px] font-medium truncate max-w-[170px]">TEDx_Talk_Future_of_AI_en.mp4</span>
+<span class="px-1.5 py-0.2 bg-amber-50 text-amber-800 border border-amber-200/80 rounded font-mono font-bold text-[9px] tracking-wide uppercase leading-none">EN Source</span>
+</div>
+<!-- Workflow Stepper (Stage 2 Active) -->
+<div class="flex items-center gap-1.5 bg-white px-2.5 py-0.5 rounded-full border border-[#E7E4DC] shadow-2xs">
+<div class="flex items-center gap-1 text-stone-500 text-[11px] font-semibold">
+<span class="w-3.5 h-3.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[9px] font-bold">✓</span>
+<span>Step 1: Prepare</span>
+</div>
+<span class="text-stone-300 text-[10px]">•</span>
+<div class="flex items-center gap-1 text-primary text-[11px] font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+<span class="w-3.5 h-3.5 rounded-full bg-primary text-white flex items-center justify-center text-[9px] font-bold">2</span>
+<span>Step 2: Review Transcript</span>
+</div>
+<span class="text-stone-300 text-[10px]">•</span>
+<div class="flex items-center gap-1 text-stone-400 text-[11px] font-medium">
+<span class="w-3.5 h-3.5 rounded-full bg-stone-200 text-stone-500 flex items-center justify-center text-[9px]">3</span>
+<span>Step 3: Translate &amp; Dub</span>
+</div>
+<span class="text-stone-300 text-[10px]">•</span>
+<div class="flex items-center gap-1 text-stone-400 text-[11px] font-medium">
+<span class="w-3.5 h-3.5 rounded-full bg-stone-200 text-stone-500 flex items-center justify-center text-[9px]">4</span>
+<span>Step 4: Export</span>
+</div>
+</div>
+</div>
+<div class="hidden xl:flex col-span-5 items-center justify-end gap-2 pl-2 text-[11px] text-stone-500">
+<span class="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 text-[10px] font-semibold">
+<span class="material-symbols-outlined text-xs">document_scanner</span>
+<span>OCR Slide Engine: Active (1 Diff Pending)</span>
+</span>
+</div>
+</div>
+</div>
+<!-- 2. RADICAL HORIZONTAL SPLIT WORKSPACE -->
+<main class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden">
+<!-- TOP HALF: BROADCAST MONITOR & OCR INSPECTOR (52% Height) -->
+<section class="h-[52%] min-h-0 w-full grid grid-cols-12 gap-2.5">
+<!-- LEFT: SYNCHRONIZED VIDEO PLAYER WITH OCR BOUNDING BOX (7 cols) -->
+<div class="col-span-12 xl:col-span-7 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+<!-- Player Header Strip -->
+<div class="h-8 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] flex-shrink-0">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-base">smart_display</span>
+<span class="text-xs font-bold text-stone-900">Synchronized Video Player</span>
+<span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-primary uppercase tracking-wide">Keyframe Analysis</span>
+<span class="px-1.5 py-0.2 rounded text-[9px] font-medium bg-emerald-100 text-emerald-800">1080p • 29.97 fps</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-stone-100 text-stone-700 font-mono text-[10px] border border-stone-200/80 flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+<span>Segment #02 (Live Cues)</span>
+</span>
+</div>
+</div>
+<!-- Widescreen Live Canvas with OCR Overlay -->
+<div class="relative flex-1 min-h-0 bg-neutral-950 flex items-center justify-center overflow-hidden group">
+<img alt="TEDx presentation stage with male speaker Alex Carter talking enthusiastically on keynote stage" class="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-[1.01]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAdw2oYibvlA_Z6ofNA2ic_IGcy9kFrw9CXigxphiomgTQrVilzO3B-RsHzuoK_uOBcMKomeOI3p0ZBGO9Ht95RZmprC7QLSxJ-dV0D-Wms50T6hieKj6GKnYUKlPFgnbNpHa3nkNCMZph4Ix6ryFk3npfM9bec-SuJubanr_mcfadH-lnT7PUTrBFeOBr4GO3m3u5ieaYBX3inE867dYZl1pGK6hBigQ6plLLpfi8FOoEhA-2Gf42NJw"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/30 pointer-events-none"></div>
+<!-- Top Live Telemetry Badges -->
+<div class="absolute top-2.5 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
+<div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/75 backdrop-blur-md text-amber-300 font-mono text-[10px] border border-amber-400/30">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+<span>01:26.500 / 04:30.000</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="px-2 py-0.5 rounded-full bg-black/75 backdrop-blur-md text-white font-mono text-[10px] border border-white/15">
+Alex Carter (Keynote Speaker)
+</span>
+<span class="px-2 py-0.5 rounded-full bg-amber-600 text-white font-bold text-[9px] uppercase tracking-wider shadow-xs flex items-center gap-1">
+<span class="material-symbols-outlined text-[11px]">warning</span> Slide Mismatch
+</span>
+</div>
+</div>
+<!-- Highlighted Detected Slide Bounding Box (OCR BOX #01) -->
+<div class="absolute top-10 right-7 max-w-[340px] z-20 pointer-events-auto">
+<div class="relative p-2.5 rounded-lg bg-amber-950/85 backdrop-blur-md border-2 border-dashed border-amber-400 shadow-xl ring-2 ring-amber-500/30">
+<!-- OCR Tag Indicator -->
+<div class="absolute -top-2.5 left-2 px-1.5 py-0.2 bg-amber-500 text-stone-950 font-mono font-bold text-[9px] rounded uppercase tracking-wider flex items-center gap-1 shadow-xs">
+<span class="material-symbols-outlined text-[10px]">crop_free</span>
+<span>OCR BOX #01 • 99.4% Match</span>
+</div>
+<p class="text-amber-100 font-semibold text-xs leading-snug pt-1">
+“Translation must bridge cultural resonance, not merely literal syntax.”
+</p>
+<div class="flex items-center justify-between mt-1.5 pt-1 border-t border-amber-500/20 text-[9px] font-mono text-amber-300/80">
+<span>Detected on stage slide display</span>
+<span class="text-amber-200 underline cursor-pointer hover:text-white">Pin to Inspector</span>
+</div>
+</div>
+</div>
+<!-- Burned-in Dual Subtitle Preview Bar -->
+<div class="absolute inset-x-3 bottom-2 z-20 flex justify-center text-center">
+<div class="w-full max-w-xl bg-black/85 backdrop-blur-md px-3.5 py-1.5 rounded-lg border border-amber-500/30 shadow-xl">
+<div class="flex items-center justify-between text-[9px] font-mono text-stone-400 mb-0.5">
+<span class="text-amber-400 font-bold">SEGMENT #02 CUE</span>
+<span>ASR (Whisper Large-v3)</span>
+</div>
+<p class="text-white font-semibold text-xs sm:text-sm leading-snug">
+“It's no longer just word-for-word translation, but cultural emotion.”
+</p>
+</div>
+</div>
+</div>
+<!-- Integrated Waveform & Transport Deck -->
+<div class="p-2 bg-[#FAF9F6] border-t border-[#E7E4DC] flex flex-col gap-1 flex-shrink-0">
+<!-- Waveform Audio Stem Track with Scrub Marker -->
+<div class="relative w-full h-5 flex items-center cursor-pointer group/scrub">
+<svg class="w-full h-4 text-amber-200/90" fill="currentColor" preserveaspectratio="none" viewbox="0 0 300 20">
+<rect height="6" rx="1" width="2" x="0" y="7"></rect><rect height="10" rx="1" width="2" x="4" y="5"></rect>
+<rect height="14" rx="1" width="2" x="8" y="3"></rect><rect height="5" rx="1" width="2" x="12" y="8"></rect>
+<rect height="16" rx="1" width="2" x="16" y="2"></rect><rect height="12" rx="1" width="2" x="20" y="4"></rect>
+<rect height="18" rx="1" width="2" x="24" y="1"></rect><rect height="8" rx="1" width="2" x="28" y="6"></rect>
+<rect height="15" rx="1" width="2" x="32" y="3"></rect><rect height="7" rx="1" width="2" x="36" y="7"></rect>
+<rect height="12" rx="1" width="2" x="40" y="4"></rect><rect height="17" rx="1" width="2" x="44" y="2"></rect>
+<rect height="10" rx="1" width="2" x="48" y="5"></rect><rect height="15" rx="1" width="2" x="52" y="3"></rect>
+<rect height="7" rx="1" width="2" x="56" y="7"></rect><rect height="14" rx="1" width="2" x="60" y="3"></rect>
+<rect height="9" rx="1" width="2" x="64" y="6"></rect><rect height="18" rx="1" width="2" x="68" y="1"></rect>
+<rect height="12" rx="1" width="2" x="72" y="4"></rect><rect height="7" rx="1" width="2" x="76" y="7"></rect>
+<rect height="16" rx="1" width="2" x="80" y="2"></rect><rect height="11" rx="1" width="2" x="84" y="5"></rect>
+<rect height="17" rx="1" width="2" x="88" y="2"></rect><rect height="9" rx="1" width="2" x="92" y="6"></rect>
+<rect height="14" rx="1" width="2" x="96" y="3"></rect><rect height="7" rx="1" width="2" x="100" y="7"></rect>
+<rect height="16" rx="1" width="2" x="104" y="2"></rect><rect height="11" rx="1" width="2" x="108" y="5"></rect>
+<rect height="18" rx="1" width="2" x="112" y="1"></rect><rect height="13" rx="1" width="2" x="116" y="4"></rect>
+<rect height="7" rx="1" width="2" x="120" y="7"></rect><rect height="16" rx="1" width="2" x="124" y="2"></rect>
+<rect height="10" rx="1" width="2" x="128" y="5"></rect><rect height="18" rx="1" width="2" x="132" y="1"></rect>
+<rect height="9" rx="1" width="2" x="136" y="6"></rect><rect height="15" rx="1" width="2" x="140" y="3"></rect>
+<rect height="7" rx="1" width="2" x="144" y="7"></rect><rect height="16" rx="1" width="2" x="148" y="2"></rect>
+<rect height="11" rx="1" width="2" x="152" y="5"></rect><rect height="18" rx="1" width="2" x="156" y="1"></rect>
+<rect height="12" rx="1" width="2" x="160" y="4"></rect><rect height="7" rx="1" width="2" x="164" y="7"></rect>
+<rect height="16" rx="1" width="2" x="168" y="2"></rect><rect height="11" rx="1" width="2" x="172" y="5"></rect>
+<rect height="17" rx="1" width="2" x="176" y="2"></rect><rect height="9" rx="1" width="2" x="180" y="6"></rect>
+<rect height="14" rx="1" width="2" x="184" y="3"></rect><rect height="7" rx="1" width="2" x="188" y="7"></rect>
+<rect height="16" rx="1" width="2" x="192" y="2"></rect><rect height="11" rx="1" width="2" x="196" y="5"></rect>
+<rect height="18" rx="1" width="2" x="200" y="1"></rect><rect height="12" rx="1" width="2" x="204" y="4"></rect>
+<rect height="7" rx="1" width="2" x="208" y="7"></rect><rect height="16" rx="1" width="2" x="212" y="2"></rect>
+<rect height="11" rx="1" width="2" x="216" y="5"></rect><rect height="18" rx="1" width="2" x="220" y="1"></rect>
+<rect height="9" rx="1" width="2" x="224" y="6"></rect><rect height="15" rx="1" width="2" x="228" y="3"></rect>
+<rect height="7" rx="1" width="2" x="232" y="7"></rect><rect height="16" rx="1" width="2" x="236" y="2"></rect>
+<rect height="11" rx="1" width="2" x="240" y="5"></rect><rect height="18" rx="1" width="2" x="244" y="1"></rect>
+<rect height="12" rx="1" width="2" x="248" y="4"></rect><rect height="7" rx="1" width="2" x="252" y="7"></rect>
+<rect height="16" rx="1" width="2" x="256" y="2"></rect><rect height="10" rx="1" width="2" x="260" y="5"></rect>
+<rect height="17" rx="1" width="2" x="264" y="2"></rect><rect height="9" rx="1" width="2" x="268" y="6"></rect>
+<rect height="14" rx="1" width="2" x="272" y="3"></rect><rect height="7" rx="1" width="2" x="276" y="7"></rect>
+<rect height="16" rx="1" width="2" x="280" y="2"></rect><rect height="11" rx="1" width="2" x="284" y="5"></rect>
+<rect height="18" rx="1" width="2" x="288" y="1"></rect><rect height="12" rx="1" width="2" x="292" y="4"></rect>
+<rect height="15" rx="1" width="2" x="296" y="3"></rect>
+</svg>
+<div class="absolute inset-y-0 left-0 bg-primary/20 rounded-l pointer-events-none" style="width: 32.5%;"></div>
+<div class="absolute left-[32.5%] -ml-1 top-0 bottom-0 w-2 bg-primary rounded shadow-xs pointer-events-none"></div>
+</div>
+<!-- Transport Controls -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<button class="w-6 h-6 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center transition-colors" title="Rewind 5s">
+<span class="material-symbols-outlined text-xs">replay_5</span>
+</button>
+<button class="w-7 h-7 rounded-md bg-primary text-white hover:bg-amber-800 flex items-center justify-center shadow-xs transition-transform active:scale-95" title="Pause / Play">
+<span class="material-symbols-outlined text-sm">pause</span>
+</button>
+<button class="w-6 h-6 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center transition-colors" title="Forward 5s">
+<span class="material-symbols-outlined text-xs">forward_5</span>
+</button>
+<div class="flex items-center gap-1 font-mono text-[10px] ml-1">
+<span class="font-bold text-stone-900">01:26.500</span>
+<span class="text-stone-300">/</span>
+<span class="text-stone-500">04:30.000</span>
+</div>
+</div>
+<div class="flex items-center gap-2.5 text-[10px]">
+<span class="text-stone-500">Speed: <strong class="text-stone-800 font-mono">1.0x</strong></span>
+<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 font-mono font-bold">Scrub Lock: ON</span>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT: LIVE OCR DISCREPANCY & SYNTHESIS INSPECTOR CARD (5 cols) -->
+<div class="col-span-12 xl:col-span-5 h-full bg-white rounded-xl border border-amber-300/80 shadow-xs flex flex-col min-h-0 overflow-hidden">
+<!-- Inspector Header Strip -->
+<div class="h-8 px-3 border-b border-amber-200 bg-amber-50/70 flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-sm">find_in_page</span>
+<span class="text-xs font-bold text-stone-900">OCR Discrepancy &amp; Synthesis Inspector</span>
+<span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-200/80 text-amber-900">Segment #02</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="text-[10px] font-mono text-stone-500">01:26.500 ➔ 01:31.200 (4.7s)</span>
+</div>
+</div>
+<!-- Main Inspector Content (Scrollable & Balanced) -->
+<div class="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col justify-between gap-2.5">
+<!-- Comparison Section: Side-by-Side ASR vs Extracted OCR -->
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<span class="text-[9px] font-bold text-stone-400 uppercase tracking-wider">Discrepancy Comparison</span>
+<span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">Slide Text Mismatch</span>
+</div>
+<div class="grid grid-cols-2 gap-2">
+<!-- Whisper ASR Box -->
+<div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex flex-col justify-between">
+<div class="flex items-center justify-between mb-1">
+<span class="text-[9px] font-bold text-stone-500 uppercase tracking-wide">Whisper ASR (Audio)</span>
+<span class="text-[9px] font-mono text-stone-400">Speaker 1</span>
+</div>
+<p class="text-xs text-stone-700 leading-snug font-normal">
+“It's no longer just word-for-word translation, but cultural emotion.”
+</p>
+<div class="mt-2 pt-1 border-t border-stone-200/70 flex items-center justify-between text-[9px] text-stone-400 font-mono">
+<span>Confidence: 94.2%</span>
+<span>14.0 CPS</span>
+</div>
+</div>
+<!-- Extracted Slide OCR Box -->
+<div class="p-2 rounded-lg bg-amber-50/60 border border-amber-300 flex flex-col justify-between ring-1 ring-amber-400/20">
+<div class="flex items-center justify-between mb-1">
+<span class="text-[9px] font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Slide OCR (Visual)
+</span>
+<span class="text-[9px] font-mono text-amber-700 font-bold">Keyframe 01:27</span>
+</div>
+<p class="text-xs text-stone-900 leading-snug font-semibold">
+“Translation must bridge cultural resonance, not merely literal syntax.”
+</p>
+<div class="mt-2 pt-1 border-t border-amber-200/80 flex items-center justify-between text-[9px] text-amber-800 font-mono">
+<span>OCR Match: 99.4%</span>
+<span>Exact Slide Match</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Primary Action: Replace with OCR -->
+<div class="p-2 rounded-lg bg-[#FAF8F5] border border-amber-200">
+<button class="w-full py-1.5 px-3 rounded-lg bg-primary hover:bg-amber-800 text-white font-bold text-xs shadow-xs transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">sync_saved_locally</span>
+<span>Replace with OCR (Preserve Timestamps 01:26.500 ➔ 01:31.200)</span>
+</button>
+<div class="grid grid-cols-3 gap-1.5 mt-1.5">
+<button class="py-1 px-2 rounded text-[10px] font-medium bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 shadow-2xs text-center flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[11px] text-stone-500">undo</span> Keep Original ASR
+</button>
+<button class="py-1 px-2 rounded text-[10px] font-medium bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 shadow-2xs text-center flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[11px] text-stone-500">call_split</span> Split (01:28.8)
+</button>
+<button class="py-1 px-2 rounded text-[10px] font-medium bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 shadow-2xs text-center flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-[11px] text-stone-500">call_merge</span> Merge with #01
+</button>
+</div>
+</div>
+<!-- Editable Target Subtitle Cue -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between text-[10px]">
+<span class="font-bold text-stone-700 text-[10px] uppercase tracking-wider flex items-center gap-1">
+<span class="material-symbols-outlined text-xs text-primary">edit_note</span> Active Transcript Cue (Editable)
+</span>
+<span class="text-stone-400 font-mono text-[9px]">72 chars • Sync: Ready</span>
+</div>
+<textarea class="w-full bg-white text-stone-900 font-medium text-xs p-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-primary leading-snug resize-none shadow-2xs" rows="2">Translation must bridge cultural resonance, not merely literal syntax.</textarea>
+</div>
+</div>
+</div>
+</section>
+<!-- BOTTOM HALF: EXPANSIVE MASTER TELEPROMPTER & SUBTITLE FEED (48% Height) -->
+<section class="h-[48%] min-h-0 w-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col overflow-hidden">
+<!-- Teleprompter Stream Header Bar -->
+<div class="h-9 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-3">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-base">subtitles</span>
+<h3 class="text-xs font-bold text-stone-900">Master Transcript Teleprompter</h3>
+<span class="px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-mono text-[10px] font-bold">48 Segments</span>
+</div>
+<div class="h-3.5 w-px bg-stone-200"></div>
+<!-- Filter Chips -->
+<div class="flex items-center gap-1">
+<button class="px-2 py-0.5 rounded-full text-[10px] font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-200/70">All (48)</button>
+<button class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
+<span>Discrepancies (2)</span>
+<span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+</button>
+<button class="px-2 py-0.5 rounded-full text-[10px] font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-200/70">Alex Carter</button>
+<button class="px-2 py-0.5 rounded-full text-[10px] font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-200/70">Elena Rostova</button>
+</div>
+</div>
+<!-- Search & Fast Filter Bar -->
+<div class="flex items-center gap-2">
+<div class="relative w-56">
+<span class="material-symbols-outlined absolute left-2 top-1.5 text-stone-400 text-xs">search</span>
+<input class="w-full bg-white pl-6 pr-2 py-0.5 rounded-lg text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-primary border border-stone-200 leading-tight" placeholder="Search transcript or OCR..." type="text"/>
+</div>
+<label class="flex items-center gap-1 text-[10px] text-stone-500 cursor-pointer ml-1">
+<input checked="" class="rounded border-stone-300 text-primary focus:ring-0 w-3 h-3 bg-white" type="checkbox"/>
+<span>Auto-follow</span>
+</label>
+<button class="p-1 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-200/80 transition-colors" title="Re-align timing">
+<span class="material-symbols-outlined text-xs">sync</span>
+</button>
+</div>
+</div>
+<!-- Multi-Segment Teleprompter Stream -->
+<div class="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2">
+<!-- SEGMENT #01: Verified ASR -->
+<div class="p-2.5 rounded-xl border border-stone-200 hover:border-amber-300 bg-white transition-colors flex flex-col md:flex-row md:items-center gap-3">
+<div class="flex md:flex-col justify-between md:justify-center items-start gap-1 w-full md:w-44 flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 font-mono text-[10px] font-bold">#01</span>
+<div class="flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-medium">
+<span class="w-3 h-3 rounded-full bg-stone-300 text-stone-700 text-[8px] flex items-center justify-center">AC</span>
+<span>Alex Carter</span>
+</div>
+</div>
+<span class="font-mono text-[10px] text-stone-500">01:21.000 ➔ 01:26.400</span>
+<span class="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[10px]">check_circle</span> Verified ASR
+</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-xs text-stone-800 leading-snug">
+“We are entering an era where artificial intelligence truly understands human nuances.”
+</p>
+</div>
+<div class="flex md:flex-col items-center md:items-end justify-between gap-1.5 flex-shrink-0">
+<button class="flex items-center gap-1 px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md font-medium text-[10px] transition-colors">
+<span class="material-symbols-outlined text-xs">play_arrow</span> Play 5.4s
+</button>
+<span class="text-stone-400 text-[10px] font-mono">14.2 CPS • Clean</span>
+</div>
+</div>
+<!-- SEGMENT #02: ACTIVE - SLIDE DIFF DETECTED (Warm Amber Highlight) -->
+<div class="p-2.5 rounded-xl border-2 border-primary bg-amber-50/45 shadow-xs flex flex-col md:flex-row md:items-center gap-3 relative transition-all">
+<div class="flex md:flex-col justify-between md:justify-center items-start gap-1 w-full md:w-44 flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.2 rounded bg-primary text-white font-mono text-[10px] font-bold">#02</span>
+<div class="flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+<span class="w-3 h-3 rounded-full bg-primary text-white text-[8px] flex items-center justify-center">AC</span>
+<span>Alex Carter</span>
+</div>
+</div>
+<span class="font-mono text-[10px] text-stone-600 font-semibold">01:26.500 ➔ 01:31.200</span>
+<span class="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[11px] text-amber-700">warning</span> Slide Diff Detected
+</span>
+</div>
+<div class="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-2">
+<div class="p-2 rounded-lg bg-white border border-stone-200/90 text-xs text-stone-600 leading-snug flex flex-col justify-center">
+<span class="font-bold text-stone-400 text-[9px] uppercase tracking-wider block mb-0.5">Original Whisper ASR</span>
+“It's no longer just word-for-word translation, but cultural emotion.”
+</div>
+<div class="p-2 rounded-lg bg-amber-100/60 border border-amber-300 text-xs text-stone-900 font-medium leading-snug flex flex-col justify-center ring-1 ring-amber-400/20">
+<span class="font-bold text-amber-800 text-[9px] uppercase tracking-wider block mb-0.5 flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">crop_free</span> Proposed OCR Replacement
+</span>
+“Translation must bridge cultural resonance, not merely literal syntax.”
+</div>
+</div>
+<div class="flex md:flex-col items-center md:items-end justify-between gap-1.5 flex-shrink-0">
+<button class="flex items-center gap-1 px-3 py-1 bg-primary text-white rounded-md font-bold text-[11px] shadow-2xs hover:bg-amber-800 transition-colors">
+<span class="material-symbols-outlined text-xs">sync_saved_locally</span> Apply OCR
+</button>
+<button class="px-2 py-0.5 rounded bg-white hover:bg-stone-100 border border-stone-200 text-stone-600 font-mono text-[10px]">Keep ASR</button>
+</div>
+</div>
+<!-- SEGMENT #03: Verified ASR (Elena Rostova) -->
+<div class="p-2.5 rounded-xl border border-stone-200 hover:border-amber-300 bg-white transition-colors flex flex-col md:flex-row md:items-center gap-3">
+<div class="flex md:flex-col justify-between md:justify-center items-start gap-1 w-full md:w-44 flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 font-mono text-[10px] font-bold">#03</span>
+<div class="flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-orange-50 text-orange-950 border border-orange-200 text-[10px] font-bold">
+<span class="w-3 h-3 rounded-full bg-secondary text-white text-[8px] flex items-center justify-center">ER</span>
+<span>Elena Rostova</span>
+</div>
+</div>
+<span class="font-mono text-[10px] text-stone-500">01:31.500 ➔ 01:37.000</span>
+<span class="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[10px]">check_circle</span> Verified ASR
+</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-xs text-stone-800 leading-snug">
+“Could you elaborate on how voice cloning preserves emotional pacing and pauses?”
+</p>
+</div>
+<div class="flex md:flex-col items-center md:items-end justify-between gap-1.5 flex-shrink-0">
+<button class="flex items-center gap-1 px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md font-medium text-[10px] transition-colors">
+<span class="material-symbols-outlined text-xs">play_arrow</span> Play 5.5s
+</button>
+<span class="text-stone-400 text-[10px] font-mono">15.0 CPS • Optimal</span>
+</div>
+</div>
+<!-- SEGMENT #04: Verified ASR (Alex Carter) -->
+<div class="p-2.5 rounded-xl border border-stone-200 hover:border-amber-300 bg-white transition-colors flex flex-col md:flex-row md:items-center gap-3">
+<div class="flex md:flex-col justify-between md:justify-center items-start gap-1 w-full md:w-44 flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 font-mono text-[10px] font-bold">#04</span>
+<div class="flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-medium">
+<span class="w-3 h-3 rounded-full bg-stone-300 text-stone-700 text-[8px] flex items-center justify-center">AC</span>
+<span>Alex Carter</span>
+</div>
+</div>
+<span class="font-mono text-[10px] text-stone-500">01:37.200 ➔ 01:42.800</span>
+<span class="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[10px]">check_circle</span> Verified ASR
+</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-xs text-stone-800 leading-snug">
+“Our neural vocoder analyzes pitch contour, inflection, and breathing patterns across continuous phonetic streams.”
+</p>
+</div>
+<div class="flex md:flex-col items-center md:items-end justify-between gap-1.5 flex-shrink-0">
+<button class="flex items-center gap-1 px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md font-medium text-[10px] transition-colors">
+<span class="material-symbols-outlined text-xs">play_arrow</span> Play 5.6s
+</button>
+<span class="text-stone-400 text-[10px] font-mono">16.1 CPS</span>
+</div>
+</div>
+<!-- SEGMENT #05: OCR Synced -->
+<div class="p-2.5 rounded-xl border border-stone-200 hover:border-amber-300 bg-white transition-colors flex flex-col md:flex-row md:items-center gap-3">
+<div class="flex md:flex-col justify-between md:justify-center items-start gap-1 w-full md:w-44 flex-shrink-0">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 font-mono text-[10px] font-bold">#05</span>
+<div class="flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-medium">
+<span class="w-3 h-3 rounded-full bg-stone-300 text-stone-700 text-[8px] flex items-center justify-center">AC</span>
+<span>Alex Carter</span>
+</div>
+</div>
+<span class="font-mono text-[10px] text-stone-500">01:43.000 ➔ 01:47.800</span>
+<span class="px-1.5 py-0.2 rounded bg-sky-50 text-sky-800 border border-sky-200 text-[9px] font-bold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[10px]">document_scanner</span> OCR Synced
+</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-xs text-stone-800 leading-snug">
+“Diagram: Multi-layer acoustic model pipeline converting text embeddings into target speaker frequency space.”
+</p>
+</div>
+<div class="flex md:flex-col items-center md:items-end justify-between gap-1.5 flex-shrink-0">
+<button class="flex items-center gap-1 px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md font-medium text-[10px] transition-colors">
+<span class="material-symbols-outlined text-xs">play_arrow</span> Play 4.8s
+</button>
+<span class="text-stone-400 text-[10px] font-mono">13.8 CPS</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- 3. SLIM PERSISTENT BOTTOM DOCK (Single-line: Height: 44px) -->
+<footer class="h-[44px] flex-shrink-0 bg-white border-t border-[#E7E4DC] px-4 flex items-center justify-between gap-3 z-30">
+<!-- Left: Verification Status Checkmark -->
+<div class="flex items-center gap-2 min-w-0">
+<div class="w-5 h-5 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-xs font-bold">flaky</span>
+</div>
+<span class="text-xs font-bold text-stone-800 truncate">
+48 Segments Total
+<span class="font-normal text-stone-500 hidden sm:inline">• 1 OCR Replaced • 1 Pending Discrepancy</span>
+</span>
+</div>
+<!-- Right: Bottom Actions -->
+<div class="flex items-center gap-2 flex-shrink-0">
+<button class="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs border border-stone-200 transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm">document_scanner</span>
+<span>Re-run Full OCR Scan</span>
+</button>
+<button class="px-4 py-1.5 rounded-lg bg-primary hover:bg-amber-800 text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5">
+<span>Proceed to Translate &amp; Dub</span>
+<span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</footer>
+</body></html>

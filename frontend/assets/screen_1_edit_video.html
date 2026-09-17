@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en" style="width: 1280px; height: 1024px; overflow: hidden; position: relative;"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>DubDub Studio — CapCut Desktop Pro Timeline Deck</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700;800&amp;family=Montserrat:wght@500;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#FAF8F5",
+            "surface-container": "#F3ECE2",
+            "surface-container-low": "#FAF6F0",
+            "surface-container-high": "#EDE5DA",
+            "surface-container-lowest": "#FFFFFF",
+            "on-surface": "#1F2328",
+            "on-surface-variant": "#595E68",
+            "outline": "#898174",
+            "outline-variant": "#E5DED4",
+            "primary": "#8D4B00",
+            "primary-container": "#B15F00",
+            "primary-light": "#FFDCC3",
+            "on-primary": "#FFFFFF",
+            "secondary": "#A13E28",
+            "secondary-container": "#FD8367",
+            "tertiary": "#506053",
+            "tertiary-container": "#69786B"
+          },
+          fontFamily: {
+            sans: ["Plus Jakarta Sans", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    @layer base {
+      html, body {
+        height: 100%;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+      }
+      ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #D8D2C6;
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #B9B0A2;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col bg-[#F8F6F1] text-stone-800 font-sans antialiased select-none text-xs">
+<!-- 1. STUDIO COMMAND BAR (Top: 44px) -->
+<header class="h-[44px] flex-shrink-0 bg-white border-b border-[#E4DEC3]/70 px-3.5 flex items-center justify-between gap-3 z-30 shadow-2xs">
+<!-- Brand & Project -->
+<div class="flex items-center gap-3">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-lg bg-amber-500/15 text-[#8D4B00] flex items-center justify-center border border-amber-500/30 shadow-xs">
+<span class="material-symbols-outlined text-base">movie_edit</span>
+</div>
+<div class="flex flex-col leading-none">
+<span class="font-bold text-[12px] tracking-tight text-stone-900">DubDub Studio</span>
+<span class="text-[9px] text-stone-400 font-medium font-mono">Desktop Deck v2.4</span>
+</div>
+</div>
+<div class="h-4 w-px bg-stone-200"></div>
+<div class="flex items-center gap-1.5 bg-[#FAF8F5] px-2 py-0.5 rounded-md border border-stone-200 text-stone-700 text-[11px]">
+<span class="material-symbols-outlined text-[13px] text-stone-400">smart_display</span>
+<span class="font-mono text-[10px] font-semibold text-stone-800 truncate max-w-[140px]">TEDx_Future_AI_es.mp4</span>
+<span class="px-1.5 py-0.2 bg-amber-100 text-[#8D4B00] border border-amber-300 rounded font-mono font-bold text-[8px] uppercase">EN ➔ ES</span>
+</div>
+<!-- Stepper Mini -->
+<div class="hidden lg:flex items-center gap-1 bg-stone-50 px-2 py-0.5 rounded-full border border-stone-200 text-[10px]">
+<span class="text-stone-400 flex items-center gap-0.5"><span class="w-3 h-3 rounded-full bg-emerald-100 text-emerald-700 inline-flex items-center justify-center text-[7px] font-bold">✓</span>Prep</span>
+<span class="text-stone-300">•</span>
+<span class="text-stone-400 flex items-center gap-0.5"><span class="w-3 h-3 rounded-full bg-emerald-100 text-emerald-700 inline-flex items-center justify-center text-[7px] font-bold">✓</span>Transcribe</span>
+<span class="text-stone-300">•</span>
+<span class="text-stone-400 flex items-center gap-0.5"><span class="w-3 h-3 rounded-full bg-emerald-100 text-emerald-700 inline-flex items-center justify-center text-[7px] font-bold">✓</span>Translate</span>
+<span class="text-stone-300">•</span>
+<span class="text-[#8D4B00] font-bold flex items-center gap-0.5 bg-amber-50 px-1.5 py-0.2 rounded-full border border-amber-200"><span class="w-3 h-3 rounded-full bg-[#8D4B00] text-white inline-flex items-center justify-center text-[7px] font-bold">4</span>Timeline Edit</span>
+</div>
+</div>
+<!-- Center AI Enhancers Toolbar -->
+<div class="flex items-center gap-1 bg-[#FAF8F5] p-0.5 rounded-lg border border-stone-200 shadow-2xs">
+<label class="flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-amber-300 shadow-2xs text-[10px] font-bold text-[#8D4B00] cursor-pointer">
+<input checked="" class="w-2.5 h-2.5 rounded text-[#8D4B00] focus:ring-0" type="checkbox"/>
+<span>AI Lip-Sync</span>
+</label>
+<label class="flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-stone-200 text-[10px] font-semibold text-stone-700 cursor-pointer">
+<input checked="" class="w-2.5 h-2.5 rounded text-[#8D4B00] focus:ring-0" type="checkbox"/>
+<span>De-reverb</span>
+</label>
+<label class="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-white text-[10px] font-medium text-stone-600 cursor-pointer">
+<input class="w-2.5 h-2.5 rounded text-[#8D4B00] focus:ring-0" type="checkbox"/>
+<span>Face Retouch</span>
+</label>
+<label class="flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-stone-200 text-[10px] font-semibold text-stone-700 cursor-pointer">
+<input checked="" class="w-2.5 h-2.5 rounded text-[#8D4B00] focus:ring-0" type="checkbox"/>
+<span class="text-amber-800">4K Super-Res</span>
+</label>
+</div>
+<!-- Right GPU / Cloud Sync status -->
+<div class="flex items-center gap-2">
+<div class="flex items-center gap-1 text-[10px] text-stone-500 font-mono bg-stone-50 px-2 py-0.5 rounded-md border border-stone-200">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="text-stone-700 font-bold">GPU Warm: 42m</span>
+</div>
+<div class="flex items-center gap-1 text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+<span class="material-symbols-outlined text-xs">cloud_done</span>
+<span class="text-[10px]">CapCut Synced</span>
+</div>
+</div>
+</header>
+<!-- MAIN STUDIO WORKSPACE (Top 55% + Bottom 45%) -->
+<main class="flex-1 min-h-0 w-full p-2 flex flex-col gap-2 overflow-hidden">
+<!-- TOP ROW: SPLIT 55% MONITOR / 45% DUAL-TABBED INSPECTOR -->
+<div class="h-[52%] min-h-0 grid grid-cols-12 gap-2">
+<!-- LEFT-CENTER (55% = 7 Cols): 16:9 VIDEO MONITOR + OCR INPAINT OVERLAY -->
+<section class="col-span-7 h-full bg-white rounded-xl border border-[#E4DEC3] shadow-xs flex flex-col overflow-hidden min-h-0">
+<!-- Monitor Header Bar -->
+<div class="h-7 px-3 border-b border-[#E4DEC3] bg-[#FAF8F5] flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#8D4B00] text-sm">smart_display</span>
+<span class="text-[11px] font-bold text-stone-900 tracking-tight">CapCut Monitor · Program Out</span>
+<span class="px-1.5 py-0.1 rounded text-[8px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">4K 60FPS MASTER</span>
+</div>
+<div class="flex items-center gap-1.5 text-[10px]">
+<span class="text-stone-400 font-mono text-[9px]">Zoom: 100%</span>
+<button class="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium flex items-center gap-0.5 text-[9px]">
+<span class="material-symbols-outlined text-[10px]">aspect_ratio</span> 16:9
+          </button>
+<button class="px-1.5 py-0.5 rounded bg-amber-50 text-[#8D4B00] border border-amber-300 font-bold text-[9px] flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[10px]">fit_screen</span> Fit
+          </button>
+</div>
+</div>
+<!-- Video Canvas Container -->
+<div class="relative flex-1 min-h-0 bg-[#0B0E15] flex items-center justify-center overflow-hidden">
+<!-- Main Video Frame -->
+<img alt="TEDx presentation stage with male speaker talking enthusiastically into microphone" class="w-full h-full object-cover opacity-90" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAdw2oYibvlA_Z6ofNA2ic_IGcy9kFrw9CXigxphiomgTQrVilzO3B-RsHzuoK_uOBcMKomeOI3p0ZBGO9Ht95RZmprC7QLSxJ-dV0D-Wms50T6hieKj6GKnYUKlPFgnbNpHa3nkNCMZph4Ix6ryFk3npfM9bec-SuJubanr_mcfadH-lnT7PUTrBFeOBr4GO3m3u5ieaYBX3inE867dYZl1pGK6hBigQ6plLLpfi8FOoEhA-2Gf42NJw"/>
+<!-- Top Monitor HUD Telemetry -->
+<div class="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
+<div class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/80 backdrop-blur-md text-amber-300 font-mono text-[10px] border border-amber-400/30">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+<span>01:26.500 / 04:30.000</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="px-2 py-0.5 rounded-full bg-indigo-600/90 text-white font-bold text-[8px] uppercase tracking-wider backdrop-blur-md shadow-xs flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">face</span> AI Lip-Mesh Active
+            </span>
+<span class="px-2 py-0.5 rounded-full bg-black/70 text-amber-200 font-mono text-[8px] border border-white/10 backdrop-blur-md">
+              Ducking: -14dB
+            </span>
+</div>
+</div>
+<!-- VISUAL OCR INPAINTING BOUNDING BOX OVERLAY (Interactive on Sign) -->
+<div class="absolute top-[15%] right-[8%] w-64 border-2 border-dashed border-amber-400 bg-amber-950/40 rounded-md p-1.5 backdrop-blur-[3px] shadow-xl z-20 transition-all">
+<div class="flex items-center justify-between -mt-3.5 -ml-1 mb-1">
+<span class="bg-[#8D4B00] text-amber-100 font-mono font-black text-[8px] px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm border border-amber-300/40">
+<span class="material-symbols-outlined text-[10px]">document_scanner</span> OCR VISUAL TARGET
+            </span>
+<span class="bg-black/85 text-amber-300 text-[8px] font-mono px-1 rounded border border-amber-400/20">01:26.5</span>
+</div>
+<div class="bg-stone-950/90 rounded p-1.5 border border-amber-400/40 text-left space-y-1">
+<div class="text-[8px] text-stone-400 font-mono flex items-center justify-between">
+<span>Source Text:</span>
+<span class="text-stone-300 font-bold truncate max-w-[130px]">“GLOBAL INNOVATION SUMMIT”</span>
+</div>
+<div class="pt-1 border-t border-white/10">
+<div class="text-[9px] text-amber-300 font-bold leading-tight font-sans">
+                “CUMBRE GLOBAL DE INNOVACIÓN”
+              </div>
+<div class="flex items-center justify-end gap-1 mt-1">
+<button class="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-[8px] border border-stone-600 transition-colors">
+                  Replace Text
+                </button>
+<button class="px-2 py-0.5 rounded bg-[#8D4B00] hover:bg-amber-700 text-white font-bold text-[8px] uppercase tracking-wider flex items-center gap-0.5 shadow-xs transition-colors">
+<span class="material-symbols-outlined text-[9px]">auto_fix_high</span> Inpaint
+                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- CapCut-Styled Dynamic Subtitle Overlay on Video Canvas -->
+<div class="absolute inset-x-4 bottom-3 z-20 flex justify-center text-center pointer-events-none">
+<div class="max-w-lg bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-xl border border-amber-400/40 shadow-2xl">
+<p class="text-amber-300 font-extrabold text-[13px] leading-snug tracking-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+              “Estamos entrando en una era donde la inteligencia artificial realmente comprende los matices humanos.”
+            </p>
+</div>
+</div>
+</div>
+<!-- Mini-Transport Controls Bar -->
+<div class="h-7 px-3 bg-[#FAF8F5] border-t border-[#E4DEC3] flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-1 text-stone-600">
+<button class="p-0.5 hover:bg-stone-200 rounded" title="Jump to previous cue"><span class="material-symbols-outlined text-[13px]">skip_previous</span></button>
+<button class="p-0.5 hover:bg-stone-200 rounded" title="Back 1s"><span class="material-symbols-outlined text-[13px]">replay_5</span></button>
+<button class="w-5 h-5 rounded-full bg-[#8D4B00] text-white flex items-center justify-center shadow-xs hover:bg-amber-800"><span class="material-symbols-outlined text-[12px]">play_arrow</span></button>
+<button class="p-0.5 hover:bg-stone-200 rounded" title="Forward 1s"><span class="material-symbols-outlined text-[13px]">forward_5</span></button>
+<button class="p-0.5 hover:bg-stone-200 rounded" title="Jump to next cue"><span class="material-symbols-outlined text-[13px]">skip_next</span></button>
+</div>
+<button class="text-[9px] text-[#8D4B00] font-bold hover:underline flex items-center gap-1">
+<span class="material-symbols-outlined text-[11px]">center_focus_strong</span> Scan On-Screen Signs (Visual OCR)
+        </button>
+</div>
+</section>
+<!-- RIGHT (45% = 5 Cols): DUAL TABBED INSPECTOR -->
+<aside class="col-span-5 h-full bg-white rounded-xl border border-[#E4DEC3] shadow-xs flex flex-col overflow-hidden min-h-0">
+<!-- Segmented Tab Header -->
+<div class="p-1 border-b border-[#E4DEC3] bg-[#FAF8F5] flex items-center justify-between flex-shrink-0">
+<div class="flex items-center gap-1 bg-stone-200/70 p-0.5 rounded-lg w-full max-w-[280px]">
+<button class="flex-1 py-1 rounded-md text-[10px] font-bold bg-white text-[#8D4B00] shadow-xs border border-amber-300 flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-xs">format_size</span> Text &amp; Font Styling
+          </button>
+<button class="flex-1 py-1 rounded-md text-[10px] font-semibold text-stone-600 hover:text-stone-900 flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-xs">music_note</span> BGM &amp; Ducking
+          </button>
+</div>
+<span class="text-[8px] font-mono text-stone-400 bg-stone-100 px-1 py-0.5 rounded border border-stone-200">CapCut Inspector</span>
+</div>
+<!-- Dual Tab Content Scroll Area -->
+<div class="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2.5">
+<!-- SECTION A: CAPCUT-STYLE PRESET TEXT STYLES -->
+<div>
+<div class="flex items-center justify-between mb-1">
+<span class="text-[9px] font-bold uppercase tracking-wider text-stone-500">Preset Text Badges</span>
+<span class="text-[8px] font-mono text-emerald-700 bg-emerald-50 px-1 rounded font-bold">1-Click Apply</span>
+</div>
+<div class="grid grid-cols-4 gap-1.5">
+<!-- 1: Warm Glow (Active) -->
+<div class="p-1 rounded-lg border-2 border-[#8D4B00] bg-amber-50 text-center cursor-pointer shadow-xs">
+<span class="text-amber-900 font-extrabold text-[10px] block leading-tight">Warm Glow</span>
+<span class="text-[7px] text-[#8D4B00] font-mono">Amber Glow</span>
+</div>
+<!-- 2: TikTok Yellow -->
+<div class="p-1 rounded-lg border border-stone-200 hover:border-amber-400 text-center cursor-pointer bg-white">
+<span class="text-stone-950 font-black text-[10px] block bg-yellow-300 rounded px-0.5 leading-tight">TikTok Yellow</span>
+<span class="text-[7px] text-stone-500 font-mono">High Energy</span>
+</div>
+<!-- 3: Pill Minimalist -->
+<div class="p-1 rounded-lg border border-stone-200 hover:border-stone-400 text-center cursor-pointer bg-white">
+<span class="text-white font-bold text-[9px] block bg-stone-900 rounded px-0.5 leading-tight">Pill Minimal</span>
+<span class="text-[7px] text-stone-500 font-mono">Clean Box</span>
+</div>
+<!-- 4: Retro Shadow -->
+<div class="p-1 rounded-lg border border-stone-200 hover:border-stone-400 text-center cursor-pointer bg-white">
+<span class="text-stone-800 font-extrabold text-[9px] block border border-stone-300 rounded px-0.5 leading-tight shadow-xs">Retro Outline</span>
+<span class="text-[7px] text-stone-500 font-mono">Contrast</span>
+</div>
+</div>
+</div>
+<!-- SECTION B: TYPOGRAPHY, FONT SLIDERS & PALETTE -->
+<div class="bg-[#FAF8F5] p-2 rounded-lg border border-stone-200 space-y-1.5">
+<div class="grid grid-cols-2 gap-2">
+<div>
+<label class="text-[8px] font-bold uppercase tracking-wider text-stone-500 block mb-0.5">Font Family</label>
+<select class="w-full bg-white border border-stone-300 rounded text-[10px] font-bold text-stone-800 py-1 px-1.5 focus:outline-none focus:ring-1 focus:ring-[#8D4B00]">
+<option selected="">Plus Jakarta Sans</option>
+<option>Clash Display (Bold Modern)</option>
+<option>Inter (Clean UI)</option>
+<option>Montserrat (Punchy)</option>
+</select>
+</div>
+<div>
+<div class="flex items-center justify-between text-[8px] font-bold uppercase tracking-wider text-stone-500 mb-0.5">
+<span>Font Size</span>
+<span class="font-mono text-[#8D4B00]">24 px</span>
+</div>
+<input class="w-full accent-[#8D4B00] h-1 bg-stone-200 rounded cursor-pointer mt-1.5" max="40" min="12" type="range" value="24"/>
+</div>
+</div>
+<!-- Color Swatches & Position -->
+<div class="grid grid-cols-2 gap-2 pt-1 border-t border-stone-200/80">
+<div>
+<label class="text-[8px] font-bold uppercase tracking-wider text-stone-500 block mb-1">Color Palette</label>
+<div class="flex items-center gap-1">
+<button class="w-4 h-4 rounded-full bg-amber-300 ring-2 ring-[#8D4B00] ring-offset-1"></button>
+<button class="w-4 h-4 rounded-full bg-white border border-stone-400"></button>
+<button class="w-4 h-4 rounded-full bg-yellow-400"></button>
+<button class="w-4 h-4 rounded-full bg-emerald-400"></button>
+<button class="w-4 h-4 rounded-full bg-rose-400"></button>
+<button class="w-4 h-4 rounded-full bg-stone-900"></button>
+</div>
+</div>
+<div>
+<label class="text-[8px] font-bold uppercase tracking-wider text-stone-500 block mb-1">Vertical Safe Area</label>
+<div class="grid grid-cols-3 gap-0.5 text-[8px] text-center font-bold">
+<button class="py-0.5 rounded bg-white hover:bg-stone-100 text-stone-600 border border-stone-200">Top</button>
+<button class="py-0.5 rounded bg-white hover:bg-stone-100 text-stone-600 border border-stone-200">Center</button>
+<button class="py-0.5 rounded bg-amber-100 text-[#8D4B00] border border-amber-300">Bottom 12%</button>
+</div>
+</div>
+</div>
+</div>
+<!-- SECTION C: INSTANT BGM AUDITION PLAYER & DUCKING ENVELOPE -->
+<div class="bg-amber-50/50 p-2 rounded-lg border border-amber-200 space-y-1.5">
+<div class="flex items-center justify-between">
+<span class="text-[9px] font-bold uppercase tracking-wider text-[#8D4B00] flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">headphones</span> BGM Audition &amp; Ducking Engine
+            </span>
+<span class="text-[8px] font-mono text-emerald-700 bg-emerald-100 px-1 py-0.2 rounded font-bold border border-emerald-300">Royalty Free</span>
+</div>
+<!-- Active Track Audition Player -->
+<div class="bg-white p-1.5 rounded-md border border-amber-300 shadow-2xs flex items-center justify-between gap-2">
+<div class="flex items-center gap-2 min-w-0">
+<button class="w-6 h-6 rounded-full bg-[#8D4B00] text-white flex items-center justify-center shadow-xs flex-shrink-0 hover:bg-amber-800">
+<span class="material-symbols-outlined text-xs">play_arrow</span>
+</button>
+<div class="min-w-0">
+<div class="font-bold text-[10px] text-stone-900 truncate">Warm Ambient Acoustic</div>
+<div class="text-[8px] text-stone-500 font-mono flex items-center gap-1">
+<span>03:45</span>
+<span>•</span>
+<span class="text-[#8D4B00] font-semibold">Duck: 85% Speech / 15% BGM (-14dB)</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-1 flex-shrink-0">
+<span class="material-symbols-outlined text-xs text-stone-400 hover:text-stone-700 cursor-pointer">volume_up</span>
+<input class="w-12 accent-[#8D4B00] h-1 bg-stone-200 rounded cursor-pointer" max="100" min="0" type="range" value="22"/>
+</div>
+</div>
+<!-- Ducking Curve Mini Visualization -->
+<div class="bg-[#FAF8F5] p-1.5 rounded border border-stone-200 flex items-center justify-between text-[8px] text-stone-600">
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[11px] text-amber-700">graphic_eq</span>
+<span class="font-mono">Auto-ducking curve active across 48 Spanish cues</span>
+</div>
+<span class="font-mono font-bold text-amber-800 bg-amber-100 px-1 rounded">-14dB attenuation</span>
+</div>
+</div>
+</div>
+</aside>
+</div>
+<!-- BOTTOM SECTION: EXPANDED PRO MULTI-TRACK EDITOR (Bottom 45% of Screen) -->
+<section class="flex-1 min-h-0 bg-white rounded-xl border border-[#E4DEC3] shadow-xs flex flex-col overflow-hidden">
+<!-- Timeline Pro Toolbar (CapCut Desktop / DaVinci Cut page style) -->
+<div class="h-8 px-3 border-b border-[#E4DEC3] bg-[#FAF8F5] flex items-center justify-between flex-shrink-0">
+<!-- Left: Transport Controls & Current Timecode -->
+<div class="flex items-center gap-2">
+<div class="flex items-center gap-0.5">
+<button class="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center" title="Skip to Start">
+<span class="material-symbols-outlined text-xs">first_page</span>
+</button>
+<button class="w-6 h-6 rounded bg-[#8D4B00] text-white hover:bg-amber-800 flex items-center justify-center shadow-xs" title="Pause / Play">
+<span class="material-symbols-outlined text-xs">pause</span>
+</button>
+<button class="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center" title="Skip to End">
+<span class="material-symbols-outlined text-xs">last_page</span>
+</button>
+</div>
+<div class="flex items-center gap-1 font-mono text-[10px] ml-1 bg-white px-2 py-0.5 rounded border border-stone-200 shadow-2xs">
+<span class="font-black text-stone-900">01:26.500</span>
+<span class="text-stone-300">/</span>
+<span class="text-stone-500">04:30.000</span>
+</div>
+<div class="h-3.5 w-px bg-stone-200 ml-1"></div>
+<!-- Magnetic Snap Toggle -->
+<button class="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-300 text-[#8D4B00] text-[9px] font-bold shadow-2xs">
+<span class="material-symbols-outlined text-xs">magnet</span>
+<span>Magnetic Snap: ON</span>
+</button>
+</div>
+<!-- Center: Editing Tools (Razor/Split, Speed, Transitions) -->
+<div class="flex items-center gap-1 text-[10px]">
+<button class="px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold flex items-center gap-1 border border-stone-200">
+<span class="material-symbols-outlined text-xs text-amber-700">content_cut</span> Razor / Split
+        </button>
+<button class="px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center gap-1 border border-stone-200">
+<span class="material-symbols-outlined text-xs">speed</span> Speed 1.0x
+        </button>
+<button class="px-2 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center gap-1 border border-stone-200">
+<span class="material-symbols-outlined text-xs">auto_fix_normal</span> Transition
+        </button>
+</div>
+<!-- Right: Timeline Zoom Scrub Slider -->
+<div class="flex items-center gap-1.5 text-[10px]">
+<span class="material-symbols-outlined text-stone-400 text-xs">zoom_out</span>
+<input class="w-24 accent-[#8D4B00] h-1 bg-stone-200 rounded cursor-pointer" max="100" min="0" type="range" value="50"/>
+<span class="material-symbols-outlined text-stone-400 text-xs">zoom_in</span>
+</div>
+</div>
+<!-- Multi-Track Canvas & Timecode Ruler -->
+<div class="flex-1 min-h-0 overflow-x-auto overflow-y-auto relative flex flex-col bg-[#F6F4ED]">
+<!-- Timecode Ruler with Playhead Anchor -->
+<div class="h-5 border-b border-stone-300 bg-stone-100/90 flex items-center px-2 font-mono text-[9px] text-stone-500 justify-between flex-shrink-0 sticky top-0 z-20 select-none">
+<span>01:00.00</span>
+<span>01:10.00</span>
+<span>01:20.00</span>
+<span class="font-bold text-[#8D4B00] bg-amber-100 px-1.5 rounded border border-amber-300">01:26.500 (Playhead)</span>
+<span>01:30.00</span>
+<span>01:40.00</span>
+<span>01:50.00</span>
+<span>02:00.00</span>
+<span>02:10.00</span>
+</div>
+<!-- Tracks Container -->
+<div class="p-1.5 space-y-1.5 relative min-w-[980px]">
+<!-- Persistent Playhead Scrub Needle -->
+<div class="absolute top-0 bottom-0 left-[38%] w-0.5 bg-[#8D4B00] z-30 pointer-events-none flex flex-col items-center">
+<div class="w-2.5 h-2.5 bg-[#8D4B00] rotate-45 -mt-1 rounded-2xs shadow-xs"></div>
+<div class="h-full w-full bg-[#8D4B00] shadow-[0_0_8px_rgba(141,75,0,0.5)]"></div>
+</div>
+<!-- TRACK 1: SUBTITLES / CAPTIONS TRACK (Styled text chips + CPS indicators) -->
+<div class="h-8 rounded-lg bg-white border border-amber-300 flex items-center px-1.5 relative overflow-hidden shadow-2xs">
+<div class="w-32 flex items-center gap-1 font-mono text-[9px] font-bold text-amber-900 flex-shrink-0 border-r border-amber-100 pr-1">
+<span class="material-symbols-outlined text-xs text-[#8D4B00]">subtitles</span>
+<span>T1: Captions (48)</span>
+</div>
+<div class="flex-1 flex items-center h-6 gap-1 overflow-hidden relative pl-1.5">
+<!-- Active Subtitle Chip -->
+<div class="w-[42%] h-full bg-amber-100 border border-amber-400 rounded px-1.5 flex items-center justify-between text-stone-900 cursor-pointer">
+<span class="text-[8px] font-bold truncate">“Estamos entrando en una era donde la IA...”</span>
+<span class="font-mono text-[7px] font-bold bg-amber-200 text-[#8D4B00] px-1 rounded flex-shrink-0 ml-1">14.2 CPS • Warm Glow</span>
+</div>
+<!-- Subtitle Chip 2 -->
+<div class="w-[30%] h-full bg-stone-50 border border-stone-200 rounded px-1.5 flex items-center justify-between text-stone-700 cursor-pointer hover:bg-amber-50">
+<span class="text-[8px] truncate">“Ya no se trata de una traducción...”</span>
+<span class="font-mono text-[7px] text-stone-500 bg-stone-100 px-1 rounded flex-shrink-0 ml-1">14.0 CPS</span>
+</div>
+<!-- Subtitle Chip 3 -->
+<div class="w-[28%] h-full bg-stone-50 border border-stone-200 rounded px-1.5 flex items-center justify-between text-stone-700 cursor-pointer hover:bg-amber-50">
+<span class="text-[8px] truncate">“¿Podría profundizar en cómo la clonación...”</span>
+<span class="font-mono text-[7px] text-stone-500 bg-stone-100 px-1 rounded flex-shrink-0 ml-1">15.0 CPS</span>
+</div>
+</div>
+</div>
+<!-- TRACK 2: OCR VISUAL INPAINT EVENT KEYFRAMES (With Keyframe Thumbnails) -->
+<div class="h-8 rounded-lg bg-amber-950/10 border border-amber-500/40 flex items-center px-1.5 relative overflow-hidden shadow-2xs">
+<div class="w-32 flex items-center gap-1 font-mono text-[9px] font-bold text-amber-900 flex-shrink-0 border-r border-amber-200 pr-1">
+<span class="material-symbols-outlined text-xs text-amber-700">document_scanner</span>
+<span>T2: OCR Inpaint</span>
+</div>
+<div class="flex-1 flex items-center h-6 gap-2 overflow-hidden relative pl-1.5">
+<!-- OCR Inpaint Keyframe Event Block -->
+<div class="w-[28%] h-full bg-[#8D4B00] text-amber-100 rounded px-1.5 flex items-center justify-between shadow-2xs border border-amber-300">
+<div class="flex items-center gap-1 truncate">
+<span class="w-3.5 h-3.5 rounded bg-black/40 flex items-center justify-center text-[7px] font-bold font-mono">KF</span>
+<span class="text-[8px] font-bold truncate">Sign: “CUMBRE GLOBAL DE...”</span>
+</div>
+<span class="font-mono text-[7px] bg-amber-400 text-stone-950 font-black px-1 rounded">01:26.5</span>
+</div>
+<!-- Secondary Keyframe marker at 01:50 -->
+<div class="w-[24%] h-full bg-stone-200/80 border border-stone-300 rounded px-1.5 flex items-center justify-between text-stone-700">
+<div class="flex items-center gap-1 truncate">
+<span class="w-3.5 h-3.5 rounded bg-stone-300 flex items-center justify-center text-[7px] font-bold font-mono">KF</span>
+<span class="text-[8px] font-medium truncate">Slide Title Inpaint</span>
+</div>
+<span class="font-mono text-[7px] text-stone-500">01:52.0</span>
+</div>
+</div>
+</div>
+<!-- TRACK 3: VIDEO MASTER 1080P -->
+<div class="h-9 rounded-lg bg-stone-850 bg-stone-800 text-white flex items-center px-1.5 relative border border-stone-700 overflow-hidden shadow-2xs">
+<div class="w-32 flex items-center gap-1 font-mono text-[9px] text-stone-300 flex-shrink-0 border-r border-stone-700 pr-1">
+<span class="material-symbols-outlined text-xs text-stone-400">video_camera_back</span>
+<span>T3: Video Master</span>
+</div>
+<div class="flex-1 flex items-center h-7 gap-1 overflow-hidden relative pl-1.5">
+<div class="w-[65%] h-full bg-stone-700 rounded flex items-center justify-between px-2 border border-stone-600">
+<span class="text-[8px] font-bold text-stone-200 truncate font-mono">TEDx_Talk_Speaker_Cam_4K.mp4 [1080p Master]</span>
+<span class="text-[7px] font-mono bg-stone-800 px-1 py-0.2 rounded text-stone-300 border border-stone-600">60 FPS</span>
+</div>
+<div class="w-[35%] h-full bg-stone-700/80 rounded flex items-center px-2 border border-stone-600">
+<span class="text-[8px] text-stone-400 truncate font-mono">Stage_Wide_Audience.mp4</span>
+</div>
+</div>
+</div>
+<!-- TRACK 4: DUBBED SPANISH VOICE (Speaker color badges Alex Carter & Elena Rostova) -->
+<div class="h-9 rounded-lg bg-amber-500/10 border border-amber-400/60 flex items-center px-1.5 relative overflow-hidden shadow-2xs">
+<div class="w-32 flex items-center gap-1 font-mono text-[9px] font-bold text-[#8D4B00] flex-shrink-0 border-r border-amber-200 pr-1">
+<span class="material-symbols-outlined text-xs text-[#8D4B00]">record_voice_over</span>
+<span>T4: Spanish Dub</span>
+</div>
+<div class="flex-1 flex items-center h-7 gap-1 overflow-hidden relative pl-1.5">
+<!-- Speaker 1: Alex Carter (Spanish) Active Segment -->
+<div class="w-[42%] h-full bg-[#8D4B00] text-white rounded px-2 flex items-center justify-between shadow-xs border border-amber-300 cursor-pointer">
+<div class="flex items-center gap-1 min-w-0">
+<span class="px-1 py-0.2 rounded bg-amber-200 text-[#8D4B00] font-black text-[7px] font-mono">ALEX CARTER</span>
+<span class="text-[8px] truncate font-medium">“Estamos entrando en una era...”</span>
+</div>
+<span class="font-mono text-[7px] text-amber-200 font-bold ml-1 flex-shrink-0">14.2 CPS</span>
+</div>
+<!-- Speaker 1: Alex Carter Segment 2 -->
+<div class="w-[30%] h-full bg-amber-200/90 text-stone-900 rounded px-2 flex items-center justify-between border border-amber-300 cursor-pointer">
+<div class="flex items-center gap-1 min-w-0">
+<span class="px-1 py-0.2 rounded bg-amber-300 text-amber-900 font-bold text-[7px] font-mono">ALEX</span>
+<span class="text-[8px] truncate font-medium">“Ya no se trata de una traducción...”</span>
+</div>
+<span class="font-mono text-[7px] text-stone-600 font-bold ml-1 flex-shrink-0">14.0 CPS</span>
+</div>
+<!-- Speaker 2: Elena Rostova (Distinct Coral Badge) -->
+<div class="w-[28%] h-full bg-[#FD8367]/40 text-stone-900 rounded px-2 flex items-center justify-between border border-[#A13E28]/40 cursor-pointer">
+<div class="flex items-center gap-1 min-w-0">
+<span class="px-1 py-0.2 rounded bg-[#A13E28] text-white font-bold text-[7px] font-mono">ELENA ROSTOVA</span>
+<span class="text-[8px] truncate font-medium">“¿Podría profundizar en cómo...”</span>
+</div>
+<span class="font-mono text-[7px] text-[#A13E28] font-bold ml-1 flex-shrink-0">15.0 CPS</span>
+</div>
+</div>
+</div>
+<!-- TRACK 5: BGM TRACK WITH AUDIO WAVEFORM DUCKING ENVELOPE (-14dB under speech) -->
+<div class="h-8 rounded-lg bg-emerald-950/15 border border-emerald-400/70 flex items-center px-1.5 relative overflow-hidden shadow-2xs">
+<div class="w-32 flex items-center gap-1 font-mono text-[9px] font-bold text-emerald-900 flex-shrink-0 border-r border-emerald-200 pr-1">
+<span class="material-symbols-outlined text-xs text-emerald-700">music_note</span>
+<span>T5: BGM Track</span>
+</div>
+<div class="flex-1 h-6 bg-emerald-500/20 rounded border border-emerald-400 flex items-center justify-between px-2 text-emerald-900 relative overflow-hidden ml-1.5">
+<!-- Ducking Envelope Waveform Layer -->
+<div class="absolute inset-0 flex items-center opacity-30 pointer-events-none px-1">
+<div class="w-[12%] h-full bg-emerald-600"></div>
+<!-- Ducked Segment under speech (-14dB) -->
+<div class="w-[74%] h-[35%] bg-emerald-600 my-auto rounded border border-emerald-700/40"></div>
+<div class="w-[14%] h-full bg-emerald-600"></div>
+</div>
+<div class="flex items-center gap-1.5 z-10">
+<span class="text-[8px] font-bold truncate">Warm Ambient Acoustic (Looped)</span>
+<span class="text-[7px] font-mono bg-emerald-100 text-emerald-800 px-1 rounded border border-emerald-300 font-bold">
+                Vol: 22% • Ducked (-14dB) under Spanish speech
+              </span>
+</div>
+<span class="text-[8px] font-mono text-emerald-800 font-bold z-10 flex-shrink-0">Fade: 1.2s</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- 3. SLIM PERSISTENT BOTTOM DOCK (Single-line: 42px) -->
+<footer class="h-[42px] flex-shrink-0 bg-white border-t border-[#E4DEC3] px-3 flex items-center justify-between gap-3 z-30 shadow-xs">
+<!-- Left: Verification Status Checkmark -->
+<div class="flex items-center gap-2 min-w-0">
+<div class="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[10px] font-bold">check</span>
+</div>
+<span class="text-[11px] font-bold text-stone-800 truncate">
+      Ready for Final Render
+      <span class="font-normal text-stone-500 hidden sm:inline text-[10px]">• 5 Timeline Tracks active • Ducking synced (-14dB) • 48 Subtitles formatted • 1 Sign Inpainted</span>
+</span>
+</div>
+<!-- Right: Bottom Actions -->
+<div class="flex items-center gap-2 flex-shrink-0">
+<button class="px-2.5 py-1 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-[11px] border border-stone-200 transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-xs">play_circle</span>
+<span class="hidden sm:inline">Preview Video</span>
+</button>
+<button class="px-3 py-1 rounded-md bg-[#8D4B00] hover:bg-amber-800 text-white font-bold text-[11px] shadow-xs transition-colors flex items-center gap-1.5">
+<span>Export &amp; Download</span>
+<span class="material-symbols-outlined text-xs">download</span>
+</button>
+</div>
+</footer>
+</body></html>

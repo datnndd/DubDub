@@ -113,21 +113,23 @@ class BaseTask(BaseCon):
         self.hasend = True
         if succeed:
             self.precent = 100
-            if self.uuid in app_cfg.stoped_uuid_set:
+            if self.cancellation_token is None and self.uuid in app_cfg.stoped_uuid_set:
                 return
             self.signal(text=f"{self.cfg.name}", type='succeed')
-            if app_cfg.exec_mode=="cli":
-                print(f'Save to:[ {self.cfg.target_dir} ]')
-            else:
-                from videotrans.util.help_ffmpeg import send_notification
-                send_notification(tr('Succeed'), f"{self.cfg.basename}")
+            if self.event_sink is None:
+                if app_cfg.exec_mode=="cli":
+                    print(f'Save to:[ {self.cfg.target_dir} ]')
+                else:
+                    from videotrans.util.help_ffmpeg import send_notification
+                    send_notification(tr('Succeed'), f"{self.cfg.basename}")
             # 清理临时文件
             try:
                 if self.cfg.cache_folder:
                     shutil.rmtree(self.cfg.cache_folder, ignore_errors=True)
             except Exception as e:
                 logger.exception(f'任务结束后清理临时文件失败，跳过,{e}:{self.cfg.cache_folder=}', exc_info=True)
-        app_cfg.stoped_uuid_set.add(self.uuid)
+        if self.cancellation_token is None:
+            app_cfg.stoped_uuid_set.add(self.uuid)
 
     async def _edgetts_single(self, target_audio, kwargs):
         from edge_tts import Communicate

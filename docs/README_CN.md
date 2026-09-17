@@ -208,7 +208,7 @@ uv add nvidia-cublas-cu12 nvidia-cudnn-cu12
 * [Confucius4-TTS](https://github.com/netease-youdao/Confucius4-TTS)
 * [OmniVoice](https://github.com/k2-fsa/omnivoice)
 * [CosyVoice](https://github.com/FunAudioLLM/CosyVoice)
-* [Gradio](https://www.gradio.app/) (WebUI)
+* [aiohttp](https://docs.aiohttp.org/) (WebUI 服务)
 
 ---
 

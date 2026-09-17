@@ -5,7 +5,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 from videotrans.configure.config import tr, settings, app_cfg, logger, push_queue, TEMP_ROOT
 from videotrans.util.help_misc import set_proxy,vail_file
 
@@ -16,6 +16,8 @@ class BaseCon:
     # 用于其他需要直接代理字符串
     proxy_str: str = ''
     last_down_time:int=0
+    event_sink: Optional[Callable[[dict], None]] = field(default=None, repr=False, compare=False)
+    cancellation_token: object = field(default=None, repr=False, compare=False)
 
 
     def __post_init__(self):
@@ -23,11 +25,20 @@ class BaseCon:
         self.proxy_str = self._set_proxy(type='set')
 
     def _exit(self) -> bool:
+        if self.cancellation_token is not None:
+            return self.cancellation_token.is_cancelled()
         if app_cfg.exit_soft or (self.uuid and self.uuid in app_cfg.stoped_uuid_set):
             return True
         return False
     # 所有窗口和任务信息通过队列交互
     def signal(self, **kwargs):
+        if self.event_sink:
+            if 'uuid' not in kwargs or not kwargs.get('uuid'):
+                kwargs['uuid'] = self.uuid
+            if 'type' not in kwargs or not kwargs.get('type'):
+                kwargs['type'] = 'logs'
+            self.event_sink(kwargs)
+            return
         if app_cfg.exit_soft: return
         if app_cfg.exec_mode=='cli':
             print(kwargs.get('text'))
@@ -91,7 +102,7 @@ class BaseCon:
 
     # 语音合成后统一转为 wav 音频,方便后续变速等处理
     def convert_to_wav(self, mp3_file_path: str, output_wav_file_path: str, extra=None):
-        if app_cfg.exit_soft or not vail_file(mp3_file_path):
+        if self._exit() or not vail_file(mp3_file_path):
             return
         cmd = [
             "-y",
@@ -167,7 +178,7 @@ class BaseCon:
         last_mtime = 0
         timeout = 0
         while 1:
-            if app_cfg.exit_soft: return
+            if self._exit(): return
             if status_dict and status_dict['is_end']:
                 return
             timeout += 1
@@ -248,7 +259,7 @@ class BaseCon:
 
             _timeout=0
             while not future.done():
-                if app_cfg.exit_soft:
+                if self._exit():
                     return None
                 # faster-whisper 在工作完成后退出时，偶发可能静默崩溃，主进程无法捕获，导致永久等待
                 # 在退出前预先将识别结果保存到 subtitle_srt 文件中，再返回，此处通过检测文件存在确保崩溃后仍能继续运行

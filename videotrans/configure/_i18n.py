@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 import json
+import locale
 import os
 from functools import lru_cache
 from pathlib import Path
-
-from PySide6.QtCore import QLocale
 
 from videotrans.configure._paths import ROOT_DIR
 
@@ -40,7 +39,8 @@ def _init_language(settings):
     try:
         _lang = os.environ.get('PYVIDEOTRANS_LANG', settings.lang)
         if not _lang:
-            _lang = QLocale.system().name()[:2].lower()
+            system_locale = locale.getlocale()[0] or "en"
+            _lang = system_locale[:2].lower()
     except Exception:
         _lang = "en"
 

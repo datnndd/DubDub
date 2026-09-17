@@ -12,6 +12,9 @@ Start with the smallest authoritative surface.
 - `product/`: current product behavior and installation contract.
 - `decisions/`: lasting choices future work must inherit.
 - `plans/`: one durable working-memory document for work that needs it.
+- [`patterns/encoding-invariants.md`](patterns/encoding-invariants.md): turn
+  accepted architecture, reliability, security, and quality rules into native
+  mechanical validation.
 - `templates/`: optional decision, plan, runbook, and Harness-improvement
   structures.
 
