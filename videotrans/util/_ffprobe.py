@@ -68,6 +68,12 @@ def get_video_info(mp4_file, *, video_fps=False, video_scale=False, video_time=F
             tr('The original file {} does not contain any audio or video data. The file may be damaged. Please confirm that the file can be played.',
                mp4_file))
 
+    def parse_int(value):
+        try:
+            return int(float(value or 0))
+        except (TypeError, ValueError):
+            return 0
+
     result = {
         "video_fps": 30,
         "r_frame_rate": 30,
@@ -79,7 +85,11 @@ def get_video_info(mp4_file, *, video_fps=False, video_scale=False, video_time=F
         "streams_len": len(out['streams']),
         "streams_audio": 0,
         "video_streams": 0,
-        "color": "yuv420p"
+        "color": "yuv420p",
+        "format_name": out.get('format', {}).get('format_long_name') or out.get('format', {}).get('format_name', ''),
+        "bit_rate": parse_int(out.get('format', {}).get('bit_rate')),
+        "audio_sample_rate": 0,
+        "audio_channels": 0,
     }
     try:
         _duration = out['streams'][0].get('duration')
@@ -109,6 +119,8 @@ def get_video_info(mp4_file, *, video_fps=False, video_scale=False, video_time=F
     result['streams_audio'] = len(audio_streams)
     if audio_streams:
         result['audio_codec_name'] = audio_streams[0].get('codec_name', "")
+        result['audio_sample_rate'] = parse_int(audio_streams[0].get('sample_rate'))
+        result['audio_channels'] = parse_int(audio_streams[0].get('channels'))
 
     if video_stream:
         result['video_streams'] = 1

@@ -162,6 +162,10 @@ class MediaRecord:
             "fps": float(self.info.get("video_fps", 0) or 0),
             "videoCodec": self.info.get("video_codec_name") or None,
             "audioCodec": self.info.get("audio_codec_name") or None,
+            "container": self.info.get("format_name") or None,
+            "bitrate": int(self.info.get("bit_rate", 0) or 0),
+            "audioSampleRate": int(self.info.get("audio_sample_rate", 0) or 0),
+            "audioChannels": int(self.info.get("audio_channels", 0) or 0),
             "hasVideo": bool(self.info.get("video_streams")),
             "hasAudio": bool(self.info.get("streams_audio")),
         }

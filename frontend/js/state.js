@@ -29,8 +29,8 @@ class WorkflowStore {
         lastSaved: "Just now"
       },
       playback: {
-        currentTime: 86.5, // 01:26.500
-        formattedTime: "01:26.500",
+        currentTime: 0,
+        formattedTime: "00:00.000",
         isPlaying: false,
         playbackSpeed: 1.0,
         audioChannel: "dub" // 'orig' or 'dub'
@@ -244,6 +244,28 @@ class WorkflowStore {
     if (icon) icon.textContent = this.state.playback.isPlaying ? 'pause' : 'play_arrow';
   }
 
+  syncPreviewPlayback(media) {
+    const seconds = Number.isFinite(media.currentTime) ? media.currentTime : 0;
+    this.state.playback.currentTime = seconds;
+    this.state.playback.formattedTime = this.formatTime(seconds);
+    this.state.playback.isPlaying = !media.paused;
+    const timeline = document.querySelector('[data-preview-timeline]');
+    if (timeline) timeline.value = String(seconds);
+    document.querySelectorAll('[data-preview-current]').forEach(node => {
+      node.textContent = this.state.playback.formattedTime;
+    });
+    const icon = document.querySelector('[data-preview-action-icon]');
+    if (icon) icon.textContent = media.paused ? 'play_arrow' : 'pause';
+  }
+
+  seekPreview(seconds) {
+    const media = document.querySelector('[data-source-preview]');
+    if (!media) return;
+    const duration = Number.isFinite(media.duration) ? media.duration : this.state.project.durationSec;
+    media.currentTime = Math.min(Math.max(Number(seconds) || 0, 0), duration || 0);
+    this.syncPreviewPlayback(media);
+  }
+
   setAudioChannel(channel) {
     if (channel === 'orig' || channel === 'dub') {
       this.state.playback.audioChannel = channel;
@@ -311,10 +333,13 @@ class WorkflowStore {
     backend.error = null;
     backend.outputs = [];
     this.state.project.verified = false;
+    this.state.playback.currentTime = 0;
+    this.state.playback.formattedTime = '00:00.000';
+    this.state.playback.isPlaying = false;
     if (this.state.project.previewUrl) URL.revokeObjectURL(this.state.project.previewUrl);
     this.state.project.filename = this.escapeText(file.name);
     this.state.project.fileSize = this.formatBytes(file.size);
-    this.state.project.format = file.name.includes('.') ? file.name.split('.').pop().toUpperCase() : 'Media';
+      this.state.project.format = file.name.includes('.') ? file.name.split('.').pop().toUpperCase() : 'Media';
     this.state.project.previewUrl = URL.createObjectURL(file);
     this.notify();
     const form = new FormData();
@@ -332,7 +357,11 @@ class WorkflowStore {
       this.state.project.resolution = media.resolution || 'Audio only';
       this.state.project.fps = media.fps ? `${Number(media.fps).toFixed(2)} fps` : '—';
       this.state.project.videoCodec = media.videoCodec || '—';
-      this.state.project.audioCodec = media.audioCodec || '—';
+      this.state.project.format = media.container || this.state.project.format;
+      this.state.project.bitrate = media.bitrate ? `${(Number(media.bitrate) / 1_000_000).toFixed(2)} Mbps` : 'Not reported';
+      this.state.project.audioCodec = media.audioCodec
+        ? [media.audioCodec, media.audioSampleRate ? `${Math.round(media.audioSampleRate / 1000)}kHz` : '', media.audioChannels ? `${media.audioChannels}ch` : ''].filter(Boolean).join(' · ')
+        : '—';
       this.state.project.hasAudio = media.hasAudio;
       this.state.project.hasVideo = media.hasVideo;
       this.state.project.verified = true;
