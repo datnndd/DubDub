@@ -128,6 +128,10 @@ def test_media_ingest_and_job_submission_are_end_to_end(tmp_path, monkeypatch):
             "video_fps": 25,
             "video_codec_name": "h264",
             "audio_codec_name": "aac",
+            "format_name": "QuickTime / MOV",
+            "bit_rate": 1_500_000,
+            "audio_sample_rate": 48_000,
+            "audio_channels": 2,
             "video_streams": 1,
             "streams_audio": 1,
         }
@@ -156,6 +160,10 @@ def test_media_ingest_and_job_submission_are_end_to_end(tmp_path, monkeypatch):
             assert media["sizeBytes"] == len(b"synthetic video")
             assert media["resolution"] == "1280x720"
             assert media["videoCodec"] == "h264"
+            assert media["container"] == "QuickTime / MOV"
+            assert media["bitrate"] == 1_500_000
+            assert media["audioSampleRate"] == 48_000
+            assert media["audioChannels"] == 2
 
             language_codes = list(translator.LANGNAME_DICT)
             payload = {
@@ -225,3 +233,23 @@ def test_prepare_frontend_uses_ingested_media_and_real_disabled_state():
     assert "fetch('/api/media'" in state_source
     assert "mediaId" in state_source
     assert "disabled" in footer_source
+
+
+def test_prepare_video_preview_has_sound_and_seek_controls():
+    prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
+    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
+    video_tag = prepare_source.split("<video data-source-preview", 1)[1].split(">", 1)[0]
+
+    assert "controls" in video_tag
+    assert "muted" not in video_tag
+    assert 'type="range"' in prepare_source
+    assert "seekPreview" in prepare_source
+    assert "seekPreview" in state_source
+
+
+def test_prepare_diagnostics_is_visible_at_tablet_and_desktop_widths():
+    prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
+
+    assert 'col-span-12 md:col-span-7' in prepare_source
+    assert 'col-span-12 md:col-span-5' in prepare_source
+    assert "backend.error" in prepare_source

@@ -8,6 +8,11 @@ export function renderStage1Prepare(state) {
   const l = state.languages;
   const backend = state.backend;
   const options = backend.options;
+  const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+  const ingestFailed = !p.verified && backend.status === 'failed';
+  const ingestStatus = backend.status === 'analyzing' ? 'Inspecting' : ingestFailed ? 'Inspection Failed' : p.verified ? 'Valid Ingest' : 'Not Verified';
   const optionTags = (items, selected) => items.map(([value, label]) =>
     `<option value="${value}" ${String(value) === String(selected) ? 'selected' : ''}>${label}</option>`
   ).join('');
@@ -20,7 +25,7 @@ export function renderStage1Prepare(state) {
       <!-- TOP HERO MEDIA STRIP: Video Player Card & Rich Metadata Card (38% Height) -->
       <section class="h-[50%] min-h-0 flex-shrink-0 w-full grid grid-cols-12 gap-2.5">
         <!-- LEFT: 16:9 Video Snapshot & Live Waveform Preview (7 cols) -->
-        <div class="col-span-12 lg:col-span-7 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+        <div class="col-span-12 md:col-span-7 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
           <!-- Card Header -->
           <div class="h-7 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] flex-shrink-0">
             <div class="flex items-center gap-2">
@@ -37,7 +42,11 @@ export function renderStage1Prepare(state) {
           <!-- Widescreen Visual Preview -->
           <div class="relative flex-1 min-h-0 bg-neutral-950 flex items-center justify-center overflow-hidden group">
             ${p.previewUrl ? `
-              <video data-source-preview class="w-full h-full object-contain bg-black" src="${p.previewUrl}" muted></video>
+              <video data-source-preview class="w-full h-full object-contain bg-black" src="${p.previewUrl}" controls preload="metadata"
+                onloadedmetadata="window.dubDubStore.syncPreviewPlayback(this)"
+                ontimeupdate="window.dubDubStore.syncPreviewPlayback(this)"
+                onplay="window.dubDubStore.syncPreviewPlayback(this)"
+                onpause="window.dubDubStore.syncPreviewPlayback(this)"></video>
             ` : `
               <img 
                 alt="Upload video placeholder" 
@@ -51,7 +60,7 @@ export function renderStage1Prepare(state) {
             <div class="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
               <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-amber-300 font-mono text-[10px] border border-amber-400/20">
                 <span class="w-1.5 h-1.5 rounded-full bg-amber-400 warm-pulse"></span>
-                <span>00:00.000 / ${p.duration}</span>
+                <span><span data-preview-current>${state.playback.formattedTime}</span> / ${p.duration}</span>
               </div>
               <div class="flex items-center gap-1.5">
                 <span class="px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-white font-mono text-[10px] border border-white/10">
@@ -71,7 +80,7 @@ export function renderStage1Prepare(state) {
             </button>
 
             <!-- Bottom Preview Snippet -->
-            <div class="absolute inset-x-2 bottom-1.5 z-10 flex justify-center text-center">
+            <div class="absolute inset-x-2 bottom-10 z-10 flex justify-center text-center pointer-events-none">
               <div class="w-full max-w-lg bg-black/75 backdrop-blur-md px-3 py-1 rounded-lg border border-white/10">
                 <p class="text-white text-xs font-medium truncate">
                   ${p.verified ? 'Source media is ready for transcription and translation.' : 'Choose a video to inspect its metadata.'}
@@ -86,36 +95,21 @@ export function renderStage1Prepare(state) {
               <span class="material-symbols-outlined text-xs text-[#8D4B00]">equalizer</span>
               <span>Waveform</span>
             </div>
-            <div class="relative flex-1 h-3 flex items-center cursor-pointer">
-              <svg class="w-full h-3 text-amber-300" fill="currentColor" preserveAspectRatio="none" viewBox="0 0 300 20">
-                <rect height="6" rx="1" width="2" x="0" y="7"></rect><rect height="10" rx="1" width="2" x="4" y="5"></rect>
-                <rect height="14" rx="1" width="2" x="8" y="3"></rect><rect height="5" rx="1" width="2" x="12" y="8"></rect>
-                <rect height="16" rx="1" width="2" x="16" y="2"></rect><rect height="12" rx="1" width="2" x="20" y="4"></rect>
-                <rect height="18" rx="1" width="2" x="24" y="1"></rect><rect height="8" rx="1" width="2" x="28" y="6"></rect>
-                <rect height="15" rx="1" width="2" x="32" y="3"></rect><rect height="7" rx="1" width="2" x="36" y="7"></rect>
-                <rect height="12" rx="1" width="2" x="40" y="4"></rect><rect height="17" rx="1" width="2" x="44" y="2"></rect>
-                <rect height="10" rx="1" width="2" x="48" y="5"></rect><rect height="15" rx="1" width="2" x="52" y="3"></rect>
-                <rect height="18" rx="1" width="2" x="112" y="1"></rect><rect height="13" rx="1" width="2" x="116" y="4"></rect>
-                <rect height="7" rx="1" width="2" x="120" y="7"></rect><rect height="16" rx="1" width="2" x="124" y="2"></rect>
-                <rect height="10" rx="1" width="2" x="128" y="5"></rect><rect height="18" rx="1" width="2" x="132" y="1"></rect>
-                <rect height="18" rx="1" width="2" x="200" y="1"></rect><rect height="12" rx="1" width="2" x="204" y="4"></rect>
-                <rect height="16" rx="1" width="2" x="256" y="2"></rect><rect height="10" rx="1" width="2" x="260" y="5"></rect>
-                <rect height="18" rx="1" width="2" x="288" y="1"></rect><rect height="12" rx="1" width="2" x="292" y="4"></rect>
-              </svg>
-              <div class="absolute left-0 top-0 bottom-0 w-1 bg-[#8D4B00] rounded"></div>
-            </div>
-            <span class="font-mono text-[10px] text-stone-500 font-semibold">${p.duration}</span>
+            <input data-preview-timeline aria-label="Video timeline" class="flex-1 cursor-pointer disabled:cursor-not-allowed" type="range"
+              min="0" max="${p.durationSec || 0}" step="0.01" value="${state.playback.currentTime}"
+              ${p.previewUrl ? '' : 'disabled'} oninput="window.dubDubStore.seekPreview(this.value)" />
+            <span class="font-mono text-[10px] text-stone-500 font-semibold"><span data-preview-current>${state.playback.formattedTime}</span> / ${p.duration}</span>
           </div>
         </div>
 
         <!-- RIGHT: Rich File Metadata & Voice Diagnostics Card (5 cols) -->
-        <div class="col-span-12 lg:col-span-5 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+        <div class="col-span-12 md:col-span-5 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
           <div class="h-7 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] flex-shrink-0">
             <div class="flex items-center gap-2">
               <span class="material-symbols-outlined text-[#8D4B00] text-sm">description</span>
               <span class="text-xs font-bold text-stone-900">Media Ingest Diagnostics</span>
             </div>
-            <span class="text-[10px] font-mono ${p.verified ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-stone-500 bg-stone-50 border-stone-200'} px-2 py-0.5 rounded border font-medium">${p.verified ? 'Valid Ingest' : 'Not Verified'}</span>
+            <span class="text-[10px] font-mono ${ingestFailed ? 'text-red-700 bg-red-50 border-red-200' : p.verified ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-stone-500 bg-stone-50 border-stone-200'} px-2 py-0.5 rounded border font-medium">${ingestStatus}</span>
           </div>
 
           <div class="flex-1 min-h-0 p-3 flex flex-col justify-between">
@@ -129,6 +123,12 @@ export function renderStage1Prepare(state) {
                 ${p.resolution} @ ${p.fps}
               </span>
             </div>
+
+            ${ingestFailed ? `
+              <div class="px-2 py-1.5 rounded-lg bg-red-50 border border-red-200 text-[10px] text-red-700">
+                ${escapeHtml(backend.error)}
+              </div>
+            ` : ''}
 
             <!-- 4 Grid Technical Specs -->
             <div class="grid grid-cols-4 gap-1.5 py-1">
