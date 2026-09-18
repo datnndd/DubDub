@@ -230,17 +230,14 @@ class WinActionTaskMixin:
             return
         if d['type'] == 'refreshtts':
             currentIndex = self.main.tts_type.currentIndex()
-            if currentIndex > 0:
-                self.main.tts_type.setCurrentIndex(0)
+            if currentIndex >= 0:
+                self.main.tts_type.setCurrentIndex(-1)
                 QTimer.singleShot(100, lambda: self.main.tts_type.setCurrentIndex(currentIndex))
             return
-        if d['type'] == 'refreshmodel_list' and self.main.recogn_type.currentIndex() in [recognition.FASTER_WHISPER,
-                                                                                         recognition.Faster_Whisper_XXL,
-                                                                                         recognition.Whisper_CPP]:
+        if d['type'] == 'refreshmodel_list' and self.main.recogn_type.currentIndex() == recognition.FASTER_WHISPER:
             current_model_name = self.main.model_name.currentText()
             self.main.model_name.clear()
-            self.main.model_name.addItems(
-                settings.Whisper_CPP_MODEL_LIST if self.main.recogn_type.currentIndex() == recognition.Whisper_CPP else settings.WHISPER_MODEL_LIST)
+            self.main.model_name.addItems(recognition.get_model_by_type(recognition.FASTER_WHISPER))
             self.main.model_name.setCurrentText(current_model_name)
             return
         if d['type'] == 'shitingerror':

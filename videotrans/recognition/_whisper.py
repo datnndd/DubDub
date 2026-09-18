@@ -35,19 +35,11 @@ class FasterAll(BaseRecogn):
         if self._exit(): return
         self.error = ''
         self.signal(text="STT starting, hold on...")
-        if self.recogn_type == 1:  # openai-whisper
-            raws = self._openai()
-        else:
-            raws = self._faster()
-        return raws
+        return self._faster()
 
     def _download(self):
-        if self.recogn_type == 0:
-            if self.model_name in FASTER_MODELS_DICT:
-                repo_id = FASTER_MODELS_DICT[self.model_name]
-            else:
-                repo_id = self.model_name
-            check_and_down_hf(self.model_name,repo_id,self.local_dir,callback=self._process_callback)
+        repo_id = FASTER_MODELS_DICT.get(self.model_name, self.model_name)
+        check_and_down_hf(self.model_name, repo_id, self.local_dir, callback=self._process_callback)
         # 批量时预先vad切分
         # 否则后断句处理
 
@@ -55,39 +47,6 @@ class FasterAll(BaseRecogn):
             self._vad_split()
             self.speech_timestamps_file=f'{self.cache_folder}/speech_timestamps_{time.time()}.json'
             Path(self.speech_timestamps_file).write_text(json.dumps(self.speech_timestamps),encoding='utf-8')
-
-
-    def _openai(self)->Union[List[SrtItem], None]:
-        title=f'Model: {self.model_name}'
-        self.signal(text=title)
-        # 起一个进程
-        logs_file = f'{config.TEMP_DIR}/{self.uuid}/openai-{self.detect_language}-{time.time()}.log'
-        # 最长持续时长>2000ms
-        _max_speech=max(int(float(settings.get('max_speech_duration_s', 5)) * 1000),2000)
-        if self.recogn2pass:
-            # 2次识别， 生成简短的字幕,  最长持续时长>500ms
-            _max_speech = max(int(float(settings.get('max_speech_duration_s2', 2)) * 1000),500)
-        kwargs = {
-            "prompt": settings.get(
-                f'initial_prompt_{self.detect_language}') if self.detect_language != 'auto' else None,
-            "detect_language": self.detect_language,
-            "model_name": self.model_name,
-            "logs_file": logs_file,
-            "is_cuda": self.is_cuda,
-            "no_speech_threshold": float(settings.get('no_speech_threshold', 0.6)),
-            "condition_on_previous_text": settings.get('condition_on_previous_text', False),
-            "speech_timestamps": self.speech_timestamps_file,
-            "audio_file": self.audio_file,
-            "jianfan": self.jianfan,
-            
-            "audio_duration":self.audio_duration,
-            "temperature":settings.get('temperature'),
-            "compression_ratio_threshold":float(settings.get('compression_ratio_threshold',2.4)),
-            "max_speech_ms":_max_speech
-        }
-        from videotrans.process.stt_openai import openai_whisper
-        raws=self._new_process(callback=openai_whisper,title=title,is_cuda=self.is_cuda,kwargs=kwargs)
-        return raws
 
 
     def _faster(self)->Union[List[SrtItem], None]:

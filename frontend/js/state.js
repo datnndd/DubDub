@@ -36,16 +36,14 @@ class WorkflowStore {
         audioChannel: "dub" // 'orig' or 'dub'
       },
       languages: {
-        source: { code: "en", name: "English", flag: "", autoDetected: false },
-        target: { code: "es", name: "Spanish" },
-        timingMode: "idiomatic" // 'idiomatic' or 'direct'
+        source: { code: "zh-cn", name: "Simplified Chinese", flag: "", autoDetected: false },
+        target: { code: "vi", name: "Vietnamese" },
+        timingMode: "voice"
       },
       engines: {
-        asr: "whisper_v3_turbo",
-        llm: "gpt_4o_dub",
-        tone: "conversational",
-        speakerDiarization: true,
-        removeBackgroundNoise: true,
+        speakerDiarization: false,
+        speakerCount: 0,
+        removeNoise: false,
         ocrSlideEngine: true
       },
       speakers: [
@@ -170,8 +168,22 @@ class WorkflowStore {
       backend: {
         ready: false,
         mediaId: null,
-        options: { languages: [], recognizers: [], translators: [], voices: [], models: [] },
-        config: { recognType: 0, translateType: 0, ttsType: 0, modelName: "large-v3-turbo", voiceRole: "", useCuda: false },
+        options: { languages: [], asrProviders: [], translationProviders: [], translationModes: [], voices: [] },
+        config: { recognType: 1, translateType: 0, translationMode: "srt", ttsType: 2, modelName: "nova-3", voiceRole: "", useCuda: false },
+        asrSettingsProviderId: null,
+        asrSettingsSaving: false,
+        asrSettingsError: null,
+        asrTesting: false,
+        asrTestProviderId: null,
+        asrTestMessage: null,
+        asrTestOk: null,
+        translationSettingsProviderId: null,
+        translationSettingsSaving: false,
+        translationSettingsError: null,
+        translationTesting: false,
+        translationTestProviderId: null,
+        translationTestMessage: null,
+        translationTestOk: null,
         status: "idle",
         jobId: null,
         stage: null,
@@ -278,6 +290,11 @@ class WorkflowStore {
     this.notify();
   }
 
+  updateEngineConfig(key, value) {
+    this.state.engines[key] = value;
+    this.notify();
+  }
+
   updateTargetLanguage(code, name) {
     this.state.languages.target = { code, name };
     this.loadVoices();
@@ -289,7 +306,31 @@ class WorkflowStore {
     this.notify();
   }
 
+  updateTimingMode(mode) {
+    if (['voice', 'video', 'align'].includes(mode)) {
+      this.state.languages.timingMode = mode;
+      this.notify();
+    }
+  }
+
   updateBackendConfig(field, value) {
+    if (field === 'recognType') {
+      const provider = this.state.backend.options.asrProviders.find(item => item.recognType === Number(value));
+      if (!provider) return;
+      this.state.backend.config.recognType = provider.recognType;
+      this.state.backend.config.modelName = provider.models[0] || '';
+      this.state.backend.asrTestMessage = null;
+      this.notify();
+      return;
+    }
+    if (field === 'translateType') {
+      const provider = this.state.backend.options.translationProviders.find(item => item.translateType === Number(value));
+      if (!provider) return;
+      this.state.backend.config.translateType = provider.translateType;
+      this.state.backend.translationTestMessage = null;
+      this.notify();
+      return;
+    }
     this.state.backend.config[field] = value;
     if (field === 'ttsType') this.loadVoices();
     this.notify();
@@ -300,6 +341,36 @@ class WorkflowStore {
       const response = await fetch('/api/options');
       if (!response.ok) throw new Error(await response.text());
       this.state.backend.options = await response.json();
+      const defaults = this.state.backend.options.defaults || {};
+      const defaultProvider = this.state.backend.options.asrProviders.find(item => item.recognType === defaults.recognType)
+        || this.state.backend.options.asrProviders[0];
+      if (defaultProvider) {
+        this.state.backend.config.recognType = defaultProvider.recognType;
+        this.state.backend.config.modelName = defaultProvider.models.includes(defaults.modelName)
+          ? defaults.modelName
+          : (defaultProvider.models[0] || '');
+      }
+      if (defaults.sourceLanguage) {
+        const source = this.state.backend.options.languages.find(item => item.code === defaults.sourceLanguage);
+        if (source) this.state.languages.source = { ...source, flag: "", autoDetected: false };
+      }
+      if (defaults.targetLanguage) {
+        const target = this.state.backend.options.languages.find(item => item.code === defaults.targetLanguage);
+        if (target) this.state.languages.target = { ...target };
+      }
+      if (['voice', 'video', 'align'].includes(defaults.timingMode)) {
+        this.state.languages.timingMode = defaults.timingMode;
+      }
+      const defaultTranslation = this.state.backend.options.translationProviders.find(
+        item => item.translateType === defaults.translateType
+      ) || this.state.backend.options.translationProviders[0];
+      if (defaultTranslation) this.state.backend.config.translateType = defaultTranslation.translateType;
+      if (this.state.backend.options.translationModes.some(item => item.id === defaults.translationMode)) {
+        this.state.backend.config.translationMode = defaults.translationMode;
+      }
+      if (this.state.backend.options.voices.some(([value]) => value === defaults.ttsType)) {
+        this.state.backend.config.ttsType = defaults.ttsType;
+      }
       this.state.backend.ready = true;
       const languages = this.state.backend.options.languages;
       if (!languages.some(item => item.code === this.state.languages.source.code) && languages[0]) {
@@ -391,6 +462,192 @@ class WorkflowStore {
     }
   }
 
+  openAsrSettings(providerId) {
+    const provider = this.state.backend.options.asrProviders.find(item => item.id === providerId);
+    if (!provider?.requiresSettings) return;
+    this.state.backend.asrSettingsProviderId = providerId;
+    this.state.backend.asrSettingsError = null;
+    this.state.backend.asrTestMessage = null;
+    this.notify();
+  }
+
+  closeAsrSettings() {
+    if (this.state.backend.asrSettingsSaving || this.state.backend.asrTesting) return;
+    this.state.backend.asrSettingsProviderId = null;
+    this.state.backend.asrSettingsError = null;
+    this.state.backend.asrTestMessage = null;
+    this.notify();
+  }
+
+  getAsrSettingsPayload(provider, useForm) {
+    const payload = {
+      model: provider.recognType === Number(this.state.backend.config.recognType)
+        ? this.state.backend.config.modelName
+        : (provider.models[0] || '')
+    };
+    if (provider.requiresSettings && useForm) {
+      payload.apiKey = document.getElementById('asr-api-key')?.value.trim() || '';
+    }
+    return payload;
+  }
+
+  async saveAsrSettings() {
+    const backend = this.state.backend;
+    const provider = backend.options.asrProviders.find(item => item.id === backend.asrSettingsProviderId);
+    const apiKey = document.getElementById('asr-api-key')?.value.trim() || '';
+    if (!provider || (!apiKey && !provider.configured)) {
+      backend.asrSettingsError = 'Enter an API key before saving.';
+      this.notify();
+      return;
+    }
+    backend.asrSettingsSaving = true;
+    backend.asrSettingsError = null;
+    this.notify();
+    try {
+      const response = await fetch(`/api/asr-settings/${encodeURIComponent(provider.id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      provider.configured = true;
+      backend.asrSettingsProviderId = null;
+      backend.message = `${provider.label} API settings saved`;
+    } catch (error) {
+      backend.asrSettingsError = error.message;
+    } finally {
+      backend.asrSettingsSaving = false;
+      this.notify();
+    }
+  }
+
+  async testAsrConnection(providerId = null, useForm = false) {
+    const backend = this.state.backend;
+    const id = providerId || backend.asrSettingsProviderId;
+    const provider = backend.options.asrProviders.find(item => item.id === id);
+    if (!provider?.testable || backend.asrTesting) return;
+    const payload = this.getAsrSettingsPayload(provider, useForm);
+    backend.asrTesting = true;
+    backend.asrSettingsError = null;
+    backend.asrTestProviderId = provider.id;
+    backend.asrTestMessage = 'Testing connection and model…';
+    backend.asrTestOk = null;
+    this.notify();
+    try {
+      const response = await fetch(`/api/asr-settings/${encodeURIComponent(provider.id)}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json();
+      if (provider.requiresSettings) provider.configured = true;
+      backend.asrTestMessage = `${result.message} — ${result.model}: ${result.result}`;
+      backend.asrTestOk = true;
+    } catch (error) {
+      backend.asrSettingsError = error.message;
+      backend.asrTestMessage = error.message;
+      backend.asrTestOk = false;
+    } finally {
+      backend.asrTesting = false;
+      this.notify();
+    }
+  }
+
+  openTranslationSettings(providerId) {
+    const provider = this.state.backend.options.translationProviders.find(item => item.id === providerId);
+    if (!provider?.requiresSettings) return;
+    const backend = this.state.backend;
+    backend.translationSettingsProviderId = providerId;
+    backend.translationSettingsError = null;
+    backend.translationTestMessage = null;
+    this.notify();
+  }
+
+  closeTranslationSettings() {
+    const backend = this.state.backend;
+    if (backend.translationSettingsSaving || backend.translationTesting) return;
+    backend.translationSettingsProviderId = null;
+    backend.translationSettingsError = null;
+    backend.translationTestMessage = null;
+    this.notify();
+  }
+
+  getTranslationSettingsPayload(provider, useForm) {
+    const payload = { translationMode: this.state.backend.config.translationMode };
+    if (!provider?.requiresSettings) return payload;
+    if (!useForm) return { ...payload, baseUrl: provider.baseUrl, model: provider.model };
+    return {
+      ...payload,
+      baseUrl: document.getElementById('translation-base-url')?.value.trim() || '',
+      apiKey: document.getElementById('translation-api-key')?.value.trim() || '',
+      model: document.getElementById('translation-model')?.value.trim() || ''
+    };
+  }
+
+  async saveTranslationSettings() {
+    const backend = this.state.backend;
+    const provider = backend.options.translationProviders.find(item => item.id === backend.translationSettingsProviderId);
+    if (!provider) return;
+    const payload = this.getTranslationSettingsPayload(provider, true);
+    backend.translationSettingsSaving = true;
+    backend.translationSettingsError = null;
+    this.notify();
+    try {
+      const response = await fetch(`/api/translation-settings/${encodeURIComponent(provider.id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      Object.assign(provider, await response.json());
+      backend.translationSettingsProviderId = null;
+      backend.message = `${provider.label} settings saved`;
+    } catch (error) {
+      backend.translationSettingsError = error.message;
+    } finally {
+      backend.translationSettingsSaving = false;
+      this.notify();
+    }
+  }
+
+  async testTranslationConnection(providerId = null, useForm = false) {
+    const backend = this.state.backend;
+    const id = providerId || backend.translationSettingsProviderId;
+    const provider = backend.options.translationProviders.find(item => item.id === id);
+    if (!provider || backend.translationTesting) return;
+    const payload = this.getTranslationSettingsPayload(provider, useForm);
+    backend.translationTesting = true;
+    backend.translationSettingsError = null;
+    backend.translationTestProviderId = provider.id;
+    backend.translationTestMessage = 'Testing connection…';
+    backend.translationTestOk = null;
+    this.notify();
+    try {
+      const response = await fetch(`/api/translation-settings/${encodeURIComponent(provider.id)}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json();
+      provider.configured = true;
+      if (provider.requiresSettings) {
+        provider.baseUrl = payload.baseUrl;
+        provider.model = payload.model;
+      }
+      backend.translationTestMessage = `${result.message}: ${result.result}`;
+      backend.translationTestOk = true;
+    } catch (error) {
+      backend.translationSettingsError = error.message;
+      backend.translationTestMessage = error.message;
+      backend.translationTestOk = false;
+    } finally {
+      backend.translationTesting = false;
+      this.notify();
+    }
+  }
+
   async startProcessing() {
     const validationError = this.getPrepareValidationError();
     if (validationError || ['analyzing', 'queued', 'running'].includes(this.state.backend.status)) {
@@ -413,8 +670,10 @@ class WorkflowStore {
         ...backend.config,
         sourceLanguage: this.state.languages.source.code,
         targetLanguage: this.state.languages.target.code,
-        removeNoise: this.state.engines.removeBackgroundNoise,
+        timingMode: this.state.languages.timingMode,
+        removeNoise: this.state.engines.removeNoise,
         speakerDiarization: this.state.engines.speakerDiarization,
+        speakerCount: this.state.engines.speakerCount,
         voiceRate: `${Math.round((this.state.tuning.pace - 1) * 100) >= 0 ? '+' : ''}${Math.round((this.state.tuning.pace - 1) * 100)}%`
       }
     };
@@ -474,7 +733,18 @@ class WorkflowStore {
     if (!this.state.languages.source.code) return 'Select the source language';
     if (!this.state.languages.target.code) return 'Select the target language';
     if (!Number.isInteger(Number(backend.config.recognType))) return 'Select an ASR engine';
+    const provider = backend.options.asrProviders.find(item => item.recognType === Number(backend.config.recognType));
+    if (!provider) return 'Select a supported ASR engine';
+    if (!provider.models.includes(backend.config.modelName)) return `Select a ${provider.label} model`;
+    if (provider.requiresSettings && !provider.configured) return `Configure ${provider.label} API settings first`;
     if (!Number.isInteger(Number(backend.config.translateType))) return 'Select a translation engine';
+    const translationProvider = backend.options.translationProviders.find(
+      item => item.translateType === Number(backend.config.translateType)
+    );
+    if (!translationProvider) return 'Select a supported translation engine';
+    if (translationProvider.requiresSettings && !translationProvider.configured) {
+      return `Configure ${translationProvider.label} settings first`;
+    }
     return null;
   }
 

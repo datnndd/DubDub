@@ -26,7 +26,7 @@ def openwin():
             # 检查QLineEdit是否有objectName
             if hasattr(line_edit, 'objectName') and line_edit.objectName():
                 name = line_edit.objectName()
-                if name in ['model_list','Whisper_cpp_models'] and line_edit.toPlainText() != settings[name]:
+                if name == 'model_list' and line_edit.toPlainText() != settings[name]:
                     should_model_list_sign = True
                 # 将objectName作为key，text作为value添加到字典中
                 settings[name] = line_edit.toPlainText()

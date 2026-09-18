@@ -3,7 +3,7 @@ pyVideoTrans CLI — command-line interface for video translation, dubbing, and 
 
 Usage examples:
   # Speech to text
-  uv run cli.py --task stt --name "D:/videos/demo.mp4" --recogn_type 0 --model_name large-v3
+  uv run cli.py --task stt --name "D:/videos/demo.mp4" --recogn_type 1 --model_name nova-3
 
   # Subtitle translation
   uv run cli.py --task sts --name "D:/subs/source.srt" --target_language_code en
@@ -50,14 +50,14 @@ TEXT_DB: Dict[str, Dict[str, str]] = {
     },
     "cli_epilog": {
         "zh": "示例:\n"
-              "  %(prog)s --task stt --name \"D:/demo.mp4\" --recogn_type 0 --model_name large-v3\n"
+              "  %(prog)s --task stt --name \"D:/demo.mp4\" --recogn_type 1 --model_name nova-3\n"
               "  %(prog)s --task tts --name \"D:/demo.srt\" --tts_type 0 --voice_role \"zh-CN-YunyangNeural\"\n"
               "  %(prog)s --task sts --name \"D:/demo.srt\" --target_language_code en\n"
               "  %(prog)s --task vtv --name \"D:/demo.mp4\" --source_language_code zh-cn --target_language_code en --voice_role \"en-US-GuyNeural\"\n"
               "  %(prog)s --list providers\n"
               "  %(prog)s --list languages",
         "en": "Examples:\n"
-              "  %(prog)s --task stt --name \"D:/demo.mp4\" --recogn_type 0 --model_name large-v3\n"
+              "  %(prog)s --task stt --name \"D:/demo.mp4\" --recogn_type 1 --model_name nova-3\n"
               "  %(prog)s --task tts --name \"D:/demo.srt\" --tts_type 0 --voice_role \"zh-CN-YunyangNeural\"\n"
               "  %(prog)s --task sts --name \"D:/demo.srt\" --target_language_code en\n"
               "  %(prog)s --task vtv --name \"D:/demo.mp4\" --source_language_code zh-cn --target_language_code en --voice_role \"en-US-GuyNeural\"\n"
@@ -98,8 +98,8 @@ TEXT_DB: Dict[str, Dict[str, str]] = {
     "help_recogn_type": {"zh": "语音识别渠道编号", "en": "Speech recognition provider index"},
     "help_detect_lang":  {"zh": "音频视频发音语言", "en": "Source language of audio/video"},
     "help_model_name": {
-        "zh": "语音识别模型名称\nfaster-whisper(0) 和 openai-whisper(1) 可选: {}\n其他渠道请在软件界面中查看",
-        "en": "ASR model name\nfaster-whisper(0) & openai-whisper(1) options: {}\nOthers: check GUI"
+        "zh": "语音识别模型名称\nWhisper Large-v3 模型: {}\n其他渠道请在软件界面中查看",
+        "en": "ASR model name\nWhisper Large-v3 model: {}\nOthers: check GUI"
     },
     "help_cuda":           {"zh": "启用CUDA加速", "en": "Enable CUDA acceleration"},
     "help_remove_noise":   {"zh": "启用降噪", "en": "Enable noise reduction"},
@@ -338,9 +338,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- STT ---
     stt_group = parser.add_argument_group(tr("group_stt"))
-    stt_group.add_argument('--recogn_type', type=int, default=0, help=tr("help_recogn_type"))
+    stt_group.add_argument('--recogn_type', type=int, default=1, help=tr("help_recogn_type"))
     stt_group.add_argument('--detect_language', type=str, default='auto', help=tr("help_detect_lang"))
-    stt_group.add_argument('--model_name', type=str, default='tiny', help=tr("help_model_name", 'tiny, base, small, medium, large-v3'))
+    stt_group.add_argument('--model_name', type=str, default='nova-3', help=tr("help_model_name", 'large-v3'))
     stt_group.add_argument('--cuda', action='store_true', help=tr("help_cuda"))
     stt_group.add_argument('--remove_noise', action='store_true', help=tr("help_remove_noise"))
     stt_group.add_argument('--enable_diariz', action='store_true', help=tr("help_enable_diariz"))
@@ -350,7 +350,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- TTS ---
     tts_group = parser.add_argument_group(tr("group_tts"))
-    tts_group.add_argument('--tts_type', type=int, default=0, help=tr("help_tts_type"))
+    from videotrans import tts
+    tts_group.add_argument('--tts_type', type=int, default=tts.DEFAULT_TTS, help=tr("help_tts_type"))
     tts_group.add_argument('--voice_role', type=str, default=None, help=tr("help_voice_role"))
     tts_group.add_argument('--voice_rate', type=str, default='+0%', help=tr("help_voice_rate"))
     tts_group.add_argument('--volume', type=str, default='+0%', help=tr("help_volume"))

@@ -118,7 +118,7 @@ class TestAppParamsClass:
         from videotrans.configure.config import params
         assert hasattr(params, 'chatgpt_api')
         assert hasattr(params, 'chatgpt_key')
-        assert hasattr(params, 'deepl_authkey')
+        assert hasattr(params, 'deepseek_key')
 
     def test_params_to_dict(self):
         from videotrans.configure.config import params

@@ -143,9 +143,6 @@ class WinActionCheckMixin:
         self.cfg['pitch'] = f'+{pitch}Hz' if pitch >= 0 else f'{pitch}Hz'
 
         self.cfg['recogn_type'] = self.main.recogn_type.currentIndex()
-        if self.cfg['recogn_type'] == recognition.Faster_Whisper_XXL and not self.show_xxl_select():
-            self.main.startbtn.setDisabled(False)
-            return
         self.cfg['model_name'] = self.main.model_name.currentText()
         self.cfg['remove_noise'] = self.main.remove_noise.isChecked()
 
@@ -196,7 +193,7 @@ class WinActionCheckMixin:
             return
 
         if self.check_tts() is not True:
-            self.main.tts_type.setCurrentIndex(0)
+            self.main.tts_type.setCurrentIndex(tts.DEFAULT_TTS)
             self.main.startbtn.setDisabled(False)
             return
 

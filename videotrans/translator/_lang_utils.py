@@ -1,12 +1,7 @@
 from videotrans.configure.config import tr, params, logger
-from videotrans.util.help_misc import show_error
 from videotrans import winform
 from videotrans.translator._constants import (
-    GOOGLE_INDEX, MICROSOFT_INDEX, M2M100_INDEX,
-    QWENMT_INDEX,
-    TENCENT_INDEX, BAIDU_INDEX, DEEPL_INDEX, DEEPLX_INDEX, ALI_INDEX,
-    LIBRE_INDEX, TRANSAPI_INDEX, CAMB_INDEX,
-    AI_TRANS_CHANNELS,
+    GOOGLE_INDEX, AI_TRANS_CHANNELS,
 )
 from videotrans.translator._lang_codes import LANGNAME_DICT_REV, LANG_CODE
 from videotrans.translator._registry import _ID_NAME_DICT
@@ -57,36 +52,13 @@ def get_source_target_code(*, show_source=None, show_target=None, translate_type
         return show_source, show_target  # 返回原始输入
 
     # 未设置渠道则使用 Google
-    if not translate_type or translate_type in [GOOGLE_INDEX, TRANSAPI_INDEX, CAMB_INDEX]:
+    if translate_type == GOOGLE_INDEX or translate_type is None:
         return source_list[0] if source_list else show_source, target_list[0] if target_list else show_target
-
-    # qwenmt翻译渠道语言代码
-    if translate_type == QWENMT_INDEX:
-        if params.get('qwenmt_model', 'qwen-mt-turbo').startswith('qwen-mt'):
-            return 'auto', target_list[9] if target_list else show_target
-        return source_list[7] if source_list else show_source, target_list[7] if target_list else show_target
 
     # AI渠道
     if translate_type in AI_TRANS_CHANNELS:
         return source_list[7] if source_list else show_source, target_list[7] if target_list else show_target
 
-    if translate_type == BAIDU_INDEX:
-        return source_list[2] if source_list else show_source, target_list[2] if target_list else show_target
-
-    if translate_type in [DEEPLX_INDEX, DEEPL_INDEX]:
-        return source_list[3] if source_list else show_source, target_list[3] if target_list else show_target
-
-    if translate_type == TENCENT_INDEX:
-        return source_list[4] if source_list else show_source, target_list[4] if target_list else show_target
-
-    if translate_type in [LIBRE_INDEX]:
-        return source_list[5] if source_list else show_source, target_list[5] if target_list else show_target
-    if translate_type == MICROSOFT_INDEX:
-        return source_list[6] if source_list else show_source, target_list[6] if target_list else show_target
-    if translate_type == ALI_INDEX:
-        return source_list[8] if source_list else show_source, target_list[8] if target_list else show_target
-    if translate_type == M2M100_INDEX:
-        return source_list[10] if source_list else show_source, target_list[10] if target_list else show_target
     return show_source, show_target
 
 
@@ -106,7 +78,7 @@ def get_language_qwen(langcode=None):
 # show_target 翻译后显示的目标语言名称
 # only_key=True 仅检测 key 和api，不判断目标语言
 def is_allow_translate(*, translate_type=None, show_target=None, only_key=False, return_str=False):
-    if not translate_type or translate_type in [GOOGLE_INDEX, MICROSOFT_INDEX]:
+    if translate_type == GOOGLE_INDEX or translate_type is None:
         return True
 
     _cls = _ID_NAME_DICT.get(translate_type)
@@ -119,35 +91,6 @@ def is_allow_translate(*, translate_type=None, show_target=None, only_key=False,
     if only_key:
         return True
 
-    if show_target:
-        # 再判断是否为No，即不支持
-        index = 0
-        target_list = None
-        if translate_type == BAIDU_INDEX:
-            index = 2
-        elif translate_type in [DEEPLX_INDEX, DEEPL_INDEX]:
-            index = 3
-        elif translate_type == TENCENT_INDEX:
-            index = 4
-        elif translate_type == MICROSOFT_INDEX:
-            index = 6
-        elif translate_type == ALI_INDEX:
-            index = 8
-        elif translate_type == M2M100_INDEX:
-            index = 10
-
-        if show_target in LANG_CODE:
-            target_list = LANG_CODE[show_target]
-        elif LANGNAME_DICT_REV.get(show_target):
-            target_list = LANG_CODE.get(LANGNAME_DICT_REV.get(show_target))
-        elif show_target == 'zh':
-            # 特殊兼容zh
-            target_list = LANG_CODE['zh-cn']
-
-        if target_list and target_list[index] == 'No':
-
-            return tr('deepl_nosupport') + f':{show_target}' if return_str else show_error(
-                tr('deepl_nosupport') + f':{show_target}')
     return True
 
 

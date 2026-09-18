@@ -14,17 +14,13 @@ from videotrans.configure.config import tr, settings, logger, ROOT_DIR
 from videotrans.configure import config
 from videotrans.util.help_misc import vail_file,pygameaudio,get_tts_type
 
-"""
-edge-tts 当前线程中async异步任务
-其他渠道多线程执行
-run->exec->[local_mutli]->item_task
-"""
+"""Shared execution for retained TTS providers."""
 
 
 @dataclass
 class BaseTTS(BaseCon):
     # 配音渠道
-    tts_type: int = 0
+    tts_type: int = 2
     # 存放字幕信息队列，扩展的SrtItem
     queue_tts: List[Dict[str, Any]] = field(default_factory=list, repr=False)
     # 参考音频或角色字典
@@ -40,7 +36,7 @@ class BaseTTS(BaseCon):
     # 是否测试
     is_test: bool = False
 
-    # 音量 音速 音调，默认 edge-tts格式， % 号结尾
+    # 音量、音速和音调使用百分比/Hz字符串
     volume: Union[float, str] = field(default='+0%', init=False)
     rate: Union[float, str] = field(default='+0%', init=False)
     pitch: Union[float, str] = field(default='+0Hz', init=False)
@@ -56,10 +52,10 @@ class BaseTTS(BaseCon):
     error: Union[str, Exception, None] = None
     # 配音api地址
     api_url: str = field(default='', init=False)
-    # 启用CUDA，仅 qwen3-tts-local 游戏哦啊
+    # 启用 CUDA（本地渠道按需使用）
     is_cuda: bool = False
     local_dir: str = None
-    # 单视频模式下，配音校对面板可能需要重新配音，对于 F5-TTS等重型独立配音进程不能再任务完成后退出，需轮询等待是否有新的配音任务
+    # 单视频模式下，重型本地进程可在配音校对期间等待新任务
     # is_redubb is True 代表是配音校对面板发起的
     is_redubb:bool=False
 
@@ -84,7 +80,7 @@ class BaseTTS(BaseCon):
                 self.signal(text=tr("check or download models"))
                 self._download()
                 self.signal(text=tr('Dubbing'))
-            # edge-tts:检查 self._exec 是不是一个异步函数 (coroutine)
+            # 兼容实现为异步函数的渠道
             if inspect.iscoroutinefunction(self._exec):
                 try:
                     # 检查当前线程是否有正在运行的事件循环

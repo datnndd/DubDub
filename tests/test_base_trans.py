@@ -1,7 +1,10 @@
 import hashlib
+from pathlib import Path
 
+from videotrans import translator
 from videotrans.translator._base import BaseTrans
 from videotrans.task.taskcfg import SrtItem
+from videotrans.util.help_misc import get_prompt_file
 
 
 def _make_srt_item(text, line=1, start=0, end=1000):
@@ -33,6 +36,54 @@ class TestBaseTransPostInit:
     def test_uuid_set(self):
         bt = BaseTrans(text_list=[_make_srt_item("test")], uuid="test-123")
         assert bt.uuid == "test-123"
+
+    def test_explicit_ai_translation_mode_selects_existing_runner_path(self):
+        items = [_make_srt_item("hello")]
+
+        line_mode = BaseTrans(
+            text_list=items,
+            translate_type=translator.CHATGPT_INDEX,
+            aisendsrt=False,
+        )
+        srt_mode = BaseTrans(
+            text_list=items,
+            translate_type=translator.CHATGPT_INDEX,
+            aisendsrt=True,
+        )
+        google = BaseTrans(
+            text_list=items,
+            translate_type=translator.GOOGLE_INDEX,
+            aisendsrt=True,
+        )
+
+        assert line_mode.aisendsrt is False
+        assert srt_mode.aisendsrt is True
+        assert google.aisendsrt is False
+
+    def test_existing_modes_dispatch_and_select_their_prompt_folders(self):
+        class TrackingTrans(BaseTrans):
+            def _run_text(self, _chunks):
+                return "line"
+
+            def _run_srt(self, _chunks):
+                return "srt"
+
+        items = [_make_srt_item("hello")]
+        line_mode = TrackingTrans(
+            text_list=items,
+            translate_type=translator.CHATGPT_INDEX,
+            aisendsrt=False,
+        )
+        srt_mode = TrackingTrans(
+            text_list=items,
+            translate_type=translator.CHATGPT_INDEX,
+            aisendsrt=True,
+        )
+
+        assert line_mode.run() == "line"
+        assert srt_mode.run() == "srt"
+        assert Path(get_prompt_file("chatgpt", aisendsrt=False)).parent.name == "text"
+        assert Path(get_prompt_file("chatgpt", aisendsrt=True)).parent.name == "srt"
 
 
 class TestBaseTransGetKey:

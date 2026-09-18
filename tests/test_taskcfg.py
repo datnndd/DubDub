@@ -230,14 +230,14 @@ class TestTaskCfgSTT:
     def test_stt_specific_fields(self):
         cfg = TaskCfgSTT(
             recogn_type=0,
-            model_name="large-v3-turbo",
+            model_name="large-v3",
             detect_language="en",
             remove_noise=True,
             fix_punc=True,
             rephrase=1,
         )
         assert cfg.recogn_type == 0
-        assert cfg.model_name == "large-v3-turbo"
+        assert cfg.model_name == "large-v3"
         assert cfg.detect_language == "en"
         assert cfg.remove_noise is True
         assert cfg.fix_punc is True
@@ -277,10 +277,12 @@ class TestTaskCfgSTS:
     def test_trans_default(self):
         cfg = TaskCfgSTS()
         assert cfg.translate_type is None
+        assert cfg.aisendsrt is None
 
     def test_trans_custom(self):
-        cfg = TaskCfgSTS(translate_type=3)  # CHATGPT_INDEX
+        cfg = TaskCfgSTS(translate_type=3, aisendsrt=True)  # DEEPSEEK_INDEX
         assert cfg.translate_type == 3
+        assert cfg.aisendsrt is True
 
 
 class TestTaskCfgVTT:

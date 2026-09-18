@@ -84,7 +84,7 @@ class MainWindow(BindSignalsMixin, WinformMixin, LifecycleMixin, QMainWindow, Ui
             ])
 
         _translate_type = int(params.get('translate_type', 0))
-        _tts_type = int(params.get('tts_type', 0))
+        _tts_type = int(params.get('tts_type', tts.DEFAULT_TTS))
         _recogn_type = int(params.get('recogn_type', 0))
         _target_language = params.get('target_language')
         _source_language = params.get('source_language')

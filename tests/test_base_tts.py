@@ -89,7 +89,7 @@ class TestBaseTTSGetters:
 class TestBaseTTSInitFields:
     def test_default_values(self):
         btts = BaseTTS(queue_tts=[{"text": "hello", "rate": "+0%", "volume": "+0%", "pitch": "+0Hz"}])
-        assert btts.tts_type == 0
+        assert btts.tts_type == 2
         assert btts.play is False
         assert btts.is_test is False
         assert btts.is_cuda is False

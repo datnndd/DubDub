@@ -19,6 +19,32 @@ export function renderStage1Prepare(state) {
   const languageTags = (selected) => options.languages.map(item =>
     `<option value="${item.code}" ${item.code === selected ? 'selected' : ''}>${item.name} — ${item.code}</option>`
   ).join('');
+  const selectedProvider = options.asrProviders.find(item => item.recognType === Number(backend.config.recognType))
+    || options.asrProviders[0]
+    || { id: '', label: 'Unavailable', models: [], requiresSettings: false, configured: false };
+  const providerTags = options.asrProviders.map(provider =>
+    `<option value="${provider.recognType}" ${provider.recognType === Number(backend.config.recognType) ? 'selected' : ''}>${escapeHtml(provider.label)}</option>`
+  ).join('');
+  const modelTags = selectedProvider.models.map(model =>
+    `<option value="${escapeHtml(model)}" ${model === backend.config.modelName ? 'selected' : ''}>${escapeHtml(model)}</option>`
+  ).join('');
+  const speakerCountTags = ['No limit', '2 speakers', '3 speakers', '4 speakers', '5 speakers', '6 speakers', '7 speakers', '8 speakers', '9 speakers', '10 speakers'].map((label, value) =>
+    `<option value="${value}" ${value === Number(state.engines.speakerCount) ? 'selected' : ''}>${label}</option>`
+  ).join('');
+  const settingsProvider = options.asrProviders.find(item => item.id === backend.asrSettingsProviderId);
+  const selectedTranslation = options.translationProviders.find(item => item.translateType === Number(backend.config.translateType))
+    || options.translationProviders[0]
+    || { id: '', label: 'Unavailable', requiresSettings: false, configured: false };
+  const translationTags = options.translationProviders.map(provider =>
+    `<option value="${provider.translateType}" ${provider.translateType === Number(backend.config.translateType) ? 'selected' : ''}>${escapeHtml(provider.label)}</option>`
+  ).join('');
+  const translationModes = options.translationModes || [];
+  const translationSettingsProvider = options.translationProviders.find(item => item.id === backend.translationSettingsProviderId);
+  const timingModes = [
+    { id: 'voice', title: 'Fit Dubbed Speech', detail: 'Speed up dubbed speech while preserving video timing' },
+    { id: 'video', title: 'Fit Video to Speech', detail: 'Slow video when the translated speech runs longer' },
+    { id: 'align', title: 'Align Subtitle & Audio', detail: 'Align timing without automatic speech or video speed changes' }
+  ];
 
   return `
     <div class="flex-1 min-h-0 w-full p-3 flex flex-col gap-2.5 overflow-hidden">
@@ -209,24 +235,19 @@ export function renderStage1Prepare(state) {
               </select>
             </div>
 
-            <!-- Translation Mode Toggle -->
+            <!-- Translation and timing mode -->
             <div>
               <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Translation &amp; Timing Mode</label>
-              <div class="space-y-1.5">
-                <label class="p-2 rounded-lg border-2 border-[#8D4B00] bg-amber-50/50 flex items-start gap-2 cursor-pointer transition-all">
-                  <input disabled checked class="mt-0.5 text-[#8D4B00] focus:ring-0 border-stone-300 w-3.5 h-3.5" name="translation_mode" type="radio" />
-                  <div>
-                    <span class="text-[11px] font-bold text-stone-900 block leading-tight">Idiomatic Dubbing</span>
-                    <span class="text-[10px] text-stone-600 block leading-snug">Adapts length for natural lip synchronization</span>
-                  </div>
-                </label>
-                <label class="p-2 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 flex items-start gap-2 cursor-pointer transition-all">
-                  <input disabled class="mt-0.5 text-[#8D4B00] focus:ring-0 border-stone-300 w-3.5 h-3.5" name="translation_mode" type="radio" />
-                  <div>
-                    <span class="text-[11px] font-bold text-stone-800 block leading-tight">Direct Subtitle Mode</span>
-                    <span class="text-[10px] text-stone-500 block leading-snug">Literal fidelity, best for academic accuracy</span>
-                  </div>
-                </label>
+              <div class="space-y-1">
+                ${timingModes.map(mode => `
+                  <label class="p-1.5 rounded-lg border ${l.timingMode === mode.id ? 'border-[#8D4B00] bg-amber-50/60' : 'border-stone-200 bg-white hover:bg-stone-50'} flex items-start gap-2 cursor-pointer transition-all">
+                    <input ${l.timingMode === mode.id ? 'checked' : ''} onchange="window.dubDubStore.updateTimingMode('${mode.id}')" class="mt-0.5 text-[#8D4B00] focus:ring-0 border-stone-300 w-3.5 h-3.5" name="timing_mode" value="${mode.id}" type="radio" />
+                    <div>
+                      <span class="text-[10px] font-bold text-stone-900 block leading-tight">${mode.title}</span>
+                      <span class="text-[9px] text-stone-500 block leading-snug">${mode.detail}</span>
+                    </div>
+                  </label>
+                `).join('')}
               </div>
             </div>
           </div>
@@ -243,33 +264,58 @@ export function renderStage1Prepare(state) {
           </div>
           <div class="flex-1 min-h-0 p-3 flex flex-col justify-between overflow-y-auto space-y-2">
             <div>
-              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Select ASR Foundation Model</label>
+              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">ASR Provider</label>
               <select class="w-full bg-white text-xs font-bold text-stone-800 py-1.5 px-2 rounded-lg border border-amber-300" onchange="window.dubDubStore.updateBackendConfig('recognType', Number(this.value))">
-                ${optionTags(options.recognizers, backend.config.recognType)}
+                ${providerTags}
               </select>
-              <select class="w-full mt-2 bg-white text-[10px] text-stone-700 py-1.5 px-2 rounded-lg border border-stone-200" onchange="window.dubDubStore.updateBackendConfig('modelName', this.value)">
-                ${options.models.map(model => `<option ${model === backend.config.modelName ? 'selected' : ''}>${model}</option>`).join('')}
+              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mt-2 mb-1">Provider Model</label>
+              <select class="w-full bg-white text-[10px] text-stone-700 py-1.5 px-2 rounded-lg border border-stone-200" onchange="window.dubDubStore.updateBackendConfig('modelName', this.value)">
+                ${modelTags}
               </select>
+              ${selectedProvider.requiresSettings || selectedProvider.testable ? `<div class="flex items-center gap-1.5 mt-2">
+                ${selectedProvider.requiresSettings ? `
+                  <button type="button" ${backend.asrTesting ? 'disabled' : ''} onclick="window.dubDubStore.openAsrSettings('${selectedProvider.id}')" title="Configure ${escapeHtml(selectedProvider.label)} API key" class="flex-1 h-7 px-2 rounded-lg border ${selectedProvider.configured ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-[#8D4B00]'} text-[9px] font-bold flex items-center justify-center gap-1 disabled:opacity-50">
+                    <span class="material-symbols-outlined text-xs">key</span>
+                    API Settings
+                  </button>
+                ` : ''}
+                ${selectedProvider.testable ? `
+                  <button type="button" ${backend.asrTesting ? 'disabled' : ''} onclick="window.dubDubStore.testAsrConnection('${selectedProvider.id}')" class="${selectedProvider.requiresSettings ? 'flex-1' : 'w-full'} h-7 px-2 rounded-lg border border-stone-200 bg-stone-50 hover:bg-stone-100 disabled:opacity-50 text-stone-700 text-[9px] font-bold flex items-center justify-center gap-1">
+                    <span class="material-symbols-outlined text-xs">${backend.asrTesting && backend.asrTestProviderId === selectedProvider.id ? 'progress_activity' : 'network_check'}</span>
+                    ${backend.asrTesting && backend.asrTestProviderId === selectedProvider.id ? 'Testing…' : 'Test connection'}
+                  </button>
+                ` : ''}
+              </div>` : ''}
+              ${selectedProvider.requiresSettings ? `
+                <p class="mt-1 text-[9px] ${selectedProvider.configured ? 'text-emerald-700' : 'text-amber-700'}">
+                  ${selectedProvider.configured ? 'API credentials configured' : 'API credentials required before processing'}
+                </p>
+              ` : ''}
+              ${backend.asrTestProviderId === selectedProvider.id && backend.asrTestMessage ? `
+                <p class="mt-1 text-[9px] ${backend.asrTestOk === false ? 'text-red-700' : backend.asrTestOk ? 'text-emerald-700' : 'text-stone-500'} truncate" title="${escapeHtml(backend.asrTestMessage)}">${escapeHtml(backend.asrTestMessage)}</p>
+              ` : ''}
             </div>
 
-            <!-- Audio Enhancements Checkboxes -->
+            <!-- Existing backend audio processing options -->
             <div>
-              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Pre-processing Filters</label>
+              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Audio Processing</label>
               <div class="p-2 bg-stone-50 rounded-lg border border-stone-200/90 space-y-1.5">
                 <label class="flex items-center justify-between cursor-pointer">
                   <div class="flex items-center gap-1.5 text-xs text-stone-800">
-                    <input ${state.engines.speakerDiarization ? 'checked' : ''} onchange="window.dubDubStore.state.engines.speakerDiarization=this.checked" class="rounded border-stone-300 text-[#8D4B00] focus:ring-0 w-3.5 h-3.5 bg-white" type="checkbox" />
-                    <span class="font-medium text-[11px]">Speaker Diarization</span>
+                    <input ${state.engines.speakerDiarization ? 'checked' : ''} onchange="window.dubDubStore.updateEngineConfig('speakerDiarization', this.checked)" class="rounded border-stone-300 text-[#8D4B00] focus:ring-0 w-3.5 h-3.5 bg-white" type="checkbox" />
+                    <span class="font-medium text-[11px]">Speaker Classification</span>
                   </div>
-                  <span class="text-[9px] font-mono text-stone-500">Auto-isolate</span>
+                  <select aria-label="Number of speakers" ${state.engines.speakerDiarization ? '' : 'disabled'} onchange="window.dubDubStore.updateEngineConfig('speakerCount', Number(this.value))" class="max-w-24 rounded border border-stone-200 bg-white px-1 py-0.5 text-[9px] text-stone-600 disabled:bg-stone-100 disabled:text-stone-400">
+                    ${speakerCountTags}
+                  </select>
                 </label>
                 <div class="h-px bg-stone-200"></div>
                 <label class="flex items-center justify-between cursor-pointer">
                   <div class="flex items-center gap-1.5 text-xs text-stone-800">
-                    <input ${state.engines.removeBackgroundNoise ? 'checked' : ''} onchange="window.dubDubStore.state.engines.removeBackgroundNoise=this.checked" class="rounded border-stone-300 text-[#8D4B00] focus:ring-0 w-3.5 h-3.5 bg-white" type="checkbox" />
-                    <span class="font-medium text-[11px]">Remove Background Noise</span>
+                    <input ${state.engines.removeNoise ? 'checked' : ''} onchange="window.dubDubStore.updateEngineConfig('removeNoise', this.checked)" class="rounded border-stone-300 text-[#8D4B00] focus:ring-0 w-3.5 h-3.5 bg-white" type="checkbox" />
+                    <span class="font-medium text-[11px]">Noise Reduction</span>
                   </div>
-                  <span class="text-[9px] font-mono text-stone-500">-24 dB de-reverb</span>
+                  <span class="text-[9px] font-mono text-stone-500">AI model · slower</span>
                 </label>
               </div>
             </div>
@@ -287,29 +333,50 @@ export function renderStage1Prepare(state) {
           </div>
           <div class="flex-1 min-h-0 p-3 flex flex-col justify-between overflow-y-auto space-y-2">
             <div>
-              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Target Engine Model</label>
+              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Translation Provider</label>
               <select class="w-full bg-white text-xs font-bold text-stone-800 py-1.5 px-2 rounded-lg border border-amber-300" onchange="window.dubDubStore.updateBackendConfig('translateType', Number(this.value))">
-                ${optionTags(options.translators, backend.config.translateType)}
+                ${translationTags}
               </select>
-            </div>
-
-            <!-- Tone Preset Pills -->
-            <div>
-              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Tone &amp; Register Preset</label>
-              <div class="grid grid-cols-2 gap-1.5">
-                <button disabled title="Tone presets are not connected yet" class="py-1 px-1.5 rounded-lg text-[10px] font-bold bg-stone-200 text-stone-500 text-center cursor-not-allowed">
-                  Conversational ★
-                </button>
-                <button disabled class="py-1 px-1.5 rounded-lg text-[10px] font-medium bg-stone-50 text-stone-400 border border-stone-200 text-center cursor-not-allowed">
-                  Formal Lecture
-                </button>
-                <button disabled class="py-1 px-1.5 rounded-lg text-[10px] font-medium bg-stone-50 text-stone-400 border border-stone-200 text-center cursor-not-allowed">
-                  Colloquial Youth
-                </button>
-                <button disabled class="py-1 px-1.5 rounded-lg text-[10px] font-medium bg-stone-50 text-stone-400 border border-stone-200 text-center cursor-not-allowed">
-                  Technical / Science
+              <div class="flex items-center gap-1.5 mt-2">
+                ${selectedTranslation.requiresSettings ? `
+                  <button type="button" onclick="window.dubDubStore.openTranslationSettings('${selectedTranslation.id}')" class="flex-1 h-7 px-2 rounded-lg border ${selectedTranslation.configured ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-[#8D4B00]'} text-[9px] font-bold flex items-center justify-center gap-1">
+                    <span class="material-symbols-outlined text-xs">tune</span>
+                    API Settings
+                  </button>
+                ` : ''}
+                <button type="button" ${backend.translationTesting ? 'disabled' : ''} onclick="window.dubDubStore.testTranslationConnection('${selectedTranslation.id}')" class="${selectedTranslation.requiresSettings ? 'flex-1' : 'w-full'} h-7 px-2 rounded-lg border border-stone-200 bg-stone-50 hover:bg-stone-100 disabled:opacity-50 text-stone-700 text-[9px] font-bold flex items-center justify-center gap-1">
+                  <span class="material-symbols-outlined text-xs">${backend.translationTesting && backend.translationTestProviderId === selectedTranslation.id ? 'progress_activity' : 'network_check'}</span>
+                  ${backend.translationTesting && backend.translationTestProviderId === selectedTranslation.id ? 'Testing…' : 'Test connection'}
                 </button>
               </div>
+              ${selectedTranslation.requiresSettings ? `
+                <p class="mt-1 text-[9px] ${selectedTranslation.configured ? 'text-emerald-700' : 'text-amber-700'}">
+                  ${selectedTranslation.configured ? `${escapeHtml(selectedTranslation.model)} configured` : 'API settings required before processing'}
+                </p>
+              ` : ''}
+              ${backend.translationTestProviderId === selectedTranslation.id && backend.translationTestMessage ? `
+                <p class="mt-1 text-[9px] ${backend.translationTestOk === false ? 'text-red-700' : backend.translationTestOk ? 'text-emerald-700' : 'text-stone-500'} truncate" title="${escapeHtml(backend.translationTestMessage)}">${escapeHtml(backend.translationTestMessage)}</p>
+              ` : ''}
+            </div>
+
+            <!-- Existing BaseTrans prompt modes -->
+            <div>
+              <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Translation Mode</label>
+              ${selectedTranslation.id === 'google' ? `
+                <div class="p-2 rounded-lg bg-stone-50 border border-stone-200 text-[9px] text-stone-500">
+                  Google Translate uses the existing line-by-line provider flow.
+                </div>
+              ` : `
+                <div class="grid grid-cols-2 gap-1.5">
+                  ${translationModes.map(mode => `
+                    <label title="${escapeHtml(mode.description)}" class="p-1.5 rounded-lg border cursor-pointer ${backend.config.translationMode === mode.id ? 'border-[#8D4B00] bg-amber-50 text-[#8D4B00]' : 'border-stone-200 bg-stone-50 text-stone-600'}">
+                      <input class="sr-only" type="radio" name="translation_mode" value="${mode.id}" ${backend.config.translationMode === mode.id ? 'checked' : ''} onchange="window.dubDubStore.updateBackendConfig('translationMode', this.value)" />
+                      <span class="block text-[10px] font-bold">${escapeHtml(mode.label)}</span>
+                      <span class="block mt-0.5 text-[8px] leading-tight text-stone-500">${escapeHtml(mode.description)}</span>
+                    </label>
+                  `).join('')}
+                </div>
+              `}
             </div>
           </div>
         </div>
@@ -356,6 +423,87 @@ export function renderStage1Prepare(state) {
           </div>
         </div>
       </section>
+      ${settingsProvider ? `
+        <div class="fixed inset-0 z-50 bg-stone-950/45 backdrop-blur-[1px] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="asr-settings-title">
+          <div class="w-full max-w-md rounded-xl border border-[#E7E4DC] bg-white shadow-2xl overflow-hidden">
+            <div class="h-10 px-4 bg-[#FAF9F6] border-b border-[#E7E4DC] flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[#8D4B00] text-base">key</span>
+                <h3 id="asr-settings-title" class="text-xs font-bold text-stone-900">${escapeHtml(settingsProvider.label)} API Settings</h3>
+              </div>
+              <button type="button" ${backend.asrSettingsSaving || backend.asrTesting ? 'disabled' : ''} onclick="window.dubDubStore.closeAsrSettings()" class="text-stone-400 hover:text-stone-700 disabled:opacity-40">
+                <span class="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+            <div class="p-4 space-y-3">
+              <p class="text-[11px] text-stone-600">Enter the API key used by the local pyVideoTrans backend. Existing secrets are never sent to this screen.</p>
+              <div>
+                <label for="asr-api-key" class="text-[9px] font-bold text-stone-500 uppercase tracking-wider block mb-1">API Key</label>
+                <input id="asr-api-key" type="password" autocomplete="new-password" ${backend.asrSettingsSaving || backend.asrTesting ? 'disabled' : ''} placeholder="${settingsProvider.configured ? 'Leave blank to keep the stored key' : 'Paste a new API key'}" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#8D4B00]" />
+              </div>
+              ${backend.asrSettingsError ? `<p class="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] text-red-700">${escapeHtml(backend.asrSettingsError)}</p>` : ''}
+              ${backend.asrTestProviderId === settingsProvider.id && backend.asrTestMessage && backend.asrTestOk ? `<p class="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] text-emerald-700">${escapeHtml(backend.asrTestMessage)}</p>` : ''}
+              <div class="flex items-center justify-end gap-2 pt-1">
+                <button type="button" ${backend.asrSettingsSaving || backend.asrTesting ? 'disabled' : ''} onclick="window.dubDubStore.closeAsrSettings()" class="px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-[10px] font-bold text-stone-600 disabled:opacity-40">Cancel</button>
+                <button type="button" ${backend.asrSettingsSaving || backend.asrTesting ? 'disabled' : ''} onclick="window.dubDubStore.testAsrConnection('${settingsProvider.id}', true)" class="px-3 py-1.5 rounded-lg border border-[#8D4B00] bg-amber-50 text-[#8D4B00] text-[10px] font-bold disabled:opacity-50 flex items-center gap-1">
+                  <span class="material-symbols-outlined text-xs">${backend.asrTesting ? 'progress_activity' : 'network_check'}</span>
+                  ${backend.asrTesting ? 'Testing…' : 'Save & Test'}
+                </button>
+                <button type="button" ${backend.asrSettingsSaving || backend.asrTesting ? 'disabled' : ''} onclick="window.dubDubStore.saveAsrSettings()" class="px-3 py-1.5 rounded-lg bg-[#8D4B00] text-white text-[10px] font-bold disabled:opacity-50 flex items-center gap-1">
+                  <span class="material-symbols-outlined text-xs">${backend.asrSettingsSaving ? 'progress_activity' : 'save'}</span>
+                  ${backend.asrSettingsSaving ? 'Saving…' : 'Save API Key'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
+      ${translationSettingsProvider ? `
+        <div class="fixed inset-0 z-50 bg-stone-950/45 backdrop-blur-[1px] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="translation-settings-title">
+          <div class="w-full max-w-lg rounded-xl border border-[#E7E4DC] bg-white shadow-2xl overflow-hidden">
+            <div class="h-10 px-4 bg-[#FAF9F6] border-b border-[#E7E4DC] flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[#8D4B00] text-base">translate</span>
+                <h3 id="translation-settings-title" class="text-xs font-bold text-stone-900">${escapeHtml(translationSettingsProvider.label)} Settings</h3>
+              </div>
+              <button type="button" ${backend.translationSettingsSaving || backend.translationTesting ? 'disabled' : ''} onclick="window.dubDubStore.closeTranslationSettings()" class="text-stone-400 hover:text-stone-700 disabled:opacity-40">
+                <span class="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+            <div class="p-4 space-y-3">
+              <p class="text-[11px] text-stone-600">Configure the endpoint and model used by the local translation backend. Stored API keys are never returned to this screen.</p>
+              <div>
+                <label for="translation-base-url" class="text-[9px] font-bold text-stone-500 uppercase tracking-wider block mb-1">Base URL</label>
+                <input id="translation-base-url" type="url" value="${escapeHtml(translationSettingsProvider.baseUrl)}" ${backend.translationSettingsSaving || backend.translationTesting ? 'disabled' : ''} placeholder="Use the provider default endpoint" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#8D4B00]" />
+              </div>
+              <div>
+                <label for="translation-api-key" class="text-[9px] font-bold text-stone-500 uppercase tracking-wider block mb-1">API Key</label>
+                <input id="translation-api-key" type="password" autocomplete="new-password" ${backend.translationSettingsSaving || backend.translationTesting ? 'disabled' : ''} placeholder="${translationSettingsProvider.configured ? 'Leave blank to keep the stored key' : 'Paste an API key'}" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#8D4B00]" />
+              </div>
+              <div>
+                <label for="translation-model" class="text-[9px] font-bold text-stone-500 uppercase tracking-wider block mb-1">Model</label>
+                <input id="translation-model" list="translation-model-options" value="${escapeHtml(translationSettingsProvider.model)}" ${backend.translationSettingsSaving || backend.translationTesting ? 'disabled' : ''} placeholder="Enter a model name" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#8D4B00]" />
+                <datalist id="translation-model-options">
+                  ${translationSettingsProvider.models.map(model => `<option value="${escapeHtml(model)}"></option>`).join('')}
+                </datalist>
+              </div>
+              ${backend.translationSettingsError ? `<p class="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] text-red-700">${escapeHtml(backend.translationSettingsError)}</p>` : ''}
+              ${backend.translationTestProviderId === translationSettingsProvider.id && backend.translationTestMessage && backend.translationTestOk ? `<p class="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] text-emerald-700">${escapeHtml(backend.translationTestMessage)}</p>` : ''}
+              <div class="flex items-center justify-end gap-2 pt-1">
+                <button type="button" ${backend.translationSettingsSaving || backend.translationTesting ? 'disabled' : ''} onclick="window.dubDubStore.closeTranslationSettings()" class="px-3 py-1.5 rounded-lg border border-stone-200 bg-white text-[10px] font-bold text-stone-600 disabled:opacity-40">Cancel</button>
+                <button type="button" ${backend.translationSettingsSaving || backend.translationTesting ? 'disabled' : ''} onclick="window.dubDubStore.testTranslationConnection('${translationSettingsProvider.id}', true)" class="px-3 py-1.5 rounded-lg border border-[#8D4B00] bg-amber-50 text-[#8D4B00] text-[10px] font-bold disabled:opacity-50 flex items-center gap-1">
+                  <span class="material-symbols-outlined text-xs">${backend.translationTesting ? 'progress_activity' : 'network_check'}</span>
+                  ${backend.translationTesting ? 'Testing…' : 'Save & Test'}
+                </button>
+                <button type="button" ${backend.translationSettingsSaving || backend.translationTesting ? 'disabled' : ''} onclick="window.dubDubStore.saveTranslationSettings()" class="px-3 py-1.5 rounded-lg bg-[#8D4B00] text-white text-[10px] font-bold disabled:opacity-50 flex items-center gap-1">
+                  <span class="material-symbols-outlined text-xs">${backend.translationSettingsSaving ? 'progress_activity' : 'save'}</span>
+                  ${backend.translationSettingsSaving ? 'Saving…' : 'Save settings'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
     </div>
   `;
 }

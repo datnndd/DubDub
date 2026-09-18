@@ -71,7 +71,6 @@ notices = {
         "hotwords": "告诉模型哪些词可能出现，以英文逗号分隔多个",
 
         "model_list": "faster-whipser的模型列表，英文逗号分隔",
-        "Whisper_cpp_models": "whisper.cpp的模型名字列表，英文逗号分隔",
 
         "gemini_recogn_chunk": "使用gemini识别语音时，每次发送音频切片数，越大效果越好，但失败率会升高",
         "zh_hant_s": "强制将识别出的繁体字幕转为简体",
@@ -94,9 +93,6 @@ notices = {
         "remove_dubb_silence": "移除每条字幕配音前后静音缓冲，利于音画同步，但可能结尾仓促",
         "save_segment_audio": "保留每行字幕的配音结果",
         "normal_text": "配音前对文本规范化处理",
-        "chattts_voice": "ChatTTS 音色值",
-        "edgetts_max_concurrent_tasks": "EdgeTTS渠道配音并发数，越大越快，但可能限流失败",
-        "edgetts_retry_nums": "EdgeTTS渠道失败后重试次数,有些失败无论多少次重试也无法恢复，太大只会延长耗时",
         "noise_separate_nums": "人声背景声分离线程数，越大越快但占用资源越多",
         "uvr_models": "选择分离背景声时所用模型",
     },
@@ -188,20 +184,9 @@ titles = {
 
     "show_more_settings": "主界面显示所有参数?",
 
-    "edgetts_max_concurrent_tasks": "EdgeTTS配音渠道配音并发数",
-    "edgetts_retry_nums": "EdgeTTS配音渠道失败重试次数",
-
-    "ai302_models": "302.AI翻译模型",
-    "ai302tts_models": "302.AI-TTS模型",
-    "openairecognapi_model": "OpenAI语音识别模型",
     "chatgpt_model": "ChatGPT模型列表",
     "noise_separate_nums": "人声背景分离线程数",
-    "openaitts_model": "OpenAI TTS模型列表",
-    "azure_model": "Azure模型列表",
-    "localllm_model": "本地LLM模型列表",
-    "zijiehuoshan_model": "字节火山推理接入点",
     "model_list": "faster-whisper模型",
-    "Whisper_cpp_models": "whisper.cpp模型",
     "homedir": "独立功能输出目录",
     "lang": "软件界面语言",
     "save_segment_audio": "保留每条字幕的配音文件",
@@ -239,7 +224,6 @@ titles = {
     "hotwords": "热词",
 
     "zh_hant_s": "字幕繁体转简体",
-    "chattts_voice": "ChatTTS音色值",
 
     "gemini_model": "Gemini模型列表",
 
@@ -350,7 +334,6 @@ if defaulelang != 'zh':
             "hotwords": "hotwords",
 
             "model_list": "Comma-separated list of model names for faster-whisper modes.",
-            "Whisper_cpp_models": "Comma-separated list of model names for whisper.cpp mode.",
             "gemini_recogn_chunk": "Number of audio slices per request for Gemini recognition. Larger values improve accuracy but increase failure rate.",
             "zh_hant_s": "Force conversion of recognized Traditional Chinese to Simplified Chinese.",
             "del_end_punc": "Remove punctuation at the end of subtitles?",
@@ -371,9 +354,6 @@ if defaulelang != 'zh':
             "remove_dubb_silence": "Remove the mute buffer before and after each subtitle audio. Selecting this option will improve audio-visual synchronization, but may make the ending feel rushed.",
             "save_segment_audio": "Save the dubbed audio for each individual subtitle line.",
             "normal_text": "Text normalization before dubbing",
-            "edgetts_max_concurrent_tasks": "The higher the concurrent voice-over capacity of the EdgeTTS channel, the faster the speed, but rate throttling may fail.",
-            "edgetts_retry_nums": "Number of retries after EdgeTTS channel failure",
-            "chattts_voice": "ChatTTS voice timbre value.",
             "noise_separate_nums": "The more threads used for separation of human and background voices, the faster the process, but the more resources it consumes.",
             "uvr_models": "Select the model used when separating background noise.",
         },
@@ -439,8 +419,6 @@ if defaulelang != 'zh':
         "gemini_recogn_chunk": "Gemini speech recognition batch slice count",
         "llm_chunk_size": "LLM re-segmentation How many subtitles are sent each time",
         "hw_decode": "ffmpeg decode video use cuda",
-        "ai302_models": "302.AI translation models",
-        "ai302tts_models": "302.AI-TTS models",
         "aitrans_temperature": "AI temperature for translation subtitles",
         "aitrans_context": "AI translation channel translates all lines of the subtitles in one go.",
         "no_speech_threshold": "no speech threshold",
@@ -469,18 +447,10 @@ if defaulelang != 'zh':
 
         "show_more_settings": "Show all parameters?",
 
-        "edgetts_max_concurrent_tasks": "The higher concurrent of EdgeTTS",
-        "edgetts_retry_nums": "Retries after EdgeTTS failure",
 
         "noise_separate_nums": "Threads nums for separation",
-        "openairecognapi_model": "OpenAI speech recognition model",
         "chatgpt_model": "ChatGPT model list",
-        "openaitts_model": "OpenAI TTS model list",
-        "azure_model": "Azure model list",
-        "localllm_model": "Local LLM model list",
-        "zijiehuoshan_model": "ByteDance Volcano Engine inference endpoint",
         "model_list": "faster-whisper models",
-        "Whisper_cpp_models": "whisper.cpp models",
         "homedir": "Set output directory",
         "lang": "Software interface language",
         "save_segment_audio": "Save dubbed audio for each subtitle line",
@@ -509,7 +479,6 @@ if defaulelang != 'zh':
         "best_of": "Recognition accuracy (best_of)",
         "condition_on_previous_text": "Enable context awareness",
         "zh_hant_s": "Convert Traditional to Simplified Chinese subtitles",
-        "chattts_voice": "ChatTTS voice timbre value",
         "translation_wait": "Pause (s) after each translation request",
         "dubbing_wait": "Pause (s) after each dubbing request",
         "gemini_model": "Gemini model list",
@@ -667,7 +636,7 @@ class Ui_setini(object):
             return
 
         # 是 model_list faster-whisper
-        if key in ['model_list', 'Whisper_cpp_models']:
+        if key == 'model_list':
             tmp_1 = QtWidgets.QPlainTextEdit()
             tmp_1.setPlainText(val)
             tmp_1.setToolTip(tips_str)

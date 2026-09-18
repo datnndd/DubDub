@@ -172,9 +172,9 @@ class TestBuildParser:
     def test_stt_defaults(self):
         parser = build_parser()
         args = parser.parse_args(['--task', 'stt', '--name', 'test.mp4'])
-        assert args.recogn_type == 0
+        assert args.recogn_type == 1
         assert args.detect_language == 'auto'
-        assert args.model_name == 'tiny'
+        assert args.model_name == 'nova-3'
         assert args.cuda is False
         assert args.remove_noise is False
         assert args.enable_diariz is False
@@ -185,7 +185,7 @@ class TestBuildParser:
     def test_tts_defaults(self):
         parser = build_parser()
         args = parser.parse_args(['--task', 'tts', '--name', 'test.srt', '--voice_role', 'test'])
-        assert args.tts_type == 0
+        assert args.tts_type == 2
         assert args.voice_rate == '+0%'
         assert args.volume == '+0%'
         assert args.pitch == '+0Hz'
@@ -406,7 +406,7 @@ class TestBuildSttParams:
 
     def test_build_stt_params_defaults(self):
         args = MagicMock(
-            recogn_type=0, detect_language='auto', model_name='tiny',
+            recogn_type=1, detect_language='auto', model_name='nova-3',
             cuda=False, remove_noise=False, enable_diariz=False,
             nums_diariz=-1, rephrase=0, fix_punc=False,
         )
@@ -457,7 +457,7 @@ class TestBuildVTVParams:
     def test_build_vtv_params(self):
         args = MagicMock(
             source_language_code='zh-cn', target_language_code='en',
-            recogn_type=0, model_name='large-v3', cuda=True,
+            recogn_type=1, model_name='nova-3', cuda=True,
             remove_noise=False, enable_diariz=False,
             nums_diariz=-1, rephrase=0, fix_punc=False,
             tts_type=0, voice_role='en-US-GuyNeural',
@@ -476,7 +476,7 @@ class TestBuildVTVParams:
         assert result["subtitle_type"] == 1
         assert result["clear_cache"] is True
         assert result["voice_role"] == "en-US-GuyNeural"
-        assert result["recogn_type"] == 0
+        assert result["recogn_type"] == 1
         assert result["is_cuda"] is True
 
 
@@ -585,10 +585,11 @@ class TestListModels:
         captured = capsys.readouterr()
         assert "faster-whisper" in captured.out or "Faster" in captured.out
 
-    def test_list_models_shows_tiny(self, capsys):
+    def test_list_models_shows_only_large_v3(self, capsys):
         list_models()
         captured = capsys.readouterr()
-        assert "tiny" in captured.out
+        assert "large-v3" in captured.out
+        assert "tiny" not in captured.out
 
 
 # ===========================================================================
@@ -650,13 +651,13 @@ class TestArgumentParsingIntegration:
         parser = build_parser()
         args = parser.parse_args([
             '--task', 'stt', '--name', str(f),
-            '--recogn_type', '2', '--model_name', 'large-v3',
+            '--recogn_type', '5', '--model_name', 'large-v3',
             '--detect_language', 'ja', '--cuda',
             '--remove_noise', '--enable_diariz', '--nums_diariz', '3',
             '--rephrase', '1', '--fix_punc',
         ])
         assert args.task == 'stt'
-        assert args.recogn_type == 2
+        assert args.recogn_type == 5
         assert args.model_name == 'large-v3'
         assert args.cuda is True
         validate_task_params(args, parser)

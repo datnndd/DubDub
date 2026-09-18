@@ -102,7 +102,7 @@ class OpenAICampat(BaseTrans):
 
     def llm_segment(self, srt_list,step='')->List[SrtItem]:
         _st=time.time()
-        api_url=params.get('chatgpt_api') if self.ainame!='deepseek' else 'https://api.deepseek.com/v1/'
+        api_url=params.get('chatgpt_api') if self.ainame!='deepseek' else params.get('deepseek_api', 'https://api.deepseek.com/v1')
         if len(api_url)<10:
             raise StopTask(f'API URL is error: {api_url}')
 

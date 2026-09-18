@@ -20,6 +20,7 @@ class Gemini(BaseTrans):
     def __post_init__(self):
         super().__post_init__()
         self.model_name = params.get("gemini_model",'gemini-2.5-flash')
+        self.api_url = params.get('gemini_api', '').strip()
         self.prompt = get_prompt(ainame='gemini',aisendsrt=self.aisendsrt).replace('{lang}', self.target_language_name)
         self.api_keys = params.get('gemini_key', '').strip().split(',')
 
@@ -34,6 +35,7 @@ class Gemini(BaseTrans):
             client = genai.Client(
                 api_key=api_key,
                 http_options = types.HttpOptions(
+                    base_url=self.api_url or None,
                     client_args={'proxy': self.proxy_str},
                     async_client_args={'proxy': self.proxy_str},
                 )
