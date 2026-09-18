@@ -60,13 +60,8 @@ class TestListenText:
 
 
 class TestFasterModelsDict:
-    def test_common_models_present(self):
-        assert "tiny" in contants.FASTER_MODELS_DICT
-        assert "base" in contants.FASTER_MODELS_DICT
-        assert "small" in contants.FASTER_MODELS_DICT
-        assert "medium" in contants.FASTER_MODELS_DICT
-        assert "large-v3" in contants.FASTER_MODELS_DICT
-        assert "large-v3-turbo" in contants.FASTER_MODELS_DICT
+    def test_only_supported_model_is_present(self):
+        assert contants.FASTER_MODELS_DICT == {"large-v3": "Systran/faster-whisper-large-v3"}
 
     def test_model_values_are_non_empty(self):
         for name, repo in contants.FASTER_MODELS_DICT.items():

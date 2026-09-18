@@ -37,7 +37,7 @@ class TestVieNeuTTS:
     def test_registry_supports_vietnamese_and_english(self):
         from videotrans import tts
 
-        assert tts.VIENEU_TTS == 34
+        assert tts.VIENEU_TTS == 2
         assert "VieNeu-TTS" in tts.TTS_NAME_LIST[tts.VIENEU_TTS]
         assert tts.VIENEU_TTS in tts.SUPPORT_CLONE
         assert tts.is_allow_lang("vi", tts.VIENEU_TTS) is True

@@ -9,11 +9,10 @@ from typing import Dict, List
 from videotrans.configure._paths import ROOT_DIR
 from videotrans.configure._logging import _write_with_retry
 from videotrans.configure.contants import (
-    DEFAULT_GEMINI_MODEL, ChatTTS_VOICE, Qwentts_Models,
-    Whisper_Models, Zijiehuoshan_Model, Zhipuai_Model, Localllm_Model, Azure_Model,
-    Chatgpt_Model, Openairecognapi_Model, Qpenaitts_Model, Qwenmt_Model, Ai302_Models,
-    Whisper_cpp_models, Deepseek_Model, Openrouter_Model, Guiji_Model, MINIMAX_MODELS,
-    XIAOMI_MODELS
+    DEFAULT_GEMINI_MODEL,
+    Whisper_Models,
+    Chatgpt_Model,
+    Deepseek_Model,
 )
 
 
@@ -31,9 +30,6 @@ class AppSettings:
 
     _json_path: str = f"{ROOT_DIR}/videotrans/cfg.json"
     WHISPER_MODEL_LIST: List = field(default_factory=list, repr=False)
-    ChatTTS_voicelist: List = field(default_factory=list, repr=False)
-    Whisper_CPP_MODEL_LIST: List = field(default_factory=list, repr=False)
-    Whisper_NET_MODEL_LIST: List = field(default_factory=list, repr=False)
 
     def __post_init__(self):
         self.parse_init()
@@ -84,9 +80,7 @@ class AppSettings:
             elif value:
                 merged_settings[py_key] = value
 
-        _extend_models = ['localllm_model', 'zhipuai_model', 'deepseek_model', 'openrouter_model',
-                          'guiji_model', 'zijiehuoshan_model', 'model_list', 'qwentts_models',
-                          'gemini_model', 'chattts_voice']
+        _extend_models = ['deepseek_model', 'model_list', 'gemini_model']
 
         for m in _extend_models:
             def_val = str(default.get(m, ''))
@@ -102,10 +96,6 @@ class AppSettings:
         default.update(merged_settings)
 
         self.WHISPER_MODEL_LIST = re.split(r'[,，]', default.get('model_list', ''))
-        self.ChatTTS_voicelist = re.split(r'[,，]', str(default.get('chattts_voice', '')))
-        self.Whisper_CPP_MODEL_LIST = str(default.get('Whisper_cpp_models', 'ggml-tiny')).strip().split(',')
-        self.Whisper_NET_MODEL_LIST = str(default.get('Whisper_net_models', 'ggml-tiny.bin')).strip().split(',')
-
         self._apply_dict(default)
 
         self._save_to_disk()
@@ -117,15 +107,9 @@ class AppSettings:
         return {
             "homedir": ROOT_DIR + "/output",
             "lang": "",
-            "Faster_Whisper_XXL": "",
-            "Whisper_cpp": "",
-            "Whisper_cpp_models": Whisper_cpp_models,
-            "Whisper_net_models": Whisper_cpp_models,
             "crf": 23,
             "fps_mode": "vfr",
             "hotwords": "",
-            "edgetts_max_concurrent_tasks": 10,
-            "edgetts_retry_nums": 3,
             "del_end_punc": True,
             "force_lib": False,
             "hw_decode": False,
@@ -139,19 +123,8 @@ class AppSettings:
             "aitrans_temperature": 0.1,
             "aitrans_context": False,
             "batch_nums": 0,
-            "ai302_models": Ai302_Models,
-            'qwenmt_model': Qwenmt_Model,
-            "openaitts_model": Qpenaitts_Model,
-            "openairecognapi_model": Openairecognapi_Model,
             "chatgpt_model": Chatgpt_Model,
-            "azure_model": Azure_Model,
-            "localllm_model": Localllm_Model,
-            "zhipuai_model": Zhipuai_Model,
             "deepseek_model": Deepseek_Model,
-            "xiaomi_model": XIAOMI_MODELS,
-            "openrouter_model": Openrouter_Model,
-            "guiji_model": Guiji_Model,
-            "zijiehuoshan_model": Zijiehuoshan_Model,
             "model_list": Whisper_Models,
             "max_audio_speed_rate": 100,
             "max_video_pts_rate": 10,
@@ -215,14 +188,11 @@ class AppSettings:
             "initial_prompt_fil": "",
             "beam_size": 5,
             "best_of": 5,
-            "minimax_model": MINIMAX_MODELS,
             "uvr_models": "spleeter",
             "condition_on_previous_text": False,
             "temperature": "",
             "repetition_penalty": 1.0,
             "compression_ratio_threshold": 2.4,
-            "qwentts_role": '',
-            "qwentts_models": Qwentts_Models,
             "show_more_settings": False,
             "speaker_type": "built",
             "hf_token": "",
@@ -237,7 +207,6 @@ class AppSettings:
             "process_max_gpu": 1,
             "multi_gpus": False,
             "retry_nums": 1,
-            "chattts_voice": ChatTTS_VOICE,
             "proxy": ""
         }
 
@@ -300,8 +269,6 @@ class AppSettings:
         ]
         int_type = [
             "crf",
-            "edgetts_max_concurrent_tasks",
-            "edgetts_retry_nums",
             "video_codec",
             "noise_separate_nums",
             "batch_nums",

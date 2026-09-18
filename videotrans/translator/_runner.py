@@ -3,10 +3,7 @@ from typing import Union, List, Type
 from videotrans.configure.config import app_cfg, logger
 from videotrans.translator._base import BaseTrans
 from videotrans import get_class
-from videotrans.translator._constants import (
-    GOOGLE_INDEX, MICROSOFT_INDEX,
-    AI_TRANS_CHANNELS,
-)
+from videotrans.translator._constants import GOOGLE_INDEX, AI_TRANS_CHANNELS
 from videotrans.translator._registry import _ID_NAME_DICT
 from videotrans.translator._lang_utils import get_source_target_code
 
@@ -28,7 +25,8 @@ def run(*, translate_type=0,
         is_test=False,
         source_code=None,
         target_code=None,
-        uuid=None) -> Union[List, str, None]:
+        uuid=None,
+        aisendsrt=None) -> Union[List, str, None]:
     translate_type = int(translate_type)
     # ai渠道下，target_language_name 是语言名称
     # 其他渠道下是语言代码
@@ -44,17 +42,16 @@ def run(*, translate_type=0,
         "target_code": target_code,
         "uuid": uuid,
         "is_test": is_test,
-        "translate_type": translate_type
+        "translate_type": translate_type,
+        "aisendsrt": aisendsrt,
     }
 
-    # 未设置代理并且检测google失败，则使用微软翻译
+    # Google is an explicit provider choice. Do not silently switch providers.
     if translate_type == GOOGLE_INDEX:
-        if app_cfg.proxy or _check_google() is True:
-            from videotrans.translator._google import Google
-            return Google(**kwargs).run()
-        logger.warning('未设置代理并且检测google失败，改为使用微软翻译')
-        translate_type = MICROSOFT_INDEX
-        kwargs['translate_type']=translate_type
+        if not app_cfg.proxy and _check_google() is not True:
+            raise ConnectionError("Google Translate is unavailable. Configure a proxy or select another translation provider.")
+        from videotrans.translator._google import Google
+        return Google(**kwargs).run()
 
     _cls: Union[Type[BaseTrans], None] = get_class(translate_type,"translator",_ID_NAME_DICT)
     if _cls is None:

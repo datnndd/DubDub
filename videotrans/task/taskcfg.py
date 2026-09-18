@@ -154,6 +154,7 @@ class TaskCfgTTS(TaskCfgBase):
 class TaskCfgSTS(TaskCfgBase):
     ######## 字幕翻译相关
     translate_type: int = None  # 字幕翻译渠道
+    aisendsrt: Optional[bool] = None  # None follows the global setting; bool selects the existing text/SRT prompt flow
 
 
 # 视频翻译所有

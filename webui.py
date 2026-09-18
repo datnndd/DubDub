@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import re
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable
 from urllib.parse import unquote
 
@@ -18,8 +20,8 @@ from videotrans.configure import config as runtime_config
 runtime_config.init_run()
 
 from videotrans import recognition, translator, tts
-from videotrans.configure.config import ROOT_DIR, TEMP_DIR, app_cfg
-from videotrans.configure.contants import AUDIO_EXITS, FASTER_MODELS_DICT, VIDEO_EXTS
+from videotrans.configure.config import ROOT_DIR, TEMP_DIR, app_cfg, params as app_params
+from videotrans.configure.contants import AUDIO_EXITS, VIDEO_EXTS
 from videotrans.task.orchestrator import (
     CancellationToken,
     EventKind,
@@ -30,7 +32,9 @@ from videotrans.task.orchestrator import (
 )
 from videotrans.util._ffmpeg_misc import format_video
 from videotrans.util._ffprobe import get_video_info
+from videotrans.configure.excepts import get_msg_from_except
 from videotrans.util.gpus import getset_gpu
+from videotrans.util.help_misc import process_openai_api
 from videotrans.util.help_role import role_menu
 
 
@@ -38,6 +42,108 @@ FRONTEND_DIR = Path(ROOT_DIR) / "frontend"
 UPLOAD_DIR = Path(TEMP_DIR) / "webui_uploads"
 OUTPUT_DIR = Path(ROOT_DIR) / "output"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+ASR_PROVIDERS = (
+    {
+        "id": "qwen-asr",
+        "label": "Qwen-ASR",
+        "recognType": recognition.QWENASR,
+        "models": ("1.7B", "0.6B"),
+    },
+    {
+        "id": "deepgram",
+        "label": "Deepgram",
+        "recognType": recognition.Deepgram,
+        "models": tuple(recognition.get_model_by_type(recognition.Deepgram)),
+        "settingsKey": "deepgram_apikey",
+        "thirdParty": True,
+    },
+    {
+        "id": "gemini-stt",
+        "label": "Gemini STT",
+        "recognType": recognition.GEMINI_SPEECH,
+        "models": ("gemini-flash-latest",),
+        "settingsKey": "gemini_key",
+        "thirdParty": True,
+    },
+    {
+        "id": "google-stt",
+        "label": "Google STT API",
+        "recognType": recognition.GOOGLE_SPEECH,
+        "models": ("google-web-speech",),
+        "thirdParty": True,
+    },
+    {
+        "id": "elevenlabs",
+        "label": "ElevenLabs",
+        "recognType": recognition.ElevenLabs,
+        "models": ("scribe_v2",),
+        "settingsKey": "elevenlabstts_key",
+        "thirdParty": True,
+    },
+    {
+        "id": "whisper-large-v3",
+        "label": "Whisper Large-v3",
+        "recognType": recognition.FASTER_WHISPER,
+        "models": ("large-v3",),
+    },
+)
+ASR_BY_TYPE = {provider["recognType"]: provider for provider in ASR_PROVIDERS}
+ASR_BY_ID = {provider["id"]: provider for provider in ASR_PROVIDERS}
+TIMING_MODES = {
+    "voice": {"voice_autorate": True, "video_autorate": False, "align_sub_audio": False},
+    "video": {"voice_autorate": False, "video_autorate": True, "align_sub_audio": False},
+    "align": {"voice_autorate": False, "video_autorate": False, "align_sub_audio": True},
+}
+TRANSLATION_MODES = {
+    "line": {
+        "label": "Line-by-line",
+        "description": "Send plain subtitle text in batches.",
+        "aisendsrt": False,
+    },
+    "srt": {
+        "label": "Send SRT",
+        "description": "Send subtitle blocks with timestamps and structure.",
+        "aisendsrt": True,
+    },
+}
+TRANSLATION_PROVIDERS = (
+    {
+        "id": "google",
+        "label": "Google Translate",
+        "translateType": translator.GOOGLE_INDEX,
+    },
+    {
+        "id": "openai",
+        "label": "OpenAI ChatGPT",
+        "translateType": translator.CHATGPT_INDEX,
+        "baseUrlKey": "chatgpt_api",
+        "defaultBaseUrl": "https://api.openai.com/v1",
+        "keyKey": "chatgpt_key",
+        "modelKey": "chatgpt_model",
+    },
+    {
+        "id": "gemini",
+        "label": "Gemini",
+        "translateType": translator.GEMINI_INDEX,
+        "baseUrlKey": "gemini_api",
+        "defaultBaseUrl": "",
+        "keyKey": "gemini_key",
+        "modelKey": "gemini_model",
+    },
+    {
+        "id": "deepseek",
+        "label": "DeepSeek",
+        "translateType": translator.DEEPSEEK_INDEX,
+        "baseUrlKey": "deepseek_api",
+        "defaultBaseUrl": "https://api.deepseek.com/v1",
+        "keyKey": "deepseek_key",
+        "modelKey": "deepseek_model",
+    },
+)
+TRANSLATION_BY_TYPE = {provider["translateType"]: provider for provider in TRANSLATION_PROVIDERS}
+TRANSLATION_BY_ID = {provider["id"]: provider for provider in TRANSLATION_PROVIDERS}
 
 
 @dataclass
@@ -215,6 +321,135 @@ def _optional_index(value: Any, size: int, default: int = 0) -> int:
     return index if 0 <= index < size else default
 
 
+def _translation_mode(value: Any = None) -> tuple[str, bool]:
+    mode_id = str(value or ("srt" if runtime_config.settings.get("aisendsrt", True) else "line"))
+    mode = TRANSLATION_MODES.get(mode_id)
+    if mode is None:
+        raise ValueError(f"Unknown translation mode: {mode_id}")
+    return mode_id, bool(mode["aisendsrt"])
+
+
+def ensure_asr_configured(recogn_type: int, settings_store: Any) -> None:
+    provider = ASR_BY_TYPE[recogn_type]
+    settings_key = provider.get("settingsKey")
+    if settings_key and not settings_store.get(settings_key):
+        raise ValueError(f"Configure {provider['label']} API settings before starting")
+
+
+def ensure_translation_configured(translate_type: int, settings_store: Any) -> None:
+    provider = TRANSLATION_BY_TYPE[translate_type]
+    key_name = provider.get("keyKey")
+    if key_name and not settings_store.get(key_name):
+        raise ValueError(f"Configure {provider['label']} settings before starting")
+
+
+def _save_asr_settings(provider: dict[str, Any], payload: dict[str, Any], settings_store: Any) -> dict[str, bool]:
+    settings_key = provider.get("settingsKey")
+    if not settings_key:
+        raise ValueError("This ASR provider has no WebUI API settings")
+    api_key = str(payload.get("apiKey") or "").strip()
+    if not api_key and not settings_store.get(settings_key):
+        raise ValueError("API key is required")
+    if api_key:
+        settings_store[settings_key] = api_key
+        settings_store.save()
+    return {"configured": True}
+
+
+def _translation_models(provider: dict[str, Any], settings_store: Any) -> list[str]:
+    model_key = provider.get("modelKey")
+    if not model_key:
+        return []
+    models = [item.strip() for item in str(runtime_config.settings.get(model_key, "")).split(",") if item.strip()]
+    current = str(settings_store.get(model_key, "")).strip()
+    if current and current not in models:
+        models.insert(0, current)
+    return models
+
+
+def _translation_snapshot(provider: dict[str, Any], settings_store: Any) -> dict[str, Any]:
+    key_name = provider.get("keyKey")
+    model_key = provider.get("modelKey")
+    base_url_key = provider.get("baseUrlKey")
+    return {
+        "id": provider["id"],
+        "label": provider["label"],
+        "translateType": provider["translateType"],
+        "requiresSettings": bool(key_name),
+        "configured": not key_name or bool(settings_store.get(key_name)),
+        "baseUrl": str(settings_store.get(base_url_key, provider.get("defaultBaseUrl", ""))) if base_url_key else "",
+        "model": str(settings_store.get(model_key, "")) if model_key else "",
+        "models": _translation_models(provider, settings_store),
+    }
+
+
+def _save_translation_settings(provider: dict[str, Any], payload: dict[str, Any], settings_store: Any) -> dict[str, Any]:
+    key_name = provider["keyKey"]
+    api_key = str(payload.get("apiKey") or "").strip()
+    if not api_key and not settings_store.get(key_name):
+        raise ValueError("API key is required")
+
+    model_key = provider["modelKey"]
+    model = str(payload.get("model") or settings_store.get(model_key, "")).strip()
+    if not model:
+        raise ValueError("Model is required")
+
+    base_url_key = provider["baseUrlKey"]
+    base_url = str(payload.get("baseUrl") or settings_store.get(base_url_key, provider["defaultBaseUrl"])).strip()
+    if provider["id"] == "openai":
+        base_url = process_openai_api(base_url)
+    elif base_url:
+        if not re.match(r"^https?://", base_url, flags=re.I):
+            raise ValueError("Base URL must start with http:// or https://")
+        base_url = base_url.rstrip("/")
+
+    if api_key:
+        settings_store[key_name] = api_key
+    settings_store[model_key] = model
+    settings_store[base_url_key] = base_url
+    settings_store.save()
+    return _translation_snapshot(provider, settings_store)
+
+
+def test_translation_provider(translate_type: int, aisendsrt: bool | None = None) -> str:
+    if translate_type == translator.GOOGLE_INDEX and translator._check_google() is not True:
+        raise RuntimeError("Google Translate is not reachable")
+    raw = "你好啊我的朋友"
+    translated = translator.run(
+        translate_type=translate_type,
+        text_list=[{"text": raw, "line": 1, "time": "00:00:00,000 --> 00:00:05,000"}],
+        target_code="en",
+        source_code="zh-cn",
+        is_test=True,
+        aisendsrt=aisendsrt,
+    )
+    if not translated or not translated[0].get("text"):
+        raise RuntimeError("The translation provider returned no text")
+    return str(translated[0]["text"])
+
+
+def test_asr_provider(recogn_type: int, model_name: str) -> str:
+    provider = ASR_BY_TYPE.get(recogn_type)
+    if provider is None or not provider.get("thirdParty"):
+        raise ValueError("Connection testing is only available for third-party ASR providers")
+    if model_name not in provider["models"]:
+        raise ValueError(f"Model {model_name} is not supported by {provider['label']}")
+
+    sample_audio = Path(ROOT_DIR) / "videotrans" / "styles" / "no-remove.wav"
+    with TemporaryDirectory(prefix="asr-test-", dir=TEMP_DIR) as cache_folder:
+        result = recognition.run(
+            audio_file=sample_audio.as_posix(),
+            cache_folder=cache_folder,
+            recogn_type=recogn_type,
+            model_name=model_name,
+            detect_language="zh-cn",
+            uuid=f"asr-test-{uuid.uuid4().hex}",
+        )
+    if not result or not result[0].get("text"):
+        raise RuntimeError("The ASR provider returned no transcription")
+    return str(result[0]["text"])
+
+
 def build_task_params(input_path: Path, options: dict[str, Any]) -> dict[str, Any]:
     """Translate supported frontend fields into the existing task configuration."""
     file_info = format_video(input_path.resolve().as_posix())
@@ -223,14 +458,29 @@ def build_task_params(input_path: Path, options: dict[str, Any]) -> dict[str, An
     cache_dir = Path(TEMP_DIR) / file_info.uuid
 
     recogn_type = _required_index(options.get("recognType"), len(recognition.RECOGN_NAME_LIST), "ASR engine")
+    asr_provider = ASR_BY_TYPE.get(recogn_type)
+    if asr_provider is None:
+        raise ValueError(f"Unsupported ASR engine: {recogn_type}")
+    model_name = str(options.get("modelName") or asr_provider["models"][0])
+    if model_name not in asr_provider["models"]:
+        raise ValueError(f"Model {model_name} is not supported by {asr_provider['label']}")
     translate_type = _required_index(options.get("translateType"), len(translator.TRANSLASTE_NAME_LIST), "translation engine")
-    tts_type = _required_index(options.get("ttsType", 0), len(tts.TTS_NAME_LIST), "voice engine")
+    if translate_type not in TRANSLATION_BY_TYPE:
+        raise ValueError(f"Unsupported translation engine: {translate_type}")
+    _, aisendsrt = _translation_mode(options.get("translationMode"))
+    tts_type = _required_index(
+        options.get("ttsType", tts.DEFAULT_TTS), len(tts.TTS_NAME_LIST), "voice engine"
+    )
     source_language = str(options.get("sourceLanguage") or "")
     target_language = str(options.get("targetLanguage") or "")
     if source_language not in translator.LANGNAME_DICT:
         raise ValueError(f"Unknown source language: {source_language or 'missing'}")
     if target_language not in translator.LANGNAME_DICT:
         raise ValueError(f"Unknown target language: {target_language or 'missing'}")
+    timing_mode = str(options.get("timingMode") or "voice")
+    timing_flags = TIMING_MODES.get(timing_mode)
+    if timing_flags is None:
+        raise ValueError(f"Unknown timing mode: {timing_mode}")
     voice_role = str(options.get("voiceRole") or "")
     if not voice_role:
         try:
@@ -246,20 +496,19 @@ def build_task_params(input_path: Path, options: dict[str, Any]) -> dict[str, An
         "source_language_code": source_language,
         "target_language_code": target_language,
         "recogn_type": recogn_type,
-        "model_name": str(options.get("modelName") or "large-v3-turbo"),
+        "model_name": model_name,
         "translate_type": translate_type,
+        "aisendsrt": aisendsrt,
         "tts_type": tts_type,
         "voice_role": voice_role,
         "is_cuda": bool(options.get("useCuda", False)),
-        "remove_noise": bool(options.get("removeNoise", True)),
+        "remove_noise": bool(options.get("removeNoise", False)),
         "enable_diariz": bool(options.get("speakerDiarization", False)),
         "nums_diariz": int(options.get("speakerCount", 0) or 0),
         "voice_rate": str(options.get("voiceRate") or "+0%"),
         "volume": "+0%",
         "pitch": "+0Hz",
-        "voice_autorate": True,
-        "video_autorate": False,
-        "align_sub_audio": True,
+        **timing_flags,
         "subtitle_type": 1,
         "clear_cache": True,
         "embed_bgm": True,
@@ -267,15 +516,132 @@ def build_task_params(input_path: Path, options: dict[str, Any]) -> dict[str, An
     return params
 
 
-async def options_handler(_request: web.Request) -> web.Response:
+async def options_handler(request: web.Request) -> web.Response:
     languages = [{"code": code, "name": name} for code, name in translator.LANGNAME_DICT.items()]
+    settings_store = request.app["settings_store"]
+    asr_providers = []
+    for provider in ASR_PROVIDERS:
+        settings_key = provider.get("settingsKey")
+        asr_providers.append({
+            "id": provider["id"],
+            "label": provider["label"],
+            "recognType": provider["recognType"],
+            "models": list(provider["models"]),
+            "requiresSettings": bool(settings_key),
+            "configured": bool(settings_key and settings_store.get(settings_key)),
+            "testable": bool(provider.get("thirdParty")),
+        })
     return web.json_response({
         "languages": languages,
-        "recognizers": list(enumerate(recognition.RECOGN_NAME_LIST)),
-        "translators": list(enumerate(translator.TRANSLASTE_NAME_LIST)),
+        "asrProviders": asr_providers,
+        "translationProviders": [
+            _translation_snapshot(provider, settings_store)
+            for provider in TRANSLATION_PROVIDERS
+        ],
+        "translationModes": [
+            {"id": mode_id, "label": mode["label"], "description": mode["description"]}
+            for mode_id, mode in TRANSLATION_MODES.items()
+        ],
         "voices": list(enumerate(tts.TTS_NAME_LIST)),
-        "models": list(FASTER_MODELS_DICT.keys()),
+        "defaults": {
+            "sourceLanguage": "zh-cn",
+            "targetLanguage": "vi",
+            "recognType": recognition.Deepgram,
+            "modelName": "nova-3",
+            "timingMode": "voice",
+            "translateType": translator.GOOGLE_INDEX,
+            "translationMode": _translation_mode()[0],
+            "ttsType": tts.DEFAULT_TTS,
+        },
     })
+
+
+async def asr_settings_handler(request: web.Request) -> web.Response:
+    provider = ASR_BY_ID.get(request.match_info["provider_id"])
+    if provider is None or not provider.get("settingsKey"):
+        raise web.HTTPNotFound(text="This ASR provider has no WebUI API settings")
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise web.HTTPBadRequest(text="A JSON settings request is required") from exc
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="ASR settings must be a JSON object")
+    try:
+        snapshot = _save_asr_settings(provider, payload, request.app["settings_store"])
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+    return web.json_response(snapshot)
+
+
+async def test_asr_settings_handler(request: web.Request) -> web.Response:
+    provider = ASR_BY_ID.get(request.match_info["provider_id"])
+    if provider is None or not provider.get("thirdParty"):
+        raise web.HTTPNotFound(text="This ASR provider does not use a third-party connection")
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise web.HTTPBadRequest(text="A JSON settings request is required") from exc
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="ASR settings must be a JSON object")
+
+    model_name = str(payload.get("model") or "").strip()
+    if model_name not in provider["models"]:
+        raise web.HTTPBadRequest(text=f"Model {model_name or 'missing'} is not supported by {provider['label']}")
+    try:
+        if provider.get("settingsKey"):
+            _save_asr_settings(provider, payload, request.app["settings_store"])
+        result = await asyncio.to_thread(
+            request.app["asr_tester"], provider["recognType"], model_name
+        )
+    except Exception as exc:
+        runtime_config.logger.exception("ASR connection test failed", exc_info=True)
+        raise web.HTTPBadRequest(text=f"Connection test failed: {get_msg_from_except(exc)}") from exc
+    return web.json_response({
+        "ok": True,
+        "message": "Connection successful",
+        "model": model_name,
+        "result": result,
+    })
+
+
+async def translation_settings_handler(request: web.Request) -> web.Response:
+    provider = TRANSLATION_BY_ID.get(request.match_info["provider_id"])
+    if provider is None or not provider.get("keyKey"):
+        raise web.HTTPNotFound(text="This translation provider has no WebUI settings")
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise web.HTTPBadRequest(text="A JSON settings request is required") from exc
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="Translation settings must be a JSON object")
+    try:
+        snapshot = _save_translation_settings(provider, payload, request.app["settings_store"])
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc)) from exc
+    return web.json_response(snapshot)
+
+
+async def test_translation_settings_handler(request: web.Request) -> web.Response:
+    provider = TRANSLATION_BY_ID.get(request.match_info["provider_id"])
+    if provider is None:
+        raise web.HTTPNotFound(text="Unsupported translation provider")
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise web.HTTPBadRequest(text="A JSON settings request is required") from exc
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="Translation settings must be a JSON object")
+    try:
+        _, aisendsrt = _translation_mode(payload.get("translationMode"))
+        if provider.get("keyKey"):
+            _save_translation_settings(provider, payload, request.app["settings_store"])
+        result = await asyncio.to_thread(
+            request.app["translation_tester"], provider["translateType"], aisendsrt
+        )
+    except Exception as exc:
+        runtime_config.logger.exception("Translation connection test failed", exc_info=True)
+        raise web.HTTPBadRequest(text=f"Connection test failed: {get_msg_from_except(exc)}") from exc
+    return web.json_response({"ok": True, "message": "Connection successful", "result": result})
 
 
 async def voices_handler(request: web.Request) -> web.Response:
@@ -330,6 +696,8 @@ async def create_job_handler(request: web.Request) -> web.Response:
 
     try:
         params = build_task_params(media.path, options)
+        ensure_asr_configured(params["recogn_type"], request.app["settings_store"])
+        ensure_translation_configured(params["translate_type"], request.app["settings_store"])
         getset_gpu()
         manager: JobManager = request.app["job_manager"]
         job = manager.submit(params, media_id=media.id)
@@ -376,15 +744,25 @@ def create_app(
     job_manager: JobManager | None = None,
     upload_dir: Path | None = None,
     media_probe: Callable[[str | Path], dict[str, Any]] = get_video_info,
+    settings_store: Any = None,
+    asr_tester: Callable[[int, str], str] = test_asr_provider,
+    translation_tester: Callable[[int, bool | None], str] = test_translation_provider,
 ) -> web.Application:
     if not (FRONTEND_DIR / "index.html").is_file():
         raise RuntimeError(f"Frontend not found: {FRONTEND_DIR}")
     app = web.Application(client_max_size=20 * 1024 ** 3)
     app["job_manager"] = job_manager or JOBS
     app["media_store"] = MEDIA if upload_dir is None and media_probe is get_video_info else MediaStore(upload_dir or UPLOAD_DIR, media_probe)
+    app["settings_store"] = app_params if settings_store is None else settings_store
+    app["asr_tester"] = asr_tester
+    app["translation_tester"] = translation_tester
     app.router.add_get("/", index_handler)
     app.router.add_get("/api/options", options_handler)
     app.router.add_get("/api/voices", voices_handler)
+    app.router.add_post("/api/asr-settings/{provider_id}", asr_settings_handler)
+    app.router.add_post("/api/asr-settings/{provider_id}/test", test_asr_settings_handler)
+    app.router.add_post("/api/translation-settings/{provider_id}", translation_settings_handler)
+    app.router.add_post("/api/translation-settings/{provider_id}/test", test_translation_settings_handler)
     app.router.add_post("/api/media", media_handler)
     app.router.add_post("/api/jobs", create_job_handler)
     app.router.add_get("/api/jobs/{job_id}", job_handler)

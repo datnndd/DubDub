@@ -4,7 +4,6 @@ import time
 from pathlib import Path
 
 from videotrans.configure.config import tr, logger
-from videotrans.tts import EDGE_TTS, AZURE_TTS
 from videotrans.util.help_ffmpeg import get_video_duration, runffmpeg
 from videotrans.util.help_misc import vail_file, is_novoice_mp4
 from videotrans.util.help_srt import ms_to_time_string, delete_punc
@@ -55,8 +54,7 @@ class AlignMixin:
                     it['text']=delete_punc(it['text'])
                 it['text']=it['text'].strip('...')
 
-        if self.cfg.tts_type not in [EDGE_TTS, AZURE_TTS] and self.cfg.volume != '+0%' and vail_file(
-                self.cfg.target_wav):
+        if self.cfg.volume != '+0%' and vail_file(self.cfg.target_wav):
             volume = self.cfg.volume.replace('%', '').strip()
             try:
                 volume = 1 + float(volume) / 100

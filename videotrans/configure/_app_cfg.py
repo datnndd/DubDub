@@ -16,7 +16,6 @@ class AppCfg:
     stoped_uuid_set: set = field(default_factory=set)
     global_msg: List = field(default_factory=list)
     exit_soft: bool = False
-    indextts_default_choice: str = 'Same as the voice reference'
 
     child_forms: Dict = field(default_factory=dict)
     INFO_WIN: Dict = field(default_factory=lambda: {"data": {}, "win": None})

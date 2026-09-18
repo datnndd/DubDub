@@ -59,37 +59,8 @@ VIDEO_EXTS = ["mp4", "mkv", "mpeg", "avi", "mov", "mts", "webm", "ogg", "ts", "f
 # 支持的音频格式
 AUDIO_EXITS = ["mp3", "wav", "aac", "flac", "m4a", "ogg", "wma"]
 
-#------------默认TTS配音角色
-ChatTTS_VOICE = "11,12,16,2222,4444,6653,7869,9999,5,13,14,1111,3333,4099,5099,5555,8888,6666,7777"
-# openai-tts音色
-OPENAITTS_ROLES = "alloy,ash,ballad,coral,echo,fable,onyx,nova,sage,shimmer,verse"
-XAITTS_ROLES = 'eve,ara,rex,sal,leo'
-MITTS_ROLES = 'mimo_default,default_zh,冰糖,茉莉,苏打,白桦,Mia,Milo,Dean,Chloe,default_en'
-
 #-----------默认模型名字-----------------
-FASTER_MODELS_DICT = {
-    "tiny.en": "Systran/faster-whisper-tiny.en",
-    "tiny": "Systran/faster-whisper-tiny",
-    "base.en": "Systran/faster-whisper-base.en",
-    "base": "Systran/faster-whisper-base",
-    "small.en": "Systran/faster-whisper-small.en",
-    "small": "Systran/faster-whisper-small",
-    "medium.en": "Systran/faster-whisper-medium.en",
-    "medium": "Systran/faster-whisper-medium",
-    "large-v1": "Systran/faster-whisper-large-v1",
-    "large-v2": "Systran/faster-whisper-large-v2",
-    "large-v3": "Systran/faster-whisper-large-v3",
-    "large": "Systran/faster-whisper-large-v3",
-    "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
-    "distil-medium.en": "Systran/faster-distil-whisper-medium.en",
-    "distil-small.en": "Systran/faster-distil-whisper-small.en",
-    "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
-    "distil-large-v3.5": "distil-whisper/distil-large-v3.5-ct2",
-    "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
-    "turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
-}
-# funasr模型
-FUNASR_MODEL = ['Fun-ASR-Nano-2512', 'Fun-ASR-MLT-Nano-2512', 'paraformer-zh', 'SenseVoiceSmall']
+FASTER_MODELS_DICT = {"large-v3": "Systran/faster-whisper-large-v3"}
 # deepgram 支持的语音识别模型
 DEEPGRAM_MODEL = [
     "nova-3",
@@ -110,42 +81,13 @@ GEMINITTS_ROLES = "Zephyr,Puck,Charon,Kore,Fenrir,Leda,Orus,Aoede,Callirrhoe,Aut
 
 GEMINI_TTS_MODELS = "gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts"
 
-Whisper_cpp_models = "ggml-tiny.bin,ggml-base.bin,ggml-small.bin,ggml-medium.bin,ggml-large-v1.bin,ggml-large-v2.bin,ggml-large-v3.bin,ggml-large-v3-turbo.bin"
-Whisper_net_models = Whisper_cpp_models
-Qwenmt_Model = "qwen-mt-turbo,qwen-mt-plus,qwen-mt-flash,qwen-mt-lite,qwen3.7-max,qwen3.7-plus,qwen3.6-flash,qwen3.6-plus,qwen3-asr-flash,qwen3-asr-flash-filetrans"
-Qwentts_Models = 'qwen3-tts-flash,qwen3-tts-instruct-flash,qwen-tts-latest,qwen-tts'
-Qpenaitts_Model = "tts-1,tts-1-hd,gpt-4o-mini-tts"
-
-Openairecognapi_Model = "whisper-1,gpt-4o-transcribe,gpt-4o-mini-transcribe,gpt-4o-transcribe-diarize"
-
 Chatgpt_Model = "gpt-5.5,gpt-5.5-pro,gpt-5.4-pro,gpt-5.4,gpt-5.4-mini,gpt-5,gpt-5-mini,gpt-4.1"
-Azure_Model = "gpt-5.5,gpt-5.4-mini, gpt-5.4-nano, gpt-5.4, gpt-5.4-pro,gpt-5.1, gpt-5.1-chat"
-Localllm_Model = "qwen3.6,deepseek-v4-flash"
-Zhipuai_Model = "glm-5.2,glm-5.1,glm-5, glm-4.7, glm-4.7-flash, glm-4.6,glm-4.5-flash"
-
 Deepseek_Model = "deepseek-v4-pro,deepseek-v4-flash"
-Openrouter_Model = "minimax/minimax-m2.7,z-ai/glm-5,qwen/qwen3-max-thinking,moonshotai/kimi-k2.5,google/gemini-3-flash-preview"
-Guiji_Model = "Pro/zai-org/GLM-5.1,Pro/zai-org/GLM-5,Pro/moonshotai/Kimi-K2.6,Qwen/Qwen3.6-35B-A3B,MiniMaxAI/MiniMax-M2.5"
-Ai302_Models = "deepseek-v4-pro,deepseek-v4-flash"
-Zijiehuoshan_Model = "doubao-seed-2-0-pro-260215,doubao-seed-2-0-lite-260215,doubao-seed-2-0-mini-260215"
-
-Whisper_Models = "tiny,tiny.en,base,base.en,small,small.en,medium,medium.en,large-v3-turbo,large-v1,large-v2,large-v3,distil-large-v3,distil-large-v3.5"
-Openai_Whisper_Models = "tiny,tiny.en,base,base.en,small,small.en,medium,medium.en,large-v3-turbo,large-v1,large-v2,large-v3"
-
-MINIMAX_MODELS = "MiniMax-M3,MiniMax-M2.7,MiniMax-M2.7-highspeed"
-MINIMAX_TTS_MODELS = "speech-2.8-hd,speech-2.8-turbo,speech-2.6-hd,speech-2.6-turbo,speech-02-hd,speech-02-turbo"
-
+Whisper_Models = "large-v3"
 ELEVENLABS_TTS_MODELS = "eleven_v3,eleven_flash_v2_5,eleven_flash_v2,eleven_multilingual_v2,eleven_multilingual_v1"
-
-XIAOMI_MODELS = 'mimo-v2.5-pro,mimo-v2.5,mimo-v2-pro,mimo-v2-omni'
-XIAOMI_TTS_MODELS = 'mimo-v2.5-tts,mimo-v2-tts'
 
 
 #--------------模型下载地址-------------------
-# whisper.cpp windows二进制文件
-WHISPER_CPP_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/whisper-cpp-win32.zip'
-WHISPER_CPP_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/whisper-cpp-win32.zip?download=true'
-
 # 内置说话人下载地址
 BUILTINT_URL_MS = [
     "https://www.modelscope.cn/models/himyworld/videotrans/resolve/master/onnx/seg_model.onnx",
@@ -179,38 +121,9 @@ DENOISE_URL_HF = [
 # 背景音频分离地址前缀
 UVR_URL_MS = 'https://www.modelscope.cn/models/himyworld/videotrans/resolve/master/onnx/{}'
 UVR_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/onnx/{}?download=true'
-# M2M100模型下载地址
-M2M100_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/m2m100_12b_model.zip'
-M2M100_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/m2m100_12b_model.zip?download=true'
-# ZipVoice-TTS 下载地址
-ZIPVOICE_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/zipvoice-tts.zip'
-ZIPVOICE_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/zipvoice-tts.zip?download=true'
-# VITS-TTS 下载地址
-VITS_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/vits-tts.zip'
-VITS_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/vits-tts.zip?download=true'
-# GPTW 用于 piper-TTS  下载地址
-GPTW_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/G2PWModel-v2-onnx.zip'
-GPTW_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/G2PWModel-v2-onnx.zip?download=true'
-# 小红书语音识别 fireredasr 下载地址
-FIRERED_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/fireredasr2aed.zip'
-FIRERED_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/fireredasr2aed.zip?download=true'
-# dolphine 语音识别模型下载地址
-DOLPHIN_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/dolphin.zip'
-DOLPHIN_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/dolphin.zip?download=true'
-# parakeet-ja日语识别模型下载地址
-PARAKEETJA_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/parakeet-ja.zip'
-PARAKEETJA_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/parakeet-ja.zip?download=true'
-# omnilingual 语音识别模型下载地址
-OMNILINGUAL_URL_MS = 'https://modelscope.cn/models/himyworld/videotrans/resolve/master/omnilingual.zip'
-OMNILINGUAL_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/omnilingual.zip?download=true'
-
 # realtime stt
 REALTIME_URL_MS='https://modelscope.cn/models/himyworld/videotrans/resolve/master/realtimestt.zip'
 REALTIME_URL_HF='https://huggingface.co/mortimerme/repocollect/resolve/main/realtimestt.zip?download=true'
-
-# whisper.cpp 模型下载地址
-WHISPERCPP_MODEL_URL_HF='https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}?download=true'
-WHISPERCPP_MODEL_URL_MS='https://modelscope.cn/models/viggocx/whisper.cpp/resolve/master/{}'
 
 #----------Rubberband 库安装提示------------------
 INSTALL_RUBBERBAND_TIPS = """Windows: For Windows systems, please download the file, extract it, and place it in the ffmpeg folder in the current directory. Use a better audio acceleration algorithm\nhttps://breakfastquay.com/files/releases/rubberband-4.0.0-gpl-executable-windows.zip

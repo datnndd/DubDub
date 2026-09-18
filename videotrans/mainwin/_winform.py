@@ -12,13 +12,6 @@ class WinformMixin:
         if name == 'refaudio':
             show_refaudio_win()
             return
-        if name == 'xxl':
-            from videotrans.component.set_xxl import SetFasterXXL
-            dialog = SetFasterXXL()
-            dialog.exec()
-            return
-
-
         winobj = app_cfg.child_forms.get(name)
         if winobj:
             if hasattr(winobj, 'update_ui'):

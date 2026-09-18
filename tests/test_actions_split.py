@@ -68,7 +68,7 @@ class TestActionsMethods:
         '_reset', 'set_djs_timeout', 'delete_process', 'import_sub_fun',
         'set_translate_type', 'set_subtitle_type', 'shound_translate', 'check_tts',
         'check_reccogn', 'check_output', 'check_name_length', 'check_start',
-        'show_xxl_select', 'show_cpp_select', 'recogn_type_change', 'model_type_change',
+        'show_cpp_select', 'recogn_type_change', 'model_type_change',
         'tts_type_change', 'set_voice_role',
         'create_btns', 'retry', 'add_process_btn', 'set_process_btn_text',
         'update_status', 'update_data', '_check_all_done',

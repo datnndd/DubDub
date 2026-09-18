@@ -196,7 +196,7 @@ class RecognMixin:
                                  recogn_type=recogn_type,
                                  model_name=model_name) is not True:
                 recogn_type = FASTER_WHISPER
-                model_name = 'large-v3-turbo'
+                model_name = 'large-v3'
 
             raw_subtitles = run_recogn(
                 recogn_type=recogn_type,

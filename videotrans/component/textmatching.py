@@ -418,7 +418,7 @@ class TextmatchingWindow(QWidget):
         settings_layout.addWidget(QLabel(tr("label_model")))
         self.combo_model = QComboBox()
         self.combo_model.setMinimumWidth(150)
-        self.combo_model.addItems([ "large-v2", "large-v3","large-v3-turbo", "medium"])
+        self.combo_model.addItems(["large-v3"])
         settings_layout.addWidget(self.combo_model)
         settings_layout.addWidget(QLabel(tr("language")))
         self.language = QComboBox()
@@ -482,7 +482,7 @@ class TextmatchingWindow(QWidget):
     # ==========================
     def load_settings(self):
         """启动时加载配置"""
-        saved_model = self.settings.value("model_size", "large-v3-turbo")
+        saved_model = self.settings.value("model_size", "large-v3")
         index = self.combo_model.findText(saved_model)
         if index != -1:
             self.combo_model.setCurrentIndex(index)

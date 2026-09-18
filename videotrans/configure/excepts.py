@@ -182,9 +182,6 @@ def _handle_connection_error_detail(error, lang):
 
     # 为中文用户添加额外提示
     if lang == 'zh' and api_url and not is_local:
-        if "api.msedgeservices.com" in api_url.lower():
-            base_message += ". EdgeTTS使用频繁可能触发限流，请稍等段时间重试。"
-            return base_message
         if "edge.microsoft.com" in api_url.lower():
             base_message += ". 微软翻译使用频繁可能触发限流，请稍等段时间重试。"
             return base_message

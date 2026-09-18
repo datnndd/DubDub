@@ -185,7 +185,7 @@ def openwin():
         if tts.is_input_api(tts_type=tts_type) is not True:
             return False
 
-        if tts_type not in [tts.EDGE_TTS,tts.OMNIVOICE_TTS,tts.G_TTS]:
+        if tts_type != tts.OMNIVOICE_TTS:
             langcode = translator.get_code(show_text=language)
             is_allow_lang_res = tts.is_allow_lang(langcode=langcode, tts_type=tts_type)
             if is_allow_lang_res is not True:
@@ -263,7 +263,7 @@ def openwin():
         uuid = None
 
     def getlangnamelist(tts_type=0):
-        if tts_type not in [tts.EDGE_TTS,tts.OMNIVOICE_TTS,tts.G_TTS]:
+        if tts_type != tts.OMNIVOICE_TTS:
             return ['-'] + list(translator.LANGNAME_DICT.values())
         return ['-'] + list(langname_dict.values())
 
@@ -276,7 +276,7 @@ def openwin():
             winobj.volume_rate.setDisabled(True)
             winobj.pitch_rate.setDisabled(True)
 
-        winobj.is_cuda.setVisible(type  in [tts.QWEN3LOCAL_TTS,tts.CHATTERBOX_TTS])
+        winobj.is_cuda.setVisible(False)
 
         current_text = winobj.hecheng_language.currentText()
         langnamelist = getlangnamelist(type)
@@ -286,21 +286,20 @@ def openwin():
             winobj.hecheng_language.setCurrentText(current_text)
         code = translator.get_code(show_text=current_text)
 
-        if type != tts.EDGE_TTS:
-            is_allow_lang_res = tts.is_allow_lang(langcode=code, tts_type=type)
-            winobj.loglabel.setText(is_allow_lang_res if is_allow_lang_res is not True else '')
+        is_allow_lang_res = tts.is_allow_lang(langcode=code, tts_type=type)
+        winobj.loglabel.setText(is_allow_lang_res if is_allow_lang_res is not True else '')
 
         role_list = role_menu(type, code)
         winobj.hecheng_role.clear()
         if 'clone' in role_list:
             role_list.remove('clone')
         winobj.hecheng_role.addItems(role_list)
-        if type != tts.EDGE_TTS and tts.is_input_api(tts_type=type) is not True:
+        if tts.is_input_api(tts_type=type) is not True:
             return False
 
     def hecheng_language_fun(t):
         tts_type = winobj.tts_type.currentIndex()
-        if tts_type in [tts.EDGE_TTS,tts.OMNIVOICE_TTS,tts.G_TTS]:
+        if tts_type == tts.OMNIVOICE_TTS:
             code_list = [key for key, value in langname_dict.items() if value == t]
             code = code_list[0] if code_list else '-'
         else:

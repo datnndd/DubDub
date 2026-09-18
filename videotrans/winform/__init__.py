@@ -1,28 +1,11 @@
 import importlib
 
 _module_map = {
-"ai302":".ai302",
-"ali":".ali",
-"azure":".azure",
 "ocr":".ocr",# hard-subtitle ROI
-"azuretts":".azuretts",
-"baidu":".baidu",
-"cambtts":".cambtts",
 "chatgpt":".chatgpt",
-"chatterbox":".chatterbox",
-"chattts":".chattts",
-"clone":".clone",
-"cosyvoice":".cosyvoice",
-"omnivoice":".omnivoice",
 "deepgram":".deepgram",
-"deepL":".deepL",
-"deepLX":".deepLX",
-"xiaomi":".xiaomi",
 "deepseek":".deepseek",
-"doubao2":".doubao2",# 豆包语音合成2.0
 "elevenlabs":".elevenlabs",
-"gradiowin":".gradiowin",
-"fishtts":".fishtts",
 "fn_audiofromvideo":".fn_audiofromvideo",
 "fn_fanyisrt":".fn_fanyisrt",
 "fn_formatcover":".fn_formatcover",
@@ -38,34 +21,9 @@ _module_map = {
 "fn_videoandsrt":".fn_videoandsrt",
 "fn_watermark":".fn_watermark",
 "gemini":".gemini",
-"gptsovits":".gptsovits",
-"kokoro":".kokoro",
-"libre":".libre",
-"localllm":".localllm",
-"minimaxi":".minimaxi",#tts
-"minimax":".minimax",#翻译
-"openairecognapi":".openairecognapi",
-"openaitts":".openaitts",
-"openrouter":".openrouter",
-"parakeet":".parakeet",
 "qwenasrlocal":".qwenasrlocal",
-"qwenmt":".qwenmt",
-"qwentts":".qwentts",
-"qwenttslocal":".qwenttslocal",
-"recognapi":".recognapi",
 "setini":".setini",
-"siliconflow":".siliconflow",
-"sttapi":".sttapi",
-"tencent":".tencent",
-"transapi":".transapi",
-"ttsapi":".ttsapi",
 "vieneutts":".vieneutts",
-"zhipuai":".zhipuai",
-"zijiehuoshan":".zijiehuoshan",#字节火山大模型翻译
-"zijierecognmodel":".zijierecognmodel",#字节语音识别大模型极速版
-"whisperxapi":".whisperxapi",
-"xaitts":".xaitts",
-"xiaomi":".xiaomi",
 }
 
 _loaded_modules = {}  # 用于缓存已经加载过的模块
