@@ -63,8 +63,23 @@ function renderApp() {
   }
 }
 
-// Initial mount & subscribe to reactive state changes
-store.subscribe(() => {
+function renderStatusOnly() {
+  const footer = document.querySelector('[data-status-footer]');
+  if (!footer) {
+    renderApp();
+    return;
+  }
+  footer.outerHTML = renderStatusFooter(store.getState());
+}
+
+// Initial mount & subscribe to reactive state changes.
+// ASR polling updates only the status footer so the active <video> element is
+// not destroyed and recreated on every polling interval.
+store.subscribe((_state, scope = 'full') => {
+  if (scope === 'status') {
+    renderStatusOnly();
+    return;
+  }
   renderApp();
 });
 

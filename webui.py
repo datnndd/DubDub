@@ -522,7 +522,9 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
             target_language = source_language
         timing_mode = str(options.get("timingMode") or "voice")
         timing_flags = TIMING_MODES.get(timing_mode, TIMING_MODES["voice"])
-        voice_role = str(options.get("voiceRole") or "No")
+        # Stage 1 is ASR-only. Voice assignment belongs to Stage 3 and must
+        # not activate dubbing/render preparation while transcription is running.
+        voice_role = "No"
     else:
         translate_type = _required_index(options.get("translateType"), len(translator.TRANSLASTE_NAME_LIST), "translation engine")
         if translate_type not in TRANSLATION_BY_TYPE:
@@ -582,15 +584,20 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
         "volume": norm_volume,
         "pitch": "+0Hz",
         **timing_flags,
-        "subtitle_type": 1,
+        # ASR-only jobs should extract audio, transcribe, and diarize only.
+        # Prevent PrepareMixin from spawning the no-audio video render thread,
+        # which otherwise competes with Deepgram for CPU/GPU/disk resources.
+        "video_autorate": False if is_asr_only else timing_flags.get("video_autorate", False),
+        "subtitle_type": 0 if is_asr_only else 1,
+        "only_out_dubbed_audio": bool(is_asr_only),
         "subtitles": str(options.get("subtitles") or ""),
-        "background_music": options.get("backgroundMusicPath"),
+        "background_music": None if is_asr_only else options.get("backgroundMusicPath"),
         "backaudio_volume": _safe_volume(options.get("backgroundAudioVolume"), 0.8),
         "source_audio_volume": _safe_volume(options.get("originalAudioVolume"), 0.0),
-        "thumbnail": options.get("thumbnailPath"),
+        "thumbnail": None if is_asr_only else options.get("thumbnailPath"),
         "subtitle_style": options.get("subtitleStyle") if isinstance(options.get("subtitleStyle"), dict) else None,
         "clear_cache": job_type != "render",
-        "embed_bgm": True,
+        "embed_bgm": not is_asr_only,
     })
     return params
 
