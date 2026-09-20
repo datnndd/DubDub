@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import List, Union
 from pathlib import Path
@@ -59,7 +60,19 @@ class DeepgramRecogn(BaseRecogn):
             utt_split=int(settings.get('min_silence_duration_ms', 140)) / 1000,
         )
 
+        request_started = time.perf_counter()
+        logger.info(
+            "[Deepgram] prerecorded request start model=%s language=%s diarize=%s payload=%.2f MiB",
+            self.model_name,
+            self.detect_language[:2],
+            diarize,
+            len(buffer_data) / (1024 * 1024),
+        )
         res = deepgram.listen.rest.v("1").transcribe_file(payload, options, timeout=600)
+        logger.info(
+            "[Deepgram] prerecorded request completed in %.2fs",
+            time.perf_counter() - request_started,
+        )
 
         raws = []
         if diarize:

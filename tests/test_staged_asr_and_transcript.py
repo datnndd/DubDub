@@ -704,6 +704,48 @@ def test_ocr_extract_handler_forwards_language(tmp_path):
 # 4. Tests for Frontend Invariants (Stage 1 Start Dub, Stage 2 Workspace)
 # ============================================================================
 
+def test_asr_job_params_skip_video_render_preparation(tmp_path, monkeypatch):
+    source = tmp_path / "sample.mp4"
+    source.write_bytes(b"video")
+    temp_dir = tmp_path / "temp"
+    output_dir = tmp_path / "output"
+    temp_dir.mkdir()
+
+    monkeypatch.setattr(webui, "TEMP_DIR", str(temp_dir))
+    monkeypatch.setattr(webui, "OUTPUT_DIR", output_dir)
+
+    params = webui.build_task_params(source, {
+        "sourceLanguage": "en",
+        "targetLanguage": "vi",
+        "recognType": webui.recognition.Deepgram,
+        "modelName": "nova-3",
+        "timingMode": "video",
+        "voiceRole": "should-not-run-in-prepare",
+        "backgroundMusicPath": "bgm.mp3",
+        "thumbnailPath": "cover.jpg",
+    }, job_type="asr")
+
+    assert params["voice_role"] == "No"
+    assert params["video_autorate"] is False
+    assert params["subtitle_type"] == 0
+    assert params["only_out_dubbed_audio"] is True
+    assert params["embed_bgm"] is False
+    assert params["background_music"] is None
+    assert params["thumbnail"] is None
+
+
+def test_asr_polling_updates_status_without_remounting_video():
+    app_source = (Path(webui.FRONTEND_DIR) / "js" / "app.js").read_text(encoding="utf-8")
+    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
+    footer_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "StatusFooter.js").read_text(encoding="utf-8")
+
+    assert "renderStatusOnly" in app_source
+    assert "scope === 'status'" in app_source
+    assert "notify(scope = 'full')" in state_source
+    assert "this.notify('status')" in state_source
+    assert "data-status-footer" in footer_source
+
+
 def test_frontend_has_start_dub_button_and_tooltip():
     footer_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "StatusFooter.js").read_text(encoding="utf-8")
     assert "Start Dub" in footer_source
