@@ -258,6 +258,20 @@ class JobManager:
                     self._active_by_media.pop(job.media_id, None)
 
 
+def run_prepare_review(
+    request: TaskRequest,
+    event_sink: Callable[[TaskEvent], None] | None = None,
+    cancellation_token: CancellationToken | None = None,
+):
+    """Run only the stages needed to produce a transcript for Review Transcript."""
+    return run(
+        request,
+        event_sink,
+        cancellation_token,
+        stop_after_stage="diariz",
+    )
+
+
 class ActiveJobError(RuntimeError):
     """Raised when the same ingested media already has an active job."""
 
@@ -322,7 +336,7 @@ class MediaStore:
             return self._records.get(media_id)
 
 
-JOBS = JobManager()
+JOBS = JobManager(runner=run_prepare_review)
 MEDIA = MediaStore(UPLOAD_DIR, get_video_info)
 EDIT_ASSETS: dict[str, Path] = {}
 EDIT_ASSETS_LOCK = threading.Lock()

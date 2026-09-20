@@ -121,7 +121,7 @@ def run(
     cancellation_token: CancellationToken | None = None,
     stage_limit: str | None = None,
 ) -> TaskResult:
-    """Validate and execute one task, returning rather than raising task failures."""
+    """Validate and execute one task, optionally stopping after a completed stage."""
     emit = event_sink or (lambda _event: None)
     token = cancellation_token or CancellationToken()
     stage = "validation"
@@ -203,6 +203,8 @@ def run(
                 send(EventKind.CANCELLED, "Task cancelled")
                 return TaskResult(job_id, TaskStatus.CANCELLED, output_dir)
             send(EventKind.STAGE_COMPLETED)
+            if stage_name == stop_after_stage:
+                break
 
         _embed_thumbnail(task.cfg)
         outputs = _collect_outputs(task.cfg)

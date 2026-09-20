@@ -865,6 +865,10 @@ class WorkflowStore {
         this.notify('status');
         return;
       }
+      // Progress polling must not remount the whole application. A full render
+      // replaces the <video> element and resets playback on every poll.
+      this.notify(terminal ? 'full' : 'status');
+      return;
     } catch (error) {
       this.state.backend.status = 'failed';
       this.state.backend.error = error.message;
