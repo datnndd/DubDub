@@ -20,6 +20,7 @@ class RecognMixin:
 
     def recogn(self) -> None:
         _st=time.time()
+        self.asr_duration = None
         if self._exit(): return
         if not self.should_recogn: return
         self.precent += 3
@@ -156,7 +157,8 @@ class RecognMixin:
                 logger.exception(f"重新断句失败，已恢复原样 {e}", exc_info=True)
         self._recogn_succeed()
         self.signal(text=tr('endtiquzimu'))
-        logger.debug(f'[语音识别阶段结束耗时]:{time.time()-_st}s')
+        self.asr_duration = round(time.time() - _st, 2)
+        logger.debug(f'[语音识别阶段结束耗时]:{self.asr_duration}s')
 
     def _recogn_succeed(self) -> None:
         self.precent += 5

@@ -159,6 +159,7 @@ class JobRecord:
     events: list[dict[str, Any]] = field(default_factory=list)
     outputs: tuple[Path, ...] = ()
     segments: tuple[dict[str, Any], ...] = ()
+    asr_duration: float | None = None
     error: str | None = None
     media_id: str | None = None
     job_type: str = "full"
@@ -182,10 +183,30 @@ class JobRecord:
                 self.message = event.message
             if event.kind in {EventKind.RUNNING, EventKind.STAGE_STARTED}:
                 self.status = "running"
-            if event.details and "segments" in event.details:
-                raw_segs = event.details["segments"]
-                if isinstance(raw_segs, (list, tuple)):
-                    self.segments = tuple(raw_segs)
+            elif event.kind == EventKind.FAILED:
+                self.status = "failed"
+                self.error = event.message or "Processing failed"
+            elif event.kind == EventKind.CANCELLED:
+                self.status = "cancelled"
+                self.message = event.message or "Processing cancelled"
+            elif event.kind == EventKind.SUCCEEDED:
+                self.status = "succeeded"
+                self.progress = 100.0
+            if event.details:
+                if event.details.get("source_type") == "asr_timing" and "duration" in event.details:
+                    try:
+                        self.asr_duration = float(event.details["duration"])
+                    except (ValueError, TypeError):
+                        pass
+                elif "asr_duration" in event.details and event.details.get("asr_duration") is not None:
+                    try:
+                        self.asr_duration = float(event.details["asr_duration"])
+                    except (ValueError, TypeError):
+                        pass
+                if "segments" in event.details:
+                    raw_segs = event.details["segments"]
+                    if isinstance(raw_segs, (list, tuple)):
+                        self.segments = tuple(raw_segs)
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -203,6 +224,7 @@ class JobRecord:
                     for index, path in enumerate(self.outputs)
                 ],
                 "segments": list(self.segments),
+                "asrDuration": self.asr_duration,
             }
 
 
@@ -233,6 +255,10 @@ class JobManager:
         job = self.get(job_id)
         if job:
             job.token.cancel()
+            with job._lock:
+                if job.status not in {"succeeded", "failed", "cancelled"}:
+                    job.status = "cancelled"
+                    job.message = "Processing cancelled"
         return job
 
     def _execute(self, job: JobRecord, params: dict[str, Any]) -> None:
@@ -240,18 +266,31 @@ class JobManager:
             runner = self._asr_runner if job.job_type == "asr" else self._runner
             result = runner(TaskRequest(params), job.accept, job.token)
             with job._lock:
-                job.status = result.status.value
-                job.outputs = result.outputs
-                if getattr(result, "segments", ()):
-                    job.segments = tuple(result.segments)
-                if result.status == TaskStatus.SUCCEEDED:
-                    job.message = "Processing complete"
-                    job.progress = 100.0
-                elif result.status == TaskStatus.CANCELLED:
-                    job.message = "Processing cancelled"
+                if result is not None and hasattr(result, "status"):
+                    job.status = result.status.value
+                    job.outputs = getattr(result, "outputs", ())
+                    if getattr(result, "segments", ()):
+                        job.segments = tuple(result.segments)
+                    if getattr(result, "asr_duration", None) is not None:
+                        job.asr_duration = result.asr_duration
+                    if result.status == TaskStatus.SUCCEEDED:
+                        job.message = "Processing complete"
+                        job.progress = 100.0
+                    elif result.status == TaskStatus.CANCELLED:
+                        job.message = "Processing cancelled"
+                    else:
+                        job.error = result.failure.message if getattr(result, "failure", None) else "Processing failed"
+                        job.message = job.error
                 else:
-                    job.error = result.failure.message if result.failure else "Processing failed"
+                    job.status = TaskStatus.FAILED.value
+                    job.error = "Job runner returned an invalid result"
                     job.message = job.error
+        except Exception as exc:
+            runtime_config.logger.exception("Unhandled exception in job execution %s: %s", job.id, exc, exc_info=True)
+            with job._lock:
+                job.status = TaskStatus.FAILED.value
+                job.error = str(exc) or "Internal job execution error"
+                job.message = f"Processing failed: {job.error}"
         finally:
             with self._lock:
                 if self._active_by_media.get(job.media_id) == job.id:

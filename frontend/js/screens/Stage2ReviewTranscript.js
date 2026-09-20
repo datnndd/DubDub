@@ -66,6 +66,12 @@ export function renderStage2ReviewTranscript(state) {
               <span class="px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-mono text-[10px] font-bold">
                 ${state.segments.length} Dialogue Segments
               </span>
+              ${state.backend && state.backend.asrDuration ? `
+                <span class="px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-[10px] font-bold flex items-center gap-1" title="Measured Deepgram / ASR execution duration">
+                  <span class="material-symbols-outlined text-xs text-emerald-600">bolt</span>
+                  <span>ASR: ${state.backend.asrDuration}s</span>
+                </span>
+              ` : ''}
             </div>
             <div class="h-3.5 w-px bg-stone-200"></div>
             <span class="text-[10px] text-stone-500">

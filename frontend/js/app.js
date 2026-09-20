@@ -7,7 +7,7 @@ import { store } from './state.js';
 import { renderHeader } from './components/Header.js';
 import { renderWorkflowStepper } from './components/WorkflowStepper.js';
 import { renderStatusFooter } from './components/StatusFooter.js';
-import { renderStage1Prepare } from './screens/Stage1Prepare.js';
+import { renderStage1Prepare, renderAsrProgressCard } from './screens/Stage1Prepare.js';
 import { renderStage2ReviewTranscript } from './screens/Stage2ReviewTranscript.js';
 import { renderStage3VoiceDubbing } from './screens/Stage3VoiceDubbing.js';
 import { renderStage4EditVideo } from './screens/Stage4EditVideo.js';
@@ -64,12 +64,21 @@ function renderApp() {
 }
 
 function renderStatusOnly() {
+  const state = store.getState();
   const footer = document.querySelector('[data-status-footer]');
-  if (!footer) {
+  if (footer) {
+    footer.outerHTML = renderStatusFooter(state);
+  } else {
     renderApp();
     return;
   }
-  footer.outerHTML = renderStatusFooter(store.getState());
+  const progressCard = document.querySelector('[data-asr-progress]');
+  if (progressCard) {
+    const newHtml = renderAsrProgressCard(state.backend);
+    if (newHtml) {
+      progressCard.outerHTML = newHtml;
+    }
+  }
 }
 
 // Initial mount & subscribe to reactive state changes.
