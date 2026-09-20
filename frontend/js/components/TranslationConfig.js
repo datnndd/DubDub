@@ -47,20 +47,20 @@ export function renderTranslationConfig(state, options = {}) {
       </div>
 
       <!-- Configuration Body -->
-      <div class="flex-1 min-h-0 p-3 flex flex-col justify-between overflow-y-auto space-y-2">
+      <div class="flex-1 min-h-0 p-2.5 flex flex-col justify-start overflow-y-auto space-y-2">
         <div>
           <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Translation Provider</label>
-          <select class="w-full bg-white text-xs font-bold text-stone-800 py-1.5 px-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-primary" onchange="window.dubDubStore.updateBackendConfig('translateType', Number(this.value))">
+          <select class="w-full bg-white text-xs font-bold text-stone-800 py-1 px-2 rounded-lg border border-amber-300 focus:outline-none focus:ring-1 focus:ring-primary" onchange="window.dubDubStore.updateBackendConfig('translateType', Number(this.value))">
             ${translationTags}
           </select>
-          <div class="flex items-center gap-1.5 mt-2">
+          <div class="flex items-center gap-1.5 mt-1.5">
             ${selectedTranslation.requiresSettings ? `
-              <button type="button" onclick="window.dubDubStore.openTranslationSettings('${selectedTranslation.id}')" class="flex-1 h-7 px-2 rounded-lg border ${selectedTranslation.configured ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-[#8D4B00]'} text-[9px] font-bold flex items-center justify-center gap-1 hover:brightness-95 transition-colors">
+              <button type="button" onclick="window.dubDubStore.openTranslationSettings('${selectedTranslation.id}')" class="flex-1 h-6.5 px-2 rounded-md border ${selectedTranslation.configured ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-300 bg-amber-50 text-[#8D4B00]'} text-[9px] font-bold flex items-center justify-center gap-1 hover:brightness-95 transition-colors">
                 <span class="material-symbols-outlined text-xs">tune</span>
                 API Settings
               </button>
             ` : ''}
-            <button type="button" ${backend.translationTesting ? 'disabled' : ''} onclick="window.dubDubStore.testTranslationConnection('${selectedTranslation.id}')" class="${selectedTranslation.requiresSettings ? 'flex-1' : 'w-full'} h-7 px-2 rounded-lg border border-stone-200 bg-stone-50 hover:bg-stone-100 disabled:opacity-50 text-stone-700 text-[9px] font-bold flex items-center justify-center gap-1 transition-colors">
+            <button type="button" ${backend.translationTesting ? 'disabled' : ''} onclick="window.dubDubStore.testTranslationConnection('${selectedTranslation.id}')" class="${selectedTranslation.requiresSettings ? 'flex-1' : 'w-full'} h-6.5 px-2 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 disabled:opacity-50 text-stone-700 text-[9px] font-bold flex items-center justify-center gap-1 transition-colors">
               <span class="material-symbols-outlined text-xs">${backend.translationTesting && backend.translationTestProviderId === selectedTranslation.id ? 'progress_activity' : 'network_check'}</span>
               ${backend.translationTesting && backend.translationTestProviderId === selectedTranslation.id ? 'Testing…' : 'Test connection'}
             </button>
@@ -79,13 +79,13 @@ export function renderTranslationConfig(state, options = {}) {
         <div>
           <label class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Translation Mode</label>
           ${selectedTranslation.id === 'google' ? `
-            <div class="p-2 rounded-lg bg-stone-50 border border-stone-200 text-[9px] text-stone-500">
+            <div class="p-1.5 rounded-md bg-stone-50 border border-stone-200 text-[9px] text-stone-500">
               Google Translate uses the existing line-by-line provider flow.
             </div>
           ` : `
-            <div class="grid grid-cols-2 gap-1.5">
+            <div class="grid grid-cols-2 gap-1">
               ${translationModes.map(mode => `
-                <label title="${escapeHtml(mode.description)}" class="p-1.5 rounded-lg border cursor-pointer transition-colors ${backend.config.translationMode === mode.id ? 'border-[#8D4B00] bg-amber-50 text-[#8D4B00]' : 'border-stone-200 bg-stone-50 text-stone-600 hover:bg-stone-100'}">
+                <label title="${escapeHtml(mode.description)}" class="p-1.5 rounded-md border cursor-pointer transition-colors ${backend.config.translationMode === mode.id ? 'border-[#8D4B00] bg-amber-50 text-[#8D4B00]' : 'border-stone-200 bg-stone-50 text-stone-600 hover:bg-stone-100'}">
                   <input class="sr-only" type="radio" name="translation_mode" value="${mode.id}" ${backend.config.translationMode === mode.id ? 'checked' : ''} onchange="window.dubDubStore.updateBackendConfig('translationMode', this.value)" />
                   <span class="block text-[10px] font-bold">${escapeHtml(mode.label)}</span>
                   <span class="block mt-0.5 text-[8px] leading-tight text-stone-500">${escapeHtml(mode.description)}</span>

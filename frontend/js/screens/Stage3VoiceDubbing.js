@@ -5,7 +5,6 @@
 
 import { store } from '../state.js';
 import { renderVideoPlayer } from '../components/VideoPlayer.js';
-import { renderWaveformScrubber } from '../components/WaveformScrubber.js';
 
 export function renderStage3VoiceDubbing(state) {
   const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({
@@ -47,7 +46,6 @@ export function renderStage3VoiceDubbing(state) {
             showAudioSwitcher: true,
             subtitleVariant: "dual"
           })}
-          ${renderWaveformScrubber(state)}
         </div>
 
         <!-- RIGHT: HORIZONTAL SYNTHESIS & VOICE CONSOLE (5 cols) -->
