@@ -244,6 +244,20 @@ class JobManager:
                     self._active_by_media.pop(job.media_id, None)
 
 
+def run_prepare_review(
+    request: TaskRequest,
+    event_sink: Callable[[TaskEvent], None] | None = None,
+    cancellation_token: CancellationToken | None = None,
+):
+    """Run only the stages needed to produce a transcript for Review Transcript."""
+    return run(
+        request,
+        event_sink,
+        cancellation_token,
+        stop_after_stage="diariz",
+    )
+
+
 class ActiveJobError(RuntimeError):
     """Raised when the same ingested media already has an active job."""
 
@@ -299,7 +313,7 @@ class MediaStore:
             return self._records.get(media_id)
 
 
-JOBS = JobManager()
+JOBS = JobManager(runner=run_prepare_review)
 MEDIA = MediaStore(UPLOAD_DIR, get_video_info)
 
 
@@ -481,12 +495,9 @@ def build_task_params(input_path: Path, options: dict[str, Any]) -> dict[str, An
     timing_flags = TIMING_MODES.get(timing_mode)
     if timing_flags is None:
         raise ValueError(f"Unknown timing mode: {timing_mode}")
-    voice_role = str(options.get("voiceRole") or "")
-    if not voice_role:
-        try:
-            voice_role = next((voice for voice in role_menu(tts_type, langcode=target_language) if voice != "No"), "No")
-        except Exception:
-            voice_role = "No"
+    # Prepare ends at the transcript-review checkpoint. Voice selection belongs
+    # to the later Voice & Dubbing stage, so it must not activate TTS here.
+    voice_role = "No"
 
     params = asdict(file_info)
     params.update({
@@ -509,9 +520,12 @@ def build_task_params(input_path: Path, options: dict[str, Any]) -> dict[str, An
         "volume": "+0%",
         "pitch": "+0Hz",
         **timing_flags,
-        "subtitle_type": 1,
+        # Do not prepare/render video output during the ASR-only Prepare stage.
+        "video_autorate": False,
+        "subtitle_type": 0,
+        "only_out_dubbed_audio": True,
         "clear_cache": True,
-        "embed_bgm": True,
+        "embed_bgm": False,
     })
     return params
 
