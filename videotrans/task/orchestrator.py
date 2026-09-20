@@ -118,8 +118,10 @@ def run(
     request: TaskRequest,
     event_sink: EventSink | None = None,
     cancellation_token: CancellationToken | None = None,
+    *,
+    stop_after_stage: str | None = None,
 ) -> TaskResult:
-    """Validate and execute one task, returning rather than raising task failures."""
+    """Validate and execute one task, optionally stopping after a completed stage."""
     emit = event_sink or (lambda _event: None)
     token = cancellation_token or CancellationToken()
     stage = "validation"
@@ -171,6 +173,9 @@ def run(
                   ("dubbing", task.should_dubbing), ("align", task.should_dubbing),
                   ("recogn2pass", task.should_recogn2),
                   ("assembling", task.should_hebing), ("task_done", True)]
+        valid_stages = {stage_name for stage_name, _enabled in stages}
+        if stop_after_stage is not None and stop_after_stage not in valid_stages:
+            raise ValueError(f"Unknown stop stage: {stop_after_stage}")
         for stage_name, enabled in stages:
             if not enabled:
                 continue
@@ -184,6 +189,8 @@ def run(
                 send(EventKind.CANCELLED, "Task cancelled")
                 return TaskResult(job_id, TaskStatus.CANCELLED, output_dir)
             send(EventKind.STAGE_COMPLETED)
+            if stage_name == stop_after_stage:
+                break
 
         outputs = _collect_outputs(task.cfg)
         send(EventKind.SUCCEEDED, details={"outputs": tuple(map(str, outputs))})
