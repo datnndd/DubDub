@@ -10,7 +10,14 @@ import pytest
 
 import webui
 from videotrans import translator, tts
-from videotrans.task.orchestrator import EventKind, TaskEvent, TaskResult, TaskStatus
+from videotrans.task.orchestrator import (
+    CancellationToken,
+    EventKind,
+    TaskEvent,
+    TaskRequest,
+    TaskResult,
+    TaskStatus,
+)
 
 
 def test_new_frontend_is_the_only_webui():
@@ -37,8 +44,6 @@ def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch)
     temp_dir.mkdir()
     monkeypatch.setattr(webui, "TEMP_DIR", str(temp_dir))
     monkeypatch.setattr(webui, "OUTPUT_DIR", output_dir)
-    monkeypatch.setattr(webui, "role_menu", lambda *_args, **_kwargs: ["Voice A"])
-
     params = webui.build_task_params(source, {
         "sourceLanguage": "en",
         "targetLanguage": "fr",
@@ -61,14 +66,17 @@ def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch)
     assert params["translate_type"] == translator.CHATGPT_INDEX
     assert params["aisendsrt"] is False
     assert params["tts_type"] == 3
-    assert params["voice_role"] == "Voice A"
+    assert params["voice_role"] == "No"
     assert params["remove_noise"] is False
     assert params["enable_diariz"] is True
     assert params["nums_diariz"] == 2
     assert params["voice_rate"] == "+10%"
     assert params["voice_autorate"] is False
-    assert params["video_autorate"] is True
+    assert params["video_autorate"] is False
     assert params["align_sub_audio"] is False
+    assert params["subtitle_type"] == 0
+    assert params["only_out_dubbed_audio"] is True
+    assert params["embed_bgm"] is False
     assert Path(params["cache_folder"]).is_relative_to(temp_dir)
 
 
