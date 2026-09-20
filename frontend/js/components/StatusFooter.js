@@ -83,7 +83,7 @@ export function renderStatusFooter(state) {
   }
 
   return `
-    <footer class="h-[46px] flex-shrink-0 bg-white border-t border-[#E7E4DC] px-4 flex items-center justify-between gap-3 z-30 shadow-2xs">
+    <footer data-status-footer class="h-[46px] flex-shrink-0 bg-white border-t border-[#E7E4DC] px-4 flex items-center justify-between gap-3 z-30 shadow-2xs">
       <!-- Left: Verification Status Checkmark -->
       <div class="flex items-center gap-2 min-w-0">
         <div class="w-5 h-5 rounded-full ${statusColor} flex items-center justify-center flex-shrink-0">
