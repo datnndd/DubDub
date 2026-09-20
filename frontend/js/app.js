@@ -16,6 +16,11 @@ function renderApp() {
   const root = document.getElementById('app');
   if (!root) return;
 
+  const activeEl = document.activeElement;
+  const activeInputId = activeEl?.getAttribute?.('data-segment-input');
+  const selStart = (activeEl instanceof HTMLTextAreaElement || activeEl instanceof HTMLInputElement) ? activeEl.selectionStart : null;
+  const selEnd = (activeEl instanceof HTMLTextAreaElement || activeEl instanceof HTMLInputElement) ? activeEl.selectionEnd : null;
+
   const state = store.getState();
 
   let stageHtml = '';
@@ -46,6 +51,16 @@ function renderApp() {
       ${renderStatusFooter(state)}
     </div>
   `;
+
+  if (activeInputId != null) {
+    const restored = document.querySelector(`[data-segment-input="${activeInputId}"]`);
+    if (restored) {
+      restored.focus();
+      if (selStart != null && selEnd != null) {
+        try { restored.setSelectionRange(selStart, selEnd); } catch (_) {}
+      }
+    }
+  }
 }
 
 // Initial mount & subscribe to reactive state changes

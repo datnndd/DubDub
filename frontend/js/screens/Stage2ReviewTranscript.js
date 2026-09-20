@@ -5,108 +5,57 @@
 
 import { renderVideoPlayer } from '../components/VideoPlayer.js';
 import { renderWaveformScrubber } from '../components/WaveformScrubber.js';
+import { renderTranslationConfig } from '../components/TranslationConfig.js';
 
 export function renderStage2ReviewTranscript(state) {
-  const seg2 = state.segments.find(s => s.id === 2);
+  const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+
+  const distinctSpeakers = new Set(state.segments.map(s => s.speakerName || s.speakerId || s.speakerLabel || s.speaker).filter(Boolean)).size;
+  const diarizationEnabled = Boolean(state.engines && state.engines.speakerDiarization);
+  const multiSpeaker = diarizationEnabled && distinctSpeakers > 1;
+
+  const speakerColorClasses = {
+    amber: 'bg-amber-100 text-amber-900 border-amber-300',
+    secondary: 'bg-indigo-100 text-indigo-900 border-indigo-300',
+    emerald: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+    rose: 'bg-rose-100 text-rose-900 border-rose-300',
+    purple: 'bg-purple-100 text-purple-900 border-purple-300',
+  };
+
+  const speakerDotBg = {
+    amber: 'bg-[#8D4B00]',
+    secondary: 'bg-indigo-600',
+    emerald: 'bg-emerald-600',
+    rose: 'bg-rose-600',
+    purple: 'bg-purple-600',
+  };
 
   return `
     <div class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden">
       <!-- TOP HALF: BROADCAST MONITOR & OCR INSPECTOR (52% Height) -->
       <section class="h-[52%] min-h-0 w-full grid grid-cols-12 gap-2.5">
-        <!-- LEFT: SYNCHRONIZED VIDEO PLAYER WITH OCR BOUNDING BOX (7 cols) -->
+        <!-- LEFT: SYNCHRONIZED VIDEO PLAYER (7 cols) -->
         <div class="col-span-12 xl:col-span-7 h-full flex flex-col min-h-0">
           ${renderVideoPlayer(state, {
             title: "Synchronized Video Player",
-            showOcrBox: true,
+            showOcrBox: false,
             subtitleVariant: "dual"
           })}
           ${renderWaveformScrubber(state)}
         </div>
 
-        <!-- RIGHT: OCR SLIDE DIFF INSPECTOR PANEL (5 cols) -->
-        <div class="col-span-12 xl:col-span-5 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
-          <!-- Inspector Header -->
-          <div class="h-8 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-[#8D4B00] text-sm">find_replace</span>
-              <span class="text-xs font-bold text-stone-900">OCR Slide Diff Inspector</span>
-              <span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                1 Pending Diff
-              </span>
-            </div>
-            <span class="text-[9px] font-mono text-stone-500">Keyframe 01:26.500</span>
-          </div>
-
-          <!-- Diff Inspection Body -->
-          <div class="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col justify-between space-y-2.5">
-            <div class="space-y-2">
-              <div class="p-2 rounded-lg bg-amber-50/70 border border-amber-200">
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-[9px] font-bold text-[#8D4B00] uppercase tracking-wider flex items-center gap-1">
-                    <span class="material-symbols-outlined text-xs">warning</span>
-                    Conflict Detected at Segment #02
-                  </span>
-                  <span class="text-[9px] font-mono text-stone-500">Confidence Score: 94.8%</span>
-                </div>
-                <p class="text-[11px] text-stone-700 leading-snug">
-                  ASR spoken audio differs significantly from the text rendered on the keynote presentation slide.
-                </p>
-              </div>
-
-              <!-- Side-by-side comparison boxes -->
-              <div class="space-y-1.5">
-                <!-- Option A: ASR Audio Speech -->
-                <div class="p-2.5 rounded-lg border border-stone-200 bg-stone-50">
-                  <div class="flex items-center justify-between text-[10px] text-stone-500 mb-1">
-                    <span class="font-bold flex items-center gap-1">
-                      <span class="material-symbols-outlined text-xs text-primary">hearing</span>
-                      Spoken Audio (ASR Whisper Large-v3)
-                    </span>
-                    <span class="font-mono text-stone-400">Audio Track</span>
-                  </div>
-                  <p class="text-xs text-stone-900 font-medium bg-white p-2 rounded border border-stone-200">
-                    “${seg2.sourceText}”
-                  </p>
-                </div>
-
-                <!-- Option B: On-Screen Slide OCR -->
-                <div class="p-2.5 rounded-lg border-2 border-[#8D4B00] bg-amber-50/40">
-                  <div class="flex items-center justify-between text-[10px] text-[#8D4B00] mb-1">
-                    <span class="font-bold flex items-center gap-1">
-                      <span class="material-symbols-outlined text-xs">document_scanner</span>
-                      On-Screen Slide (Visual OCR Box #01)
-                    </span>
-                    <span class="font-mono bg-amber-200/80 text-amber-900 px-1 rounded text-[9px] font-bold">99.4% Match</span>
-                  </div>
-                  <p class="text-xs text-amber-950 font-bold bg-white p-2 rounded border border-amber-200 shadow-2xs">
-                    “${seg2.ocrSlideText}”
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <!-- Resolution Actions -->
-            <div class="pt-2 border-t border-stone-200 flex flex-col gap-1.5">
-              <span class="text-[9px] font-bold text-stone-400 uppercase tracking-wider">Choose Resolution for Dubbing</span>
-              <div class="grid grid-cols-2 gap-1.5">
-                <button 
-                  class="py-1.5 px-2 rounded-lg bg-white hover:bg-stone-50 text-stone-700 font-semibold text-xs border border-stone-300 shadow-2xs transition-colors"
-                  onclick="window.dubDubStore.resolveOcrDiff(2, false); alert('Retained Spoken Audio (ASR)');">
-                  Keep Spoken (ASR)
-                </button>
-                <button 
-                  class="py-1.5 px-2 rounded-lg bg-[#8D4B00] hover:bg-[#743d00] text-white font-bold text-xs shadow-2xs transition-colors flex items-center justify-center gap-1"
-                  onclick="window.dubDubStore.resolveOcrDiff(2, true); alert('Adopted Slide OCR Text!');">
-                  <span class="material-symbols-outlined text-xs">check</span>
-                  Use Slide OCR
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- RIGHT: LLM TRANSLATION CONFIGURATION PANEL (5 cols) -->
+        ${renderTranslationConfig(state, {
+          containerClass: "col-span-12 xl:col-span-5 h-full",
+          title: "LLM Translation",
+          headerHeight: "h-8",
+          badge: "Reasoning"
+        })}
       </section>
 
-      <!-- BOTTOM HALF: EXPANSIVE MASTER TELEPROMPTER & SCRIPT FEED (48% Height) -->
+      <!-- BOTTOM HALF: MASTER TELEPROMPTER & SCRIPT FEED (48% Height) -->
       <section class="h-[48%] min-h-0 w-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col overflow-hidden">
         <!-- Teleprompter Stream Header Bar -->
         <div class="h-9 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
@@ -119,57 +68,56 @@ export function renderStage2ReviewTranscript(state) {
               </span>
             </div>
             <div class="h-3.5 w-px bg-stone-200"></div>
-            <label class="flex items-center gap-1.5 text-[10px] text-stone-500 cursor-pointer">
-              <input checked class="rounded border-stone-300 text-[#8D4B00] focus:ring-0 w-3 h-3 bg-white" type="checkbox" />
-              <span>Auto-scroll with playhead</span>
-            </label>
+            <span class="text-[10px] text-stone-500">
+              Click any card to audition audio • Edit text inline • Use Split to divide at playhead/cursor • Targeted OCR replacement
+            </span>
           </div>
 
-          <!-- Search & Filter Bar -->
           <div class="flex items-center gap-2">
-            <div class="relative w-52">
-              <span class="material-symbols-outlined absolute left-2 top-1.5 text-stone-400 text-xs">search</span>
-              <input 
-                class="w-full bg-white pl-6 pr-2 py-0.5 rounded-lg text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-primary border border-stone-200 leading-tight" 
-                placeholder="Search dialogue phrase..." 
-                type="text" 
-              />
-            </div>
-            <select class="bg-white text-[10px] text-stone-700 font-medium py-0.5 px-2 rounded-lg border border-stone-200 focus:outline-none cursor-pointer">
-              <option>All Speakers (2)</option>
-              <option>Alex Carter</option>
-              <option>Elena Rostova</option>
-            </select>
-            <button class="p-1 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-200/80 transition-colors" title="Find & Replace">
-              <span class="material-symbols-outlined text-xs">find_replace</span>
-            </button>
-            <button class="p-1 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-200/80 transition-colors" title="Re-align timing">
-              <span class="material-symbols-outlined text-xs">sync</span>
-            </button>
+            <span class="text-[10px] font-mono font-medium text-stone-500">
+              Playhead: <span class="font-bold text-stone-800">${state.playback.formattedTime}</span>
+            </span>
           </div>
         </div>
 
         <!-- Teleprompter Dialogue Rows -->
         <div class="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2">
           ${state.segments.map(seg => {
-            const isActive = seg.id === 2;
+            const isActive = String(seg.id) === String(state.activeSegmentId);
             const hasConflict = seg.hasOcrDiff && !seg.ocrResolved;
+            const colorClass = speakerColorClasses[seg.speakerColor] || 'bg-amber-100 text-amber-900 border-amber-300';
+            const dotBg = speakerDotBg[seg.speakerColor] || 'bg-[#8D4B00]';
+            const safeId = escapeHtml(JSON.stringify(seg.id));
 
             return `
-              <div class="p-2.5 rounded-xl border ${isActive ? 'border-2 border-[#8D4B00] bg-amber-50/40 active-teleprompter-card' : 'border-stone-200 bg-white hover:border-amber-200'} shadow-2xs flex flex-col md:flex-row md:items-center gap-3 relative transition-all">
+              <div 
+                data-segment-card="${escapeHtml(seg.id)}"
+                class="p-2.5 rounded-xl border ${isActive ? 'border-2 border-[#8D4B00] bg-amber-50/50 shadow-xs' : 'border-stone-200 bg-white hover:border-amber-300 hover:bg-stone-50/40'} shadow-2xs flex flex-col md:flex-row md:items-center gap-3 relative transition-all cursor-pointer"
+                onclick="window.dubDubStore.seekAndPlay(${seg.startSec}, ${safeId})">
+                
                 <!-- Left Metadata & Speaker Badge -->
-                <div class="flex md:flex-col justify-between md:justify-center items-start gap-1 w-full md:w-44 flex-shrink-0">
+                <div class="flex md:flex-col justify-between md:justify-center items-start gap-1 w-full md:w-48 flex-shrink-0">
                   <div class="flex items-center gap-1.5">
-                    <span class="px-1.5 py-0.2 rounded bg-[#8D4B00] text-white font-mono text-[10px] font-bold">#0${seg.id}</span>
-                    <div class="flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-amber-100/80 text-amber-900 border border-amber-200 text-[10px] font-bold">
-                      <span class="w-3 h-3 rounded-full bg-[#8D4B00] text-white text-[8px] flex items-center justify-center">${seg.speakerCode}</span>
-                      <span>${seg.speakerName}</span>
-                    </div>
+                    <span class="px-1.5 py-0.2 rounded bg-[#8D4B00] text-white font-mono text-[10px] font-bold">#${String(seg.id).padStart(2, '0')}</span>
+                    
+                    ${multiSpeaker ? `
+                      <div class="flex items-center gap-1 px-2 py-0.5 rounded-full ${colorClass} border text-[10px] font-bold shadow-2xs">
+                        <span class="w-3 h-3 rounded-full ${dotBg} text-white text-[8px] flex items-center justify-center">${escapeHtml(seg.speakerCode || 'S')}</span>
+                        <span>${escapeHtml(seg.speakerName || seg.speakerLabel || seg.speaker || 'Speaker')}</span>
+                      </div>
+                    ` : `
+                      <div class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-bold shadow-2xs">
+                        <span class="w-3 h-3 rounded-full bg-stone-400 text-white text-[8px] flex items-center justify-center">S1</span>
+                        <span>Speaker 1</span>
+                      </div>
+                    `}
                   </div>
-                  <span class="font-mono text-[10px] text-stone-500">${seg.startTime} ➔ ${seg.endTime}</span>
+
+                  <span class="font-mono text-[10px] text-stone-600 font-semibold">${seg.startTime || '00:00.000'} ➔ ${seg.endTime || '00:00.000'}</span>
+                  
                   <div class="flex items-center gap-1">
-                    <span class="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">
-                      ${seg.cps} CPS • ${seg.cpsStatus}
+                    <span data-cps-badge class="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold font-mono">
+                      ${seg.cps || 12} CPS • ${seg.cpsStatus || 'Optimal'}
                     </span>
                     ${hasConflict ? `
                       <span class="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-bold flex items-center gap-0.5">
@@ -180,25 +128,46 @@ export function renderStage2ReviewTranscript(state) {
                 </div>
 
                 <!-- Center Source Dialogue Text with in-place edit -->
-                <div class="flex-1 min-w-0">
-                  <div class="text-[9px] font-mono text-stone-400 mb-0.5">ORIGINAL SOURCE (EN)</div>
-                  <input 
-                    class="w-full bg-white border border-stone-200 focus:border-[#8D4B00] focus:ring-0 rounded p-1.5 text-xs text-stone-800 font-medium"
-                    value="${seg.sourceText}"
-                    onchange="window.dubDubStore.updateSegment(${seg.id}, 'sourceText', this.value)"
-                  />
+                <div class="flex-1 min-w-0" onclick="event.stopPropagation()">
+                  <div class="text-[9px] font-mono text-stone-400 mb-0.5">ORIGINAL SOURCE DIALOG</div>
+                  <textarea
+                    rows="2"
+                    data-segment-input="${escapeHtml(seg.id)}"
+                    class="w-full bg-white border border-stone-200 focus:border-[#8D4B00] focus:ring-1 focus:ring-[#8D4B00] rounded-lg p-2 text-xs text-stone-900 font-medium transition-colors resize-none leading-relaxed"
+                    onclick="event.stopPropagation(); window.dubDubStore.setActiveEditor(${safeId}, this.selectionStart)"
+                    onfocus="window.dubDubStore.setActiveEditor(${safeId}, this.selectionStart)"
+                    onblur="setTimeout(() => { if (window.dubDubStore.activeEditor &amp;&amp; String(window.dubDubStore.activeEditor.segmentId) === String(${safeId})) window.dubDubStore.clearActiveEditor(${safeId}); }, 250); window.dubDubStore.updateSegmentText(${safeId}, this.value, true);"
+                    onkeyup="window.dubDubStore.setActiveEditor(${safeId}, this.selectionStart)"
+                    onselect="window.dubDubStore.setActiveEditor(${safeId}, this.selectionStart)"
+                    oninput="window.dubDubStore.updateSegmentText(${safeId}, this.value)"
+                    onchange="window.dubDubStore.updateSegmentText(${safeId}, this.value, true)"
+                  >${escapeHtml(seg.sourceText !== undefined && seg.sourceText !== null ? seg.sourceText : (seg.text || ''))}</textarea>
                 </div>
 
-                <!-- Right Quick Play / Tools -->
-                <div class="flex items-center gap-1.5 flex-shrink-0">
+                <!-- Right Actions: Audition, Split Segment, Replace with OCR -->
+                <div class="flex items-center gap-1.5 flex-shrink-0" onclick="event.stopPropagation()">
                   <button 
                     class="p-1.5 rounded-lg bg-stone-100 hover:bg-amber-100 text-stone-700 hover:text-[#8D4B00] transition-colors border border-stone-200" 
                     title="Audition Cue"
-                    onclick="window.dubDubStore.setPlaybackTime(${seg.startSec})">
+                    onclick="window.dubDubStore.seekAndPlay(${seg.startSec}, ${safeId})">
                     <span class="material-symbols-outlined text-sm">play_circle</span>
                   </button>
-                  <button class="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600 transition-colors border border-stone-200" title="Split Segment">
-                    <span class="material-symbols-outlined text-sm">content_cut</span>
+
+                  <button 
+                    class="px-2 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors border border-stone-200 text-xs font-semibold flex items-center gap-1"
+                    title="Split Segment at current playhead or text cursor"
+                    onmousedown="window.dubDubStore.captureEditorBeforeSplit(${safeId})"
+                    onclick="window.dubDubStore.splitSegmentCard(${safeId})">
+                    <span class="material-symbols-outlined text-xs">content_cut</span>
+                    <span class="hidden sm:inline text-[10px]">Split</span>
+                  </button>
+
+                  <button 
+                    class="px-2 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-[#8D4B00] transition-colors border border-amber-200 text-xs font-semibold flex items-center gap-1"
+                    title="Replace with PaddleOCR subtitle from video frames"
+                    onclick="window.dubDubStore.openOcrCrop(${safeId})">
+                    <span class="material-symbols-outlined text-xs">document_scanner</span>
+                    <span class="hidden sm:inline text-[10px]">Replace with OCR</span>
                   </button>
                 </div>
               </div>

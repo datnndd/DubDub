@@ -26,6 +26,7 @@ params: AppParams = AppParams()
 
 HOME_DIR = settings.homedir
 Path(HOME_DIR).mkdir(parents=True, exist_ok=True)
+FFMPEG_BIN = settings.get("ffmpeg_cmd") or "ffmpeg"
 
 defaulelang, _transobj = _init_language(settings)
 

@@ -3,6 +3,8 @@
  * Bottom persistent action dock with verification status and step navigation.
  */
 
+import { store } from '../state.js';
+
 export function renderStatusFooter(state) {
   const step = state.currentStep;
   const backend = state.backend;
@@ -18,7 +20,7 @@ export function renderStatusFooter(state) {
     2: {
       icon: "document_scanner",
       title: "Transcript & OCR cues analyzed.",
-      subtitle: "1 slide OCR diff highlighted for operator review."
+      subtitle: "Review transcript cues and configure LLM translation."
     },
     3: {
       icon: "graphic_eq",
@@ -33,10 +35,10 @@ export function renderStatusFooter(state) {
   };
 
   const primaryActions = {
-    1: { text: "Start Processing & Translate", nextStep: 2, icon: "arrow_forward" },
+    1: { text: "Start Dub", nextStep: 2, icon: "play_arrow" },
     2: { text: "Proceed to Voice & Dubbing", nextStep: 3, icon: "arrow_forward" },
     3: { text: "Proceed to Edit Video", nextStep: 4, icon: "arrow_forward" },
-    4: { text: "Export 4K Master Video", nextStep: null, icon: "file_download" }
+    4: { text: "Render dubbed video", nextStep: null, icon: "movie_creation" }
   };
 
   const curMsg = messages[step] || messages[1];
@@ -56,29 +58,38 @@ export function renderStatusFooter(state) {
     <a class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs" href="${output.url}">${escapeHtml(output.name)}</a>
   `).join('');
   let actionText = curAction.text;
-  let action = curAction.nextStep ? `window.dubDubStore.setStep(${curAction.nextStep})` : `alert('This editing/export control is not connected yet.')`;
+  let action = curAction.nextStep ? `window.dubDubStore.setStep(${curAction.nextStep})` : `window.dubDubStore.exportEditedVideo()`;
   let actionIcon = curAction.icon;
   let actionDisabled = false;
+  let actionTooltip = '';
   if (step === 1) {
     if (cancellable) {
       actionText = 'Cancel Processing';
       action = 'window.dubDubStore.cancelProcessing()';
       actionIcon = 'stop_circle';
+      actionTooltip = 'Cancel ongoing preparation job';
     } else if (busy) {
-      actionText = backend.status === 'analyzing' ? 'Inspecting Media…' : 'Starting Workflow…';
+      actionText = backend.status === 'analyzing' ? 'Inspecting Media…' : 'Processing ASR…';
       action = '';
       actionIcon = 'progress_activity';
       actionDisabled = true;
-    } else if (backend.status === 'succeeded') {
-      actionText = 'Processing Complete';
-      action = '';
-      actionIcon = 'check_circle';
-      actionDisabled = true;
+      actionTooltip = `ASR Processing in progress (${backend.stage || 'running'}${backend.progress != null ? ` - ${backend.progress.toFixed(0)}%` : ''})`;
     } else {
-      actionText = state.project.verified ? 'Start Processing & Translate' : 'Choose Source Video';
-      action = state.project.verified ? 'window.dubDubStore.startProcessing()' : 'window.dubDubStore.chooseMedia()';
-      actionIcon = state.project.verified ? 'play_arrow' : 'upload_file';
-      actionDisabled = state.project.verified && Boolean(window.dubDubStore.getPrepareValidationError());
+      actionText = 'Start Dub';
+      action = 'window.dubDubStore.startDub()';
+      actionIcon = 'play_arrow';
+      const prepareError = (typeof store?.getPrepareValidationError === 'function' && store.getPrepareValidationError()) ||
+        (typeof window !== 'undefined' && window.dubDubStore?.getPrepareValidationError?.()) || null;
+      if (!state.project.verified) {
+        actionDisabled = true;
+        actionTooltip = 'Select and verify source video before starting dubbing';
+      } else if (prepareError) {
+        actionDisabled = true;
+        actionTooltip = prepareError;
+      } else {
+        actionDisabled = false;
+        actionTooltip = 'Initiate audio extraction, speech recognition, and speaker diarization';
+      }
     }
   }
 
@@ -112,13 +123,27 @@ export function renderStatusFooter(state) {
           </button>
         `}
 
-        <button 
-          ${actionDisabled ? 'disabled' : ''}
-          class="px-4 py-1.5 rounded-lg bg-[#8D4B00] hover:bg-[#743d00] disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 active:scale-98"
-          onclick="${action}">
-          <span>${actionText}</span>
-          <span class="material-symbols-outlined text-sm">${actionIcon}</span>
-        </button>
+        ${step === 1 ? `
+          <button 
+            data-action="start-dub"
+            ${actionDisabled ? 'disabled' : ''}
+            title="${escapeHtml(actionTooltip)}"
+            class="px-4 py-1.5 rounded-lg bg-[#8D4B00] hover:bg-[#743d00] disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 active:scale-98"
+            onclick="${action}">
+            <span>${actionText}</span>
+            <span class="material-symbols-outlined text-sm">${actionIcon}</span>
+          </button>
+        ` : `
+          <button 
+            data-action="next-step"
+            ${actionDisabled ? 'disabled' : ''}
+            title="${escapeHtml(actionTooltip)}"
+            class="px-4 py-1.5 rounded-lg bg-[#8D4B00] hover:bg-[#743d00] disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 active:scale-98"
+            onclick="${action}">
+            <span>${actionText}</span>
+            <span class="material-symbols-outlined text-sm">${actionIcon}</span>
+          </button>
+        `}
       </div>
     </footer>
   `;
