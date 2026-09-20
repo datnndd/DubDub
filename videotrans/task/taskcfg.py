@@ -183,6 +183,9 @@ class TaskCfgVTT(TaskCfgSTT, TaskCfgTTS, TaskCfgSTS):
     copysrt_rawvideo: bool = False  # 是否将生成的字幕复制到视频目录下
     loop_backaudio: int = 0  # 循环背景音 或 延长拉伸背景音
     backaudio_volume: float = 0.8  # 背景音量
+    source_audio_volume: float = 0.0  # final mix contribution from original video audio
+    thumbnail: Union[os.PathLike,str]=None  # optional exported video cover image
+    subtitle_style: Optional[dict] = None  # per-job hard subtitle appearance
     batch:bool=False# 批量翻译模式或单视频翻译模式
     batch_size:int=0#0批量并发模式，>0 每批n个
     

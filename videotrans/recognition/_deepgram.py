@@ -62,7 +62,7 @@ class DeepgramRecogn(BaseRecogn):
 
         request_started = time.perf_counter()
         logger.info(
-            "[Deepgram] starting prerecorded request: model=%s language=%s diarize=%s payload=%.2f MiB",
+            "[Deepgram] prerecorded request start model=%s language=%s diarize=%s payload=%.2f MiB",
             self.model_name,
             self.detect_language[:2],
             diarize,

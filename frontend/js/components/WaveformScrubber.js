@@ -56,9 +56,9 @@ export function renderWaveformScrubber(state) {
         </svg>
 
         <!-- Progress Highlight -->
-        <div class="absolute inset-y-0 left-0 bg-[#8D4B00]/20 rounded-l pointer-events-none" style="width: ${percent}%;"></div>
+        <div data-scrubber-progress class="absolute inset-y-0 left-0 bg-[#8D4B00]/20 rounded-l pointer-events-none" style="width: ${percent}%;"></div>
         <!-- Scrubber Marker -->
-        <div class="absolute top-0 bottom-0 w-2 bg-[#8D4B00] rounded shadow-xs pointer-events-none -ml-1" style="left: ${percent}%;"></div>
+        <div data-scrubber-marker class="absolute top-0 bottom-0 w-2 bg-[#8D4B00] rounded shadow-xs pointer-events-none -ml-1" style="left: ${percent}%;"></div>
       </div>
 
       <!-- Transport Controls Row -->
@@ -86,7 +86,7 @@ export function renderWaveformScrubber(state) {
           </button>
 
           <div class="flex items-center gap-1 font-mono text-[10px] ml-1.5">
-            <span class="font-bold text-stone-900">${state.playback.formattedTime}</span>
+            <span data-playhead-timecode class="font-bold text-stone-900">${state.playback.formattedTime}</span>
             <span class="text-stone-300">/</span>
             <span class="text-stone-500">${state.project.duration}</span>
           </div>

@@ -67,7 +67,7 @@ class SubtitleMixin:
         if self.cfg.subtitle_type in [2, 4]:
             return os.path.basename(process_end_subtitle), subtitle_langcode
 
-        process_end_subtitle_ass = set_ass_font(process_end_subtitle)
+        process_end_subtitle_ass = set_ass_font(process_end_subtitle, self.cfg.subtitle_style)
         basename = os.path.basename(process_end_subtitle_ass)
         return basename, subtitle_langcode
 

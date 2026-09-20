@@ -3,13 +3,38 @@
  * Broadcast Split & Teleprompter Deck for multi-role AI voice casting, timbre tuning, and bilingual script playback.
  */
 
+import { store } from '../state.js';
 import { renderVideoPlayer } from '../components/VideoPlayer.js';
 import { renderWaveformScrubber } from '../components/WaveformScrubber.js';
 
 export function renderStage3VoiceDubbing(state) {
-  const spk1 = state.speakers[0];
-  const spk2 = state.speakers[1];
-  const l = state.languages;
+  const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+
+  const distinctSpeakers = store.getDistinctSpeakers();
+  const voiceRoles = (state.backend?.options?.voiceRoles && state.backend.options.voiceRoles.length > 0)
+    ? state.backend.options.voiceRoles
+    : ['No'];
+  const ttsProviders = (state.backend?.options?.voices && state.backend.options.voices.length > 0)
+    ? state.backend.options.voices
+    : [[0, "ElevenLabs"], [1, "OmniVoice(Built-in)"], [2, "VieNeu-TTS"], [3, "Gemini TTS"]];
+
+  const speakerColorClasses = {
+    amber: 'bg-amber-100 text-amber-900 border-amber-300',
+    secondary: 'bg-indigo-100 text-indigo-900 border-indigo-300',
+    emerald: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+    rose: 'bg-rose-100 text-rose-900 border-rose-300',
+    purple: 'bg-purple-100 text-purple-900 border-purple-300',
+  };
+
+  const speakerDotBg = {
+    amber: 'bg-[#8D4B00]',
+    secondary: 'bg-indigo-600',
+    emerald: 'bg-emerald-600',
+    rose: 'bg-rose-600',
+    purple: 'bg-purple-600',
+  };
 
   return `
     <div class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden">
@@ -30,134 +55,119 @@ export function renderStage3VoiceDubbing(state) {
           <!-- Console Master Header -->
           <div class="h-8 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-[#8D4B00] text-sm">tune</span>
-              <span class="text-xs font-bold text-stone-900">Synthesis Engine</span>
-              <span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-100 text-[#8D4B00]">v4.2</span>
+              <span class="material-symbols-outlined text-[#8D4B00] text-sm">record_voice_over</span>
+              <span class="text-xs font-bold text-stone-900">Voice Casting Console</span>
+              <span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-amber-100 text-[#8D4B00]">Stage 3</span>
             </div>
 
-            <!-- Pill Tabs -->
-            <div class="flex items-center p-0.5 bg-stone-100 rounded-lg text-[10px] font-bold">
-              <button class="px-2 py-0.5 rounded bg-white text-[#8D4B00] shadow-2xs">Dubbing</button>
-              <button class="px-2 py-0.5 rounded text-stone-500 hover:text-stone-800 transition-colors">Voices</button>
-              <button class="px-2 py-0.5 rounded text-stone-500 hover:text-stone-800 transition-colors">Glossary</button>
+            <div class="flex items-center gap-1">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-stone-100 text-stone-600">
+                ${distinctSpeakers.length} ${distinctSpeakers.length === 1 ? 'Speaker' : 'Speakers'}
+              </span>
             </div>
           </div>
 
           <!-- Multi-Channel Mixer Grid -->
           <div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5">
-            <!-- Channel 1: Language & Tone Mode -->
+            <!-- Channel 1: TTS Provider & Target Language -->
             <div class="grid grid-cols-2 gap-2">
-              <!-- Language Config -->
+              <!-- TTS Provider Selection -->
               <div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex flex-col justify-between">
-                <span class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block">Language Configuration</span>
-                <div class="flex items-center justify-between text-[10px] text-stone-500 mt-1">
-                  <span>Source</span>
-                  <span class="font-bold text-stone-800">${l.source.name}</span>
-                </div>
-                <div class="h-px bg-stone-200 my-1"></div>
-                <div class="flex items-center justify-between text-[10px]">
-                  <span class="text-stone-500">Target</span>
-                  <select 
-                    class="bg-transparent font-bold text-stone-800 text-[10px] focus:outline-none cursor-pointer max-w-[125px] truncate"
-                    onchange="window.dubDubStore.updateTargetLanguage(this.value, this.options[this.selectedIndex].text)">
-                    ${state.backend.options.languages.map(item => `
-                      <option value="${item.code}" ${l.target.code === item.code ? 'selected' : ''}>${item.name}</option>
-                    `).join('')}
-                  </select>
-                </div>
-              </div>
-
-              <!-- Model & Tone Mode -->
-              <div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex flex-col justify-between">
-                <span class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block">Model &amp; Tone Mode</span>
-                <div class="grid grid-cols-2 gap-1 mt-1">
-                  <button class="px-1.5 py-1 rounded text-[10px] font-bold bg-[#8D4B00] text-white shadow-2xs leading-none text-center">Conversational</button>
-                  <button class="px-1.5 py-1 rounded text-[10px] font-medium bg-white hover:bg-stone-100 text-stone-700 border border-stone-200/80 leading-none text-center">Formal</button>
-                  <button class="px-1.5 py-1 rounded text-[10px] font-medium bg-white hover:bg-stone-100 text-stone-700 border border-stone-200/80 leading-none text-center">Colloquial</button>
-                  <button class="px-1.5 py-1 rounded text-[10px] font-medium bg-white hover:bg-stone-100 text-stone-700 border border-stone-200/80 leading-none text-center">Technical</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Channel 2: Voice Actor Profiles Side-by-Side -->
-            <div>
-              <span class="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Voice Actor Profiles</span>
-              <div class="grid grid-cols-2 gap-2">
-                <!-- Alex Carter -->
-                <div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-between">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="w-6 h-6 rounded-full bg-amber-500/15 text-[#8D4B00] font-mono text-[10px] font-bold flex items-center justify-center flex-shrink-0">${spk1.code}</span>
-                    <div class="min-w-0">
-                      <span class="text-[11px] font-bold text-stone-900 block truncate leading-tight">${spk1.name}</span>
-                      <span class="text-[9px] text-stone-500 font-mono block truncate">${spk1.preset} • ${spk1.clarity}</span>
-                    </div>
-                  </div>
-                  <span class="material-symbols-outlined text-xs text-stone-400 cursor-pointer hover:text-stone-700 ml-1">tune</span>
-                </div>
-
-                <!-- Elena Rostova -->
-                <div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-between">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="w-6 h-6 rounded-full bg-orange-500/15 text-[#A13E28] font-mono text-[10px] font-bold flex items-center justify-center flex-shrink-0">${spk2.code}</span>
-                    <div class="min-w-0">
-                      <span class="text-[11px] font-bold text-stone-900 block truncate leading-tight">${spk2.name}</span>
-                      <span class="text-[9px] text-stone-500 font-mono block truncate">${spk2.preset} • ${spk2.clarity}</span>
-                    </div>
-                  </div>
-                  <span class="material-symbols-outlined text-xs text-stone-400 cursor-pointer hover:text-stone-700 ml-1">tune</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Channel 3: Dual Sliders & Locked Glossary -->
-            <div class="grid grid-cols-12 gap-2 pt-1 border-t border-stone-200">
-              <!-- Tuning Sliders (7 cols) -->
-              <div class="col-span-7 space-y-1.5 pr-1">
-                <div>
-                  <div class="flex justify-between text-[10px] mb-0.5">
-                    <span class="text-stone-600 font-medium">Dubbing Pace (0.8x - 1.2x)</span>
-                    <span class="font-mono text-[#8D4B00] font-bold">${state.tuning.pace.toFixed(2)}x Auto-Fit</span>
-                  </div>
-                  <input 
-                    class="w-full accent-[#8D4B00] h-1 bg-stone-200 rounded-lg cursor-pointer" 
-                    max="120" 
-                    min="80" 
-                    type="range" 
-                    value="${Math.round(state.tuning.pace * 100)}"
-                    oninput="window.dubDubStore.updateTuning('pace', this.value / 100)"
-                  />
-                </div>
-                <div>
-                  <div class="flex justify-between text-[10px] mb-0.5">
-                    <span class="text-stone-600 font-medium">Timbre Warmth</span>
-                    <span class="font-mono text-stone-700 font-bold">+${Math.round((state.tuning.timbreWarmth - 50) / 6)} dB</span>
-                  </div>
-                  <input 
-                    class="w-full accent-amber-700 h-1 bg-stone-200 rounded-lg cursor-pointer" 
-                    max="100" 
-                    min="0" 
-                    type="range" 
-                    value="${state.tuning.timbreWarmth}"
-                    oninput="window.dubDubStore.updateTuning('timbreWarmth', parseInt(this.value))"
-                  />
-                </div>
-              </div>
-
-              <!-- Locked Terms Strip (5 cols) -->
-              <div class="col-span-5 flex flex-col justify-between pl-1 border-l border-stone-200">
-                <div class="flex items-center justify-between">
-                  <span class="text-[9px] font-bold text-stone-400 uppercase tracking-wider">Locked Terms</span>
-                  <button class="text-[9px] font-bold text-[#8D4B00] hover:underline" onclick="alert('Add custom terminology glossary pair')">+ Add</button>
-                </div>
-                <div class="space-y-1 text-[9px] mt-1">
-                  ${state.lockedTerms.map(term => `
-                    <div class="flex items-center justify-between px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200">
-                      <span class="font-mono text-stone-600 truncate">“${term.source}”</span>
-                      <span class="text-stone-400 mx-0.5">➔</span>
-                      <span class="font-mono text-[#8D4B00] font-bold truncate">“${term.target}”</span>
-                    </div>
+                <span class="text-[9px] font-bold text-stone-500 uppercase tracking-wider block">TTS Provider</span>
+                <select
+                  data-action="select-tts-provider"
+                  class="w-full mt-1 bg-white border border-stone-200 text-stone-800 text-xs font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#8D4B00] cursor-pointer"
+                  onchange="window.dubDubStore.updateBackendConfig('ttsType', Number(this.value))">
+                  ${ttsProviders.map(([typeId, label]) => `
+                    <option value="${typeId}" ${Number(state.backend?.config?.ttsType) === Number(typeId) ? 'selected' : ''}>
+                      ${escapeHtml(label)}
+                    </option>
                   `).join('')}
+                </select>
+              </div>
+
+              <!-- Target Language -->
+              <div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex flex-col justify-between">
+                <span class="text-[9px] font-bold text-stone-500 uppercase tracking-wider block">Target Language</span>
+                <select 
+                  class="w-full mt-1 bg-white border border-stone-200 font-bold text-stone-800 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#8D4B00] cursor-pointer"
+                  onchange="window.dubDubStore.updateTargetLanguage(this.value, this.options[this.selectedIndex].text)">
+                  ${(state.backend?.options?.languages || []).map(item => `
+                    <option value="${item.code}" ${state.languages?.target?.code === item.code ? 'selected' : ''}>${escapeHtml(item.name)}</option>
+                  `).join('')}
+                </select>
+              </div>
+            </div>
+
+            <!-- Channel 2: Global Speaker-to-Voice Mapping Matrix -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[9px] font-bold text-stone-500 uppercase tracking-wider">Dynamic Speaker Matrix</span>
+                <span class="text-[9px] font-mono text-stone-400 font-medium">Assigned Voices</span>
+              </div>
+              <div class="space-y-1.5">
+                ${distinctSpeakers.map(speaker => {
+                  const assignedVoice = (state.speakerVoiceMap && state.speakerVoiceMap[speaker.speakerId])
+                    || state.backend?.config?.voiceRole
+                    || (voiceRoles && voiceRoles[0])
+                    || 'No';
+                  const dotBg = speakerDotBg[speaker.speakerColor] || 'bg-[#8D4B00]';
+                  return `
+                    <div class="p-2 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2 min-w-[120px] flex-shrink-0">
+                        <span class="w-6 h-6 rounded-full text-white font-mono text-[10px] font-bold flex items-center justify-center flex-shrink-0 ${dotBg}">
+                          ${escapeHtml(speaker.speakerCode || 'S1')}
+                        </span>
+                        <div class="min-w-0">
+                          <span class="text-[11px] font-bold text-stone-900 block truncate leading-tight">${escapeHtml(speaker.speakerName || 'Speaker 1')}</span>
+                          <span class="text-[9px] text-stone-500 font-mono block truncate">${escapeHtml(speaker.speakerId)}</span>
+                        </div>
+                      </div>
+                      <select
+                        data-speaker-voice-select="${escapeHtml(speaker.speakerId)}"
+                        class="bg-white border border-stone-200 text-stone-800 text-xs font-bold rounded-lg px-2 py-1 focus:outline-none focus:border-[#8D4B00] cursor-pointer flex-1"
+                        onchange="window.dubDubStore.updateSpeakerVoice('${escapeHtml(speaker.speakerId)}', this.value)">
+                        ${voiceRoles.map(v => `
+                          <option value="${escapeHtml(v)}" ${v === assignedVoice ? 'selected' : ''}>
+                            ${escapeHtml(v)}
+                          </option>
+                        `).join('')}
+                      </select>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- Channel 3: Timbre & Ducking Controls -->
+            <div class="grid grid-cols-2 gap-2 pt-2 border-t border-stone-200">
+              <div>
+                <div class="flex justify-between text-[10px] mb-0.5">
+                  <span class="text-stone-600 font-medium">Dubbing Pace</span>
+                  <span class="font-mono text-[#8D4B00] font-bold">${(state.tuning?.pace || 1.0).toFixed(2)}x</span>
                 </div>
+                <input 
+                  class="w-full accent-[#8D4B00] h-1 bg-stone-200 rounded-lg cursor-pointer" 
+                  max="120" 
+                  min="80" 
+                  type="range" 
+                  value="${Math.round((state.tuning?.pace || 1.0) * 100)}"
+                  oninput="window.dubDubStore.updateTuning('pace', this.value / 100)"
+                />
+              </div>
+              <div>
+                <div class="flex justify-between text-[10px] mb-0.5">
+                  <span class="text-stone-600 font-medium">Timbre Warmth</span>
+                  <span class="font-mono text-stone-700 font-bold">+${Math.round(((state.tuning?.timbreWarmth || 50) - 50) / 6)} dB</span>
+                </div>
+                <input 
+                  class="w-full accent-amber-700 h-1 bg-stone-200 rounded-lg cursor-pointer" 
+                  max="100" 
+                  min="0" 
+                  type="range" 
+                  value="${state.tuning?.timbreWarmth || 50}"
+                  oninput="window.dubDubStore.updateTuning('timbreWarmth', parseInt(this.value))"
+                />
               </div>
             </div>
           </div>
@@ -172,100 +182,130 @@ export function renderStage3VoiceDubbing(state) {
             <div class="flex items-center gap-1.5">
               <span class="material-symbols-outlined text-[#8D4B00] text-base">subtitles</span>
               <h3 class="text-xs font-bold text-stone-900">Subtitles &amp; Dubs</h3>
-              <span class="px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-mono text-[10px] font-bold">48 Items</span>
+              <span class="px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-mono text-[10px] font-bold">
+                ${state.segments.length} Dialogue Segments
+              </span>
             </div>
             <div class="h-3.5 w-px bg-stone-200"></div>
-            <label class="flex items-center gap-1.5 text-[10px] text-stone-500 cursor-pointer">
-              <input checked class="rounded border-stone-300 text-[#8D4B00] focus:ring-0 w-3 h-3 bg-white" type="checkbox" />
-              <span>Auto-follow playhead</span>
-            </label>
+            <span class="text-[10px] text-stone-500">
+              Click dialog block to audition • Edit translated text inline • Override voice per block
+            </span>
           </div>
 
-          <!-- Search, Filter & Quick Action Tools -->
+          <!-- Timecode Telemetry -->
           <div class="flex items-center gap-2">
-            <div class="relative w-52">
-              <span class="material-symbols-outlined absolute left-2 top-1.5 text-stone-400 text-xs">search</span>
-              <input 
-                class="w-full bg-white pl-6 pr-2 py-0.5 rounded-lg text-xs text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-primary border border-stone-200 leading-tight" 
-                placeholder="Search phrase..." 
-                type="text" 
-              />
-            </div>
-            <select class="bg-white text-[10px] text-stone-700 font-medium py-0.5 px-2 rounded-lg border border-stone-200 focus:outline-none cursor-pointer">
-              <option>All Speakers (2)</option>
-              <option>Alex Carter</option>
-              <option>Elena Rostova</option>
-            </select>
-            <button class="p-1 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-200/80 transition-colors" title="Find & Replace">
-              <span class="material-symbols-outlined text-xs">find_replace</span>
-            </button>
-            <button class="p-1 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-200/80 transition-colors" title="Re-align timing">
-              <span class="material-symbols-outlined text-xs">sync</span>
-            </button>
+            <span class="text-[10px] font-mono font-medium text-stone-500">
+              Playhead: <span class="font-bold text-stone-800">${state.playback.formattedTime}</span>
+            </span>
           </div>
         </div>
 
         <!-- Wide Horizontal-Flow Teleprompter Ribbon -->
         <div class="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2">
           ${state.segments.map(seg => {
-            const isActive = seg.id === 1;
+            const isActive = String(seg.id) === String(state.activeSegmentId);
+            const safeId = escapeHtml(JSON.stringify(seg.id));
+            const colorClass = speakerColorClasses[seg.speakerColor] || 'bg-amber-100 text-amber-900 border-amber-300';
+            const dotBg = speakerDotBg[seg.speakerColor] || 'bg-[#8D4B00]';
+
+            const globalSpeakerVoice = (state.speakerVoiceMap && state.speakerVoiceMap[seg.speakerId])
+              || state.backend?.config?.voiceRole
+              || (voiceRoles && voiceRoles[0])
+              || 'default';
+            const hasOverride = seg.voiceOverride != null;
+            const activeVoice = store.getResolvedVoice(seg);
+
+            const startTimeFormatted = store.formatTime(seg.startSec);
+            const endTimeFormatted = store.formatTime(seg.endSec);
 
             return `
-              <div class="p-2.5 rounded-xl border ${isActive ? 'border-2 border-[#8D4B00] bg-amber-50/40 active-teleprompter-card' : 'border-stone-200 bg-white hover:border-amber-200'} shadow-2xs flex flex-col md:flex-row md:items-center gap-3 relative transition-all">
+              <div 
+                data-segment-card="${escapeHtml(seg.id)}"
+                data-action="seek-segment"
+                data-segment-id="${escapeHtml(seg.id)}"
+                class="p-2.5 rounded-xl border ${isActive ? 'border-2 border-[#8D4B00] bg-amber-50/50 shadow-xs' : 'border-stone-200 bg-white hover:border-amber-300 hover:bg-stone-50/40'} shadow-2xs flex flex-col md:flex-row md:items-center gap-3 relative transition-all cursor-pointer"
+                onclick="window.dubDubStore.seekAndPlay(${seg.startSec}, ${safeId})">
+                
                 <!-- Left Metadata & Speaker Badge -->
                 <div class="flex md:flex-col justify-between md:justify-center items-start gap-1 w-full md:w-44 flex-shrink-0">
                   <div class="flex items-center gap-1.5">
-                    <span class="px-1.5 py-0.2 rounded bg-[#8D4B00] text-white font-mono text-[10px] font-bold">#0${seg.id}</span>
-                    <div class="flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-amber-100/80 text-amber-900 border border-amber-200 text-[10px] font-bold">
-                      <span class="w-3 h-3 rounded-full bg-[#8D4B00] text-white text-[8px] flex items-center justify-center">${seg.speakerCode}</span>
-                      <span>${seg.speakerName}</span>
+                    <span class="px-1.5 py-0.2 rounded bg-[#8D4B00] text-white font-mono text-[10px] font-bold">#0${escapeHtml(seg.id)}</span>
+                    <div class="flex items-center gap-1 px-1.5 py-0.2 rounded-full border text-[10px] font-bold ${colorClass}">
+                      <span class="w-3 h-3 rounded-full text-white text-[8px] font-mono flex items-center justify-center ${dotBg}">${escapeHtml(seg.speakerCode || 'S1')}</span>
+                      <span>${escapeHtml(seg.speakerName || 'Speaker 1')}</span>
                     </div>
                   </div>
-                  <span class="font-mono text-[10px] text-stone-500">${seg.startTime} ➔ ${seg.endTime}</span>
+                  <span class="font-mono text-[10px] text-stone-500 font-medium">${startTimeFormatted} ➔ ${endTimeFormatted}</span>
                   <span class="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">
-                    ${seg.cps} CPS • ${seg.cpsStatus}
+                    ${seg.cps || '14.2'} CPS • ${seg.cpsStatus || 'Optimal'}
                   </span>
                 </div>
 
-                <!-- Center Bilingual Dialogue Cards (Side-by-Side or Stacked) -->
+                <!-- Center Bilingual Dialogue Cards -->
                 <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2 min-w-0">
                   <!-- Translated Speech (Dubbing Target) -->
-                  <div class="p-1.5 rounded-lg bg-white border border-stone-200 shadow-2xs">
-                    <div class="flex items-center justify-between text-[9px] font-mono text-stone-400 mb-0.5">
-                      <span class="text-[#8D4B00] font-bold">AI DUB (ES)</span>
-                      <span>Neural Synth</span>
+                  <div class="p-2 rounded-lg bg-white border border-stone-200 shadow-2xs">
+                    <div class="flex items-center justify-between text-[9px] font-mono text-stone-400 mb-1">
+                      <span class="text-[#8D4B00] font-bold">AI DUB (${escapeHtml((state.languages?.target?.code || 'ES').toUpperCase())})</span>
+                      <span>Target Text</span>
                     </div>
-                    <input 
-                      class="w-full bg-transparent border-0 p-0 text-xs text-stone-900 font-bold focus:ring-0"
-                      value="${seg.targetText}"
-                      onchange="window.dubDubStore.updateSegment(${seg.id}, 'targetText', this.value)"
-                    />
+                    <textarea 
+                      rows="2"
+                      data-segment-input="stage3-${escapeHtml(seg.id)}"
+                      class="w-full bg-white border border-stone-200 focus:border-[#8D4B00] focus:ring-1 focus:ring-[#8D4B00] rounded-lg p-1.5 text-xs text-stone-900 font-medium resize-none leading-relaxed"
+                      onclick="event.stopPropagation()"
+                      onfocus="window.dubDubStore.setActiveEditor(${safeId}, this.selectionStart)"
+                      onblur="setTimeout(() => { if (window.dubDubStore.activeEditor && String(window.dubDubStore.activeEditor.segmentId) === String(${safeId})) window.dubDubStore.clearActiveEditor(${safeId}); }, 250); window.dubDubStore.updateSegmentTargetText(${safeId}, this.value, true);"
+                      oninput="window.dubDubStore.updateSegmentTargetText(${safeId}, this.value)"
+                      onchange="window.dubDubStore.updateSegmentTargetText(${safeId}, this.value, true)"
+                    >${escapeHtml(seg.targetText || '')}</textarea>
                   </div>
 
                   <!-- Source Reference Audio (Original) -->
-                  <div class="p-1.5 rounded-lg bg-stone-50 border border-stone-200/80">
-                    <div class="text-[9px] font-mono text-stone-400 mb-0.5">SOURCE SPEECH (EN)</div>
-                    <p class="text-xs text-stone-600 truncate font-medium">“${seg.sourceText}”</p>
+                  <div class="p-2 rounded-lg bg-stone-50 border border-stone-200/80 flex flex-col justify-between">
+                    <div class="text-[9px] font-mono text-stone-400 mb-1">SOURCE SPEECH (${escapeHtml((state.languages?.source?.code || 'EN').toUpperCase())})</div>
+                    <p class="text-xs text-stone-600 line-clamp-2 font-medium">“${escapeHtml(seg.sourceText || '')}”</p>
+                    <div class="text-[9px] text-stone-400 font-mono mt-1">Reference Audio</div>
                   </div>
                 </div>
 
-                <!-- Right Inline Voice Selector & Quick Audition -->
-                <div class="flex items-center gap-2 flex-shrink-0">
-                  <select class="bg-white border border-stone-200 text-[10px] font-bold text-stone-800 rounded-lg px-2 py-1 focus:outline-none">
-                    <option selected>${seg.speakerName} (${seg.speakerCode === 'AC' ? 'Warm' : 'Broadcast'})</option>
-                    <option>Elena Rostova (Guest)</option>
-                    <option>Clone Custom Voice...</option>
-                  </select>
+                <!-- Right Inline Voice Selector & Actions -->
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                  <div class="flex flex-col gap-1 items-end">
+                    <select 
+                      data-segment-voice-select="${escapeHtml(seg.id)}"
+                      class="bg-white border ${hasOverride ? 'border-[#8D4B00] ring-1 ring-[#8D4B00] text-[#8D4B00]' : 'border-stone-200 text-stone-800'} text-[10px] font-bold rounded-lg px-2 py-1.5 focus:outline-none cursor-pointer max-w-[160px] truncate"
+                      onclick="event.stopPropagation()"
+                      onchange="window.dubDubStore.setSegmentVoiceOverride(${safeId}, this.value)">
+                      ${voiceRoles.map(v => `
+                        <option value="${escapeHtml(v)}" ${v === activeVoice ? 'selected' : ''}>
+                          ${escapeHtml(v)}${v === globalSpeakerVoice ? ' (Default)' : ''}
+                        </option>
+                      `).join('')}
+                    </select>
+
+                    ${hasOverride ? `
+                      <button 
+                        type="button"
+                        data-action="reset-segment-voice"
+                        data-segment-id="${escapeHtml(seg.id)}"
+                        class="px-2 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-[#8D4B00] border border-amber-200 text-[9px] font-bold flex items-center gap-0.5 shadow-2xs transition-colors"
+                        title="Reset to default voice (${escapeHtml(globalSpeakerVoice)})"
+                        onclick="event.stopPropagation(); window.dubDubStore.clearSegmentVoiceOverride(${safeId})">
+                        <span class="material-symbols-outlined text-[10px]">restart_alt</span>
+                        <span>Reset</span>
+                      </button>
+                    ` : ''}
+                  </div>
 
                   <button 
+                    type="button"
+                    data-action="seek-segment"
+                    data-segment-id="${escapeHtml(seg.id)}"
                     class="p-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-[#8D4B00] transition-colors shadow-2xs" 
                     title="Audition Dubbed Audio"
-                    onclick="window.dubDubStore.setPlaybackTime(${seg.startSec})">
+                    onclick="event.stopPropagation(); window.dubDubStore.seekAndPlay(${seg.startSec}, ${safeId})">
                     <span class="material-symbols-outlined text-base">volume_up</span>
-                  </button>
-
-                  <button class="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600 transition-colors" title="Regenerate Voice">
-                    <span class="material-symbols-outlined text-sm">cached</span>
                   </button>
                 </div>
               </div>

@@ -155,6 +155,8 @@ class AssembleMixin:
             threading.Thread(target=_output, daemon=True).start()
             self.signal(text=tr("Check manually added BGM..."))
             self._back_music()
+            self.signal(text="Mix original audio...")
+            self._mix_original_audio()
             self.signal(text=tr("Check original BGM..."))
             self._separate()
 
