@@ -33,7 +33,7 @@ export function renderStatusFooter(state) {
   };
 
   const primaryActions = {
-    1: { text: "Start Processing & Translate", nextStep: 2, icon: "arrow_forward" },
+    1: { text: "Start Dub", nextStep: 2, icon: "arrow_forward" },
     2: { text: "Proceed to Voice & Dubbing", nextStep: 3, icon: "arrow_forward" },
     3: { text: "Proceed to Edit Video", nextStep: 4, icon: "arrow_forward" },
     4: { text: "Export 4K Master Video", nextStep: null, icon: "file_download" }
@@ -70,12 +70,12 @@ export function renderStatusFooter(state) {
       actionIcon = 'progress_activity';
       actionDisabled = true;
     } else if (backend.status === 'succeeded') {
-      actionText = 'Processing Complete';
-      action = '';
-      actionIcon = 'check_circle';
-      actionDisabled = true;
+      actionText = 'Review Transcript';
+      action = 'window.dubDubStore.setStep(2)';
+      actionIcon = 'arrow_forward';
+      actionDisabled = false;
     } else {
-      actionText = state.project.verified ? 'Start Processing & Translate' : 'Choose Source Video';
+      actionText = state.project.verified ? 'Start Dub' : 'Choose Source Video';
       action = state.project.verified ? 'window.dubDubStore.startProcessing()' : 'window.dubDubStore.chooseMedia()';
       actionIcon = state.project.verified ? 'play_arrow' : 'upload_file';
       actionDisabled = state.project.verified && Boolean(window.dubDubStore.getPrepareValidationError());
