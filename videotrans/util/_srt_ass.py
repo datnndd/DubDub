@@ -6,7 +6,7 @@ from videotrans.configure.config import ROOT_DIR, logger
 from videotrans.util._srt_parse import get_subtitle_from_srt
 
 
-def set_ass_font(srtfile: str) -> str:
+def set_ass_font(srtfile: str, style_override: dict | None = None) -> str:
     from . import help_ffmpeg
     """
     Convert SRT to ASS with custom styles:
@@ -31,16 +31,32 @@ def set_ass_font(srtfile: str) -> str:
     help_ffmpeg.runffmpeg(['-y', '-i', edit_srt, ass_file_path])
 
     JSON_FILE = f'{ROOT_DIR}/videotrans/ass.json'
-    if not os.path.exists(JSON_FILE):
+    if not os.path.exists(JSON_FILE) and not style_override:
         logger.debug(f"[set_ass_font] 未修改硬字幕样式，跳过样式替换")
         return ass_file_path
 
-    try:
-        with open(JSON_FILE, 'r', encoding='utf-8-sig') as f:
-            style = json.load(f)
-    except Exception as e:
-        logger.exception(f"[set_ass_font] 错误：无法读取或解析 JSON 文件 {JSON_FILE}: {e}", exc_info=True)
-        return ass_file_path
+    style = {}
+    if os.path.exists(JSON_FILE):
+        try:
+            with open(JSON_FILE, 'r', encoding='utf-8-sig') as f:
+                style = json.load(f)
+        except Exception as e:
+            logger.exception(f"[set_ass_font] 错误：无法读取或解析 JSON 文件 {JSON_FILE}: {e}", exc_info=True)
+    if style_override:
+        def ass_color(value: str, fallback: str) -> str:
+            match = re.fullmatch(r'#([0-9a-fA-F]{6})', str(value or ''))
+            if not match:
+                return fallback
+            rgb = match.group(1)
+            return f"&H00{rgb[4:6]}{rgb[2:4]}{rgb[0:2]}&"
+        style.update({
+            'Fontname': str(style_override.get('fontFamily') or style.get('Fontname', 'Arial')),
+            'Fontsize': max(8, min(96, int(style_override.get('fontSize', style.get('Fontsize', 24))))),
+            'PrimaryColour': ass_color(style_override.get('color'), '&H00FFFFFF&'),
+            'OutlineColour': ass_color(style_override.get('outlineColor'), '&H00000000&'),
+            'Outline': max(0, min(10, int(style_override.get('outlineWidth', 2)))),
+            'Shadow': max(0, min(10, int(style_override.get('shadowSize', 2)))),
+        })
 
     default_style = (
         f"Style: {style.get('Name', 'Default')},"

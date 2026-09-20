@@ -230,9 +230,12 @@ def test_options_expose_only_supported_asr_providers_and_safe_configuration_stat
             prepare_source = (
                 Path(webui.ROOT_DIR) / "frontend" / "js" / "screens" / "Stage1Prepare.js"
             ).read_text(encoding="utf-8")
+            stage3_source = (
+                Path(webui.ROOT_DIR) / "frontend" / "js" / "screens" / "Stage3VoiceDubbing.js"
+            ).read_text(encoding="utf-8")
             assert "ttsType: 2" in state_source
-            assert "optionTags(options.voices, backend.config.ttsType)" in prepare_source
-            assert "updateBackendConfig('ttsType', Number(this.value))" in prepare_source
+            assert "updateBackendConfig('ttsType', Number(this.value))" in stage3_source
+            assert "updateBackendConfig('ttsType', Number(this.value))" not in prepare_source
             assert data["translationModes"] == [
                 {"id": "line", "label": "Line-by-line", "description": "Send plain subtitle text in batches."},
                 {"id": "srt", "label": "Send SRT", "description": "Send subtitle blocks with timestamps and structure."},
@@ -672,6 +675,8 @@ def test_prepare_diagnostics_is_visible_at_tablet_and_desktop_widths():
 
 def test_prepare_frontend_defaults_and_provider_specific_models_are_connected():
     prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
+    translation_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "TranslationConfig.js").read_text(encoding="utf-8")
+    stage2_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage2ReviewTranscript.js").read_text(encoding="utf-8")
     state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
 
     assert 'code: "zh-cn"' in state_source
@@ -683,8 +688,10 @@ def test_prepare_frontend_defaults_and_provider_specific_models_are_connected():
     assert "Test connection" in prepare_source
     assert "timingMode" in prepare_source
     assert "timingMode: this.state.languages.timingMode" in state_source
-    assert "translationProviders" in prepare_source
-    assert "openTranslationSettings" in prepare_source
+    assert "renderTranslationConfig" not in prepare_source
+    assert "renderTranslationConfig" in stage2_source
+    assert "translationProviders" in translation_source
+    assert "openTranslationSettings" in translation_source
     assert "testTranslationConnection" in state_source
 
 
@@ -704,18 +711,22 @@ def test_prepare_audio_processing_uses_existing_backend_features():
 
 def test_prepare_uses_existing_line_and_srt_translation_modes():
     prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
+    translation_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "TranslationConfig.js").read_text(encoding="utf-8")
+    stage2_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage2ReviewTranscript.js").read_text(encoding="utf-8")
     state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
 
     assert "Tone &amp; Register Preset" not in prepare_source
     assert "Conversational ★" not in prepare_source
     assert "Formal Lecture" not in prepare_source
     assert 'tone: "conversational"' not in state_source
-    assert "Translation Mode" in prepare_source
-    assert "translationModes" in prepare_source
-    assert "mode.label" in prepare_source
-    assert "mode.description" in prepare_source
+    assert "renderTranslationConfig" not in prepare_source
+    assert "renderTranslationConfig" in stage2_source
+    assert "Translation Mode" in translation_source
+    assert "translationModes" in translation_source
+    assert "mode.label" in translation_source
+    assert "mode.description" in translation_source
     assert 'translationMode: "srt"' in state_source
-    assert "updateBackendConfig('translationMode'" in prepare_source
+    assert "updateBackendConfig('translationMode'" in translation_source
     for provider in ("chatgpt", "gemini", "deepseek"):
         assert (Path(webui.ROOT_DIR) / "videotrans" / "prompts" / "text" / f"{provider}.txt").is_file()
         assert (Path(webui.ROOT_DIR) / "videotrans" / "prompts" / "srt" / f"{provider}.txt").is_file()

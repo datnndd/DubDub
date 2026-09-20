@@ -47,6 +47,18 @@ class AudioMixin:
         except Exception as e:
             logger.exception(f'添加背景音乐失败,静默跳过 {e}', exc_info=True)
 
+    def _mix_original_audio(self) -> None:
+        volume = float(getattr(self.cfg, "source_audio_volume", 0.0) or 0.0)
+        if volume <= 0 or not vail_file(self.cfg.source_wav) or not vail_file(self.cfg.target_wav):
+            return
+        mixed = self.cfg.cache_folder + "/target-with-original.wav"
+        runffmpeg([
+            '-y', '-i', os.path.basename(self.cfg.target_wav), '-i', os.path.basename(self.cfg.source_wav),
+            '-filter_complex', f'[1:a]volume={volume}[original];[0:a][original]amix=inputs=2:duration=first:dropout_transition=2',
+            '-ac', '2', '-c:a', 'pcm_s16le', os.path.basename(mixed)
+        ], cmd_dir=self.cfg.cache_folder)
+        self.cfg.target_wav = mixed
+
     def _separate(self) -> None:
         if self._exit() or not self.cfg.embed_bgm or not vail_file(self.cfg.instrument) or not vail_file(self.cfg.target_wav):
             return

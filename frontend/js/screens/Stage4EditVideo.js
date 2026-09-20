@@ -1,421 +1,454 @@
 /**
- * Stage 4: Master Video & Timeline Editor
- * CapCut Desktop Pro Timeline Deck with multi-track NLE, dynamic subtitle styling, and OCR inpainting.
+ * Stage 4: Lightweight Video Editing Studio (CapCut Style)
+ * Provides video preview with live subtitle styling, multi-track timeline,
+ * independent audio source mixing (original, dubbed, BGM), and thumbnail management.
  */
 
+import { renderVideoPlayer } from '../components/VideoPlayer.js';
+
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+})[c]);
+
+const time = seconds => {
+  const value = Math.max(0, Number(seconds) || 0);
+  const m = Math.floor(value / 60);
+  const s = Math.floor(value % 60);
+  const ms = Math.round((value % 1) * 1000);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+};
+
+const audioSlider = (label, key, value, icon, muted = false) => `
+  <div class="rounded-xl border border-stone-200/80 bg-[#FAF9F6] p-3 shadow-2xs">
+    <div class="mb-2 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-md ${muted ? 'bg-stone-200 text-stone-500' : 'bg-amber-100 text-[#8D4B00]'} flex items-center justify-center">
+          <span class="material-symbols-outlined text-sm">${icon}</span>
+        </div>
+        <span class="text-xs font-bold text-stone-800">${label}</span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button type="button" data-action="toggle-mute-${key}" class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${muted ? 'bg-stone-300 text-stone-700' : 'bg-stone-200 hover:bg-stone-300 text-stone-700'}"
+          title="${muted ? 'Unmute' : 'Mute'}"
+          onclick="window.dubDubStore.toggleAudioMute('${key}')">
+          <span class="material-symbols-outlined text-xs align-middle">${muted ? 'volume_off' : 'volume_up'}</span>
+        </button>
+        <output class="font-mono text-xs font-bold ${muted ? 'text-stone-400 line-through' : 'text-[#8D4B00]'}">${value}%</output>
+      </div>
+    </div>
+    <input data-mix-slider="${key}" class="w-full accent-[#8D4B00] cursor-pointer h-1.5 bg-stone-200 rounded-lg appearance-none" type="range" min="0" max="150" value="${value}"
+      oninput="this.closest('div').querySelector('output').textContent=this.value+'%'; window.dubDubStore.updateAudioMix('${key}', Number(this.value), false)"
+      onchange="window.dubDubStore.updateAudioMix('${key}', Number(this.value))" />
+  </div>`;
+
 export function renderStage4EditVideo(state) {
-  const p = state.project;
-  const sub = state.subtitleStyles;
-  const curTime = state.playback.currentTime;
-  const playheadPercent = Math.min(100, (curTime / state.project.durationSec) * 100);
+  const edit = state.editVideo;
+  const style = state.subtitleStyles;
+  const totalDuration = Math.max(1, state.project.durationSec || (state.segments.length ? state.segments[state.segments.length - 1].endSec : 60));
+  const activeTab = edit.activeTab || 'audio';
+
+  // Active segment for editing
+  const active = state.segments.find(seg => String(seg.id) === String(state.activeSegmentId)) || state.segments[0] || {};
+  const activeIndex = state.segments.findIndex(seg => String(seg.id) === String(active.id));
+
+  // Default clean subtitle styling (White text, black outline, subtle shadow, centered near bottom)
+  const liveStyle = `color:${style.color || '#FFFFFF'};font-family:${style.fontFamily || 'Arial'};font-size:${style.fontSize || 22}px;-webkit-text-stroke:${style.outlineWidth ?? 2}px ${style.outlineColor || '#000000'};paint-order:stroke fill;text-shadow:0 ${style.shadowSize ?? 2}px ${(style.shadowSize ?? 2) * 2}px ${style.shadowColor || 'rgba(0,0,0,0.75)'};text-align:center;`;
+
+  // Audio mute states
+  const isOrigMuted = (Number(edit.audioMix.original) || 0) === 0;
+  const isDubbedMuted = (Number(edit.audioMix.dubbed) || 0) === 0;
+  const isBgmMuted = (Number(edit.audioMix.background) || 0) === 0;
 
   return `
-    <div class="flex-1 min-h-0 w-full p-2 flex flex-col gap-2 overflow-hidden">
-      <!-- TOP AI ENHANCERS STRIP -->
-      <div class="h-8 flex-shrink-0 bg-white border border-[#E4DEC3] rounded-lg px-3 flex items-center justify-between shadow-2xs">
-        <div class="flex items-center gap-1 bg-[#FAF8F5] p-0.5 rounded-lg border border-stone-200">
-          <label class="flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-amber-300 shadow-2xs text-[10px] font-bold text-[#8D4B00] cursor-pointer">
-            <input 
-              checked 
-              class="w-2.5 h-2.5 rounded text-[#8D4B00] focus:ring-0" 
-              type="checkbox"
-              onchange="window.dubDubStore.updateSubtitleStyle('aiLipSync', this.checked)" 
-            />
-            <span>AI Lip-Sync</span>
-          </label>
-          <label class="flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-stone-200 text-[10px] font-semibold text-stone-700 cursor-pointer">
-            <input 
-              checked 
-              class="w-2.5 h-2.5 rounded text-[#8D4B00] focus:ring-0" 
-              type="checkbox"
-              onchange="window.dubDubStore.updateSubtitleStyle('deReverb', this.checked)"
-            />
-            <span>De-reverb</span>
-          </label>
-          <label class="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-white text-[10px] font-medium text-stone-600 cursor-pointer">
-            <input 
-              class="w-2.5 h-2.5 rounded text-[#8D4B00] focus:ring-0" 
-              type="checkbox"
-              onchange="window.dubDubStore.updateSubtitleStyle('faceRetouch', this.checked)"
-            />
-            <span>Face Retouch</span>
-          </label>
-          <label class="flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-stone-200 text-[10px] font-semibold text-stone-700 cursor-pointer">
-            <input 
-              checked 
-              class="w-2.5 h-2.5 rounded text-[#8D4B00] focus:ring-0" 
-              type="checkbox"
-              onchange="window.dubDubStore.updateSubtitleStyle('superRes4K', this.checked)"
-            />
-            <span class="text-amber-900">4K Super-Res</span>
-          </label>
-        </div>
+    <div data-stage4-studio class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden bg-[#F4F1EA]">
+      <!-- Hidden BGM Audio element synchronized with video playback -->
+      <audio id="stage4-bgm-preview" src="${esc(edit.backgroundAudio?.previewUrl || '')}" preload="auto" loop class="hidden"></audio>
 
-        <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1 text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-            <span class="material-symbols-outlined text-xs">cloud_done</span>
-            <span class="text-[10px]">CapCut Timeline Synced</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- MIDDLE ROW: MONITOR (7 Cols) & DUAL-TABBED INSPECTOR (5 Cols) (50% Height) -->
-      <div class="h-[48%] min-h-0 grid grid-cols-12 gap-2">
-        <!-- MONITOR VIEWPORT (7 Cols) -->
-        <section class="col-span-12 lg:col-span-7 h-full bg-white rounded-xl border border-[#E4DEC3] shadow-xs flex flex-col overflow-hidden min-h-0">
-          <div class="h-7 px-3 border-b border-[#E4DEC3] bg-[#FAF8F5] flex items-center justify-between flex-shrink-0">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-[#8D4B00] text-sm">smart_display</span>
-              <span class="text-[11px] font-bold text-stone-900 tracking-tight">Program Out Monitor</span>
-              <span class="px-1.5 py-0.1 rounded text-[8px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                4K 60FPS MASTER
-              </span>
-            </div>
-            <div class="flex items-center gap-1.5 text-[10px]">
-              <span class="text-stone-400 font-mono text-[9px]">Zoom: 100%</span>
-              <button class="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium flex items-center gap-0.5 text-[9px]">
-                <span class="material-symbols-outlined text-[10px]">aspect_ratio</span> 16:9
-              </button>
-              <button class="px-1.5 py-0.5 rounded bg-amber-50 text-[#8D4B00] border border-amber-300 font-bold text-[9px] flex items-center gap-0.5">
-                <span class="material-symbols-outlined text-[10px]">fit_screen</span> Fit
-              </button>
-            </div>
-          </div>
-
-          <!-- Video Canvas Container -->
-          <div class="relative flex-1 min-h-0 bg-[#0B0E15] flex items-center justify-center overflow-hidden">
-            <img 
-              alt="Program Out Master Frame" 
-              class="w-full h-full object-cover opacity-90" 
-              src="assets/screen_2_broadcast_split.png" 
-              onerror="this.src='https://lh3.googleusercontent.com/aida-public/AB6AXuAdw2oYibvlA_Z6ofNA2ic_IGcy9kFrw9CXigxphiomgTQrVilzO3B-RsHzuoK_uOBcMKomeOI3p0ZBGO9Ht95RZmprC7QLSxJ-dV0D-Wms50T6hieKj6GKnYUKlPFgnbNpHa3nkNCMZph4Ix6ryFk3npfM9bec-SuJubanr_mcfadH-lnT7PUTrBFeOBr4GO3m3u5ieaYBX3inE867dYZl1pGK6hBigQ6plLLpfi8FOoEhA-2Gf42NJw'"
-            />
-
-            <!-- Top Monitor HUD Telemetry -->
-            <div class="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
-              <div class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/80 backdrop-blur-md text-amber-300 font-mono text-[10px] border border-amber-400/30">
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 warm-pulse"></span>
-                <span>${state.playback.formattedTime} / ${p.duration}</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <span class="px-2 py-0.5 rounded-full bg-indigo-600/90 text-white font-bold text-[8px] uppercase tracking-wider backdrop-blur-md shadow-xs flex items-center gap-1">
-                  <span class="material-symbols-outlined text-[10px]">face</span> AI Lip-Mesh Active
-                </span>
-                <span class="px-2 py-0.5 rounded-full bg-black/70 text-amber-200 font-mono text-[8px] border border-white/10 backdrop-blur-md">
-                  Ducking: -14dB
-                </span>
-              </div>
-            </div>
-
-            <!-- OCR INPAINTING BOUNDING BOX OVERLAY -->
-            <div class="absolute top-[14%] right-[7%] w-60 border-2 border-dashed border-amber-400 bg-amber-950/40 rounded-md p-1.5 backdrop-blur-[3px] shadow-xl z-20 transition-all">
-              <div class="flex items-center justify-between -mt-3.5 -ml-1 mb-1">
-                <span class="bg-[#8D4B00] text-amber-100 font-mono font-black text-[8px] px-1.5 py-0.5 rounded flex items-center gap-1 shadow-xs border border-amber-300/40">
-                  <span class="material-symbols-outlined text-[10px]">document_scanner</span> OCR TARGET
-                </span>
-                <span class="bg-black/85 text-amber-300 text-[8px] font-mono px-1 rounded border border-amber-400/20">01:26.5</span>
-              </div>
-              <div class="bg-stone-950/90 rounded p-1.5 border border-amber-400/40 text-left space-y-1">
-                <div class="text-[8px] text-stone-400 font-mono flex items-center justify-between">
-                  <span>Source Sign:</span>
-                  <span class="text-stone-300 font-bold truncate max-w-[120px]">“GLOBAL INNOVATION”</span>
-                </div>
-                <div class="pt-1 border-t border-white/10">
-                  <div class="text-[9px] text-amber-300 font-bold leading-tight font-sans">
-                    “CUMBRE GLOBAL DE INNOVACIÓN”
-                  </div>
-                  <div class="flex items-center justify-end gap-1 mt-1">
-                    <button class="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-[8px] border border-stone-600 transition-colors">
-                      Replace
-                    </button>
-                    <button class="px-2 py-0.5 rounded bg-[#8D4B00] hover:bg-amber-700 text-white font-bold text-[8px] uppercase tracking-wider flex items-center gap-0.5 shadow-xs transition-colors">
-                      <span class="material-symbols-outlined text-[9px]">auto_fix_high</span> Inpaint
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Dynamic Subtitle Overlay with Custom Styling -->
-            <div class="absolute inset-x-4 bottom-3 z-20 flex justify-center text-center pointer-events-none">
-              <div class="max-w-lg bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-xl border border-amber-400/40 shadow-2xl">
-                <p 
-                  class="text-amber-300 font-extrabold text-[13px] leading-snug tracking-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]"
-                  style="font-family: '${sub.fontFamily}'; font-size: ${sub.fontSize * 0.55}px; color: ${sub.color};">
-                  “${state.segments[0].targetText}”
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Mini-Transport Controls Bar -->
-          <div class="h-7 px-3 bg-[#FAF8F5] border-t border-[#E4DEC3] flex items-center justify-between flex-shrink-0">
-            <div class="flex items-center gap-1 text-stone-600">
-              <button class="p-0.5 hover:bg-stone-200 rounded" onclick="window.dubDubStore.setPlaybackTime(Math.max(0, ${curTime} - 5))"><span class="material-symbols-outlined text-[13px]">replay_5</span></button>
-              <button 
-                class="w-5 h-5 rounded-full bg-[#8D4B00] text-white flex items-center justify-center shadow-xs hover:bg-[#743d00]"
-                onclick="window.dubDubStore.togglePlay()">
-                <span class="material-symbols-outlined text-[12px]">${state.playback.isPlaying ? 'pause' : 'play_arrow'}</span>
-              </button>
-              <button class="p-0.5 hover:bg-stone-200 rounded" onclick="window.dubDubStore.setPlaybackTime(Math.min(${p.durationSec}, ${curTime} + 5))"><span class="material-symbols-outlined text-[13px]">forward_5</span></button>
-            </div>
-            <button class="text-[9px] text-[#8D4B00] font-bold hover:underline flex items-center gap-1" onclick="alert('Visual OCR Scanner active across video keyframes')">
-              <span class="material-symbols-outlined text-[11px]">center_focus_strong</span> Scan On-Screen Signs (Visual OCR)
-            </button>
-          </div>
+      <!-- UPPER DECK: Video Preview (Left) + Contextual Inspector / Settings Panel (Right) -->
+      <div class="flex-1 min-h-0 grid grid-cols-12 gap-2.5 overflow-hidden">
+        <!-- 1. Video Preview Area (7 Cols) -->
+        <section class="col-span-12 lg:col-span-7 xl:col-span-8 min-h-0 flex flex-col rounded-xl overflow-hidden border border-[#E2DDD3] bg-white shadow-xs">
+          ${renderVideoPlayer(state, { title: 'Studio Preview', subtitleVariant: 'capcut' })}
+          <style>[data-canvas-subtitle]{${liveStyle}}</style>
         </section>
 
-        <!-- DUAL TABBED INSPECTOR (5 Cols) -->
-        <aside class="col-span-12 lg:col-span-5 h-full bg-white rounded-xl border border-[#E4DEC3] shadow-xs flex flex-col overflow-hidden min-h-0">
-          <!-- Segmented Tab Header -->
-          <div class="p-1 border-b border-[#E4DEC3] bg-[#FAF8F5] flex items-center justify-between flex-shrink-0">
-            <div class="flex items-center gap-1 bg-stone-200/70 p-0.5 rounded-lg w-full max-w-[280px]">
-              <button 
-                class="flex-1 py-1 rounded-md text-[10px] font-bold ${sub.activeTab === 'text' ? 'bg-white text-[#8D4B00] shadow-xs border border-amber-300' : 'text-stone-600 hover:text-stone-900'} flex items-center justify-center gap-1"
-                onclick="window.dubDubStore.updateSubtitleStyle('activeTab', 'text')">
-                <span class="material-symbols-outlined text-xs">format_size</span> Text &amp; Fonts
+        <!-- 2. Settings Panel / Inspector (5 Cols) -->
+        <aside class="col-span-12 lg:col-span-5 xl:col-span-4 min-h-0 rounded-xl border border-[#E2DDD3] bg-white flex flex-col overflow-hidden shadow-xs">
+          <!-- Inspector Header Tabs -->
+          <header class="h-10 px-3 border-b border-stone-200 bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-1">
+              <button type="button" data-inspector-tab="audio" class="px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${activeTab === 'audio' ? 'bg-[#8D4B00] text-white shadow-2xs' : 'text-stone-600 hover:bg-stone-100'}"
+                onclick="window.dubDubStore.setStage4InspectorTab('audio')">
+                <span class="material-symbols-outlined text-sm">volume_up</span>
+                <span>Audio Mix</span>
               </button>
-              <button 
-                class="flex-1 py-1 rounded-md text-[10px] font-semibold ${sub.activeTab === 'bgm' ? 'bg-white text-[#8D4B00] shadow-xs border border-amber-300' : 'text-stone-600 hover:text-stone-900'} flex items-center justify-center gap-1"
-                onclick="window.dubDubStore.updateSubtitleStyle('activeTab', 'bgm')">
-                <span class="material-symbols-outlined text-xs">music_note</span> BGM &amp; Ducking
+              <button type="button" data-inspector-tab="subtitles" class="px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${activeTab === 'subtitles' ? 'bg-[#8D4B00] text-white shadow-2xs' : 'text-stone-600 hover:bg-stone-100'}"
+                onclick="window.dubDubStore.setStage4InspectorTab('subtitles')">
+                <span class="material-symbols-outlined text-sm">subtitles</span>
+                <span>Subtitles</span>
+              </button>
+              <button type="button" data-inspector-tab="thumbnail" class="px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${activeTab === 'thumbnail' ? 'bg-[#8D4B00] text-white shadow-2xs' : 'text-stone-600 hover:bg-stone-100'}"
+                onclick="window.dubDubStore.setStage4InspectorTab('thumbnail')">
+                <span class="material-symbols-outlined text-sm">image</span>
+                <span>Thumbnail</span>
               </button>
             </div>
-            <span class="text-[8px] font-mono text-stone-400 bg-stone-100 px-1 py-0.5 rounded border border-stone-200">CapCut Inspector</span>
-          </div>
+            <button type="button" data-action="export-edited-video" class="px-2.5 py-1 rounded-lg bg-[#8D4B00] hover:bg-[#743d00] text-white text-[11px] font-bold shadow-xs flex items-center gap-1 transition-colors"
+              onclick="window.dubDubStore.exportEditedVideo()">
+              <span class="material-symbols-outlined text-xs">movie_creation</span>
+              <span>Export</span>
+            </button>
+          </header>
 
-          <!-- Tab Content Scroll Area -->
-          <div class="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2.5">
-            ${sub.activeTab === 'text' ? `
-              <!-- SECTION A: CAPCUT-STYLE PRESET TEXT BADGES -->
-              <div>
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-[9px] font-bold uppercase tracking-wider text-stone-500">Preset Text Badges</span>
-                  <span class="text-[8px] font-mono text-emerald-700 bg-emerald-50 px-1 rounded font-bold">1-Click Apply</span>
+          <!-- Inspector Content Body -->
+          <div class="flex-1 overflow-y-auto p-3.5 space-y-4">
+            ${activeTab === 'audio' ? `
+              <!-- TAB 1: AUDIO MIX -->
+              <div class="space-y-3.5">
+                <div>
+                  <h3 class="text-xs font-bold text-stone-900">Audio Sources</h3>
+                  <p class="text-[11px] text-stone-500">Balance original dialogue, dubbed TTS voiceover, and background music.</p>
                 </div>
-                <div class="grid grid-cols-4 gap-1.5">
-                  <div 
-                    class="p-1 rounded-lg border-2 border-[#8D4B00] bg-amber-50 text-center cursor-pointer shadow-xs"
-                    onclick="window.dubDubStore.updateSubtitleStyle('color', '#FBBF24'); window.dubDubStore.updateSubtitleStyle('preset', 'warm_glow');">
-                    <span class="text-amber-900 font-extrabold text-[10px] block leading-tight">Warm Glow</span>
-                    <span class="text-[7px] text-[#8D4B00] font-mono">Amber Glow</span>
+
+                <!-- Three Clearly Separated Audio Sources -->
+                <div class="space-y-2.5">
+                  ${audioSlider('Original Video Audio', 'original', edit.audioMix.original, 'movie', isOrigMuted)}
+                  ${audioSlider('Dubbed TTS Audio', 'dubbed', edit.audioMix.dubbed, 'record_voice_over', isDubbedMuted)}
+                  ${audioSlider('Background Music', 'background', edit.audioMix.background, 'music_note', isBgmMuted)}
+                </div>
+
+                <!-- Background Music File Manager -->
+                <div class="pt-2 border-t border-stone-200">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-stone-800">Background Music Track</span>
+                    ${edit.backgroundAudio ? `
+                      <button type="button" class="text-[10px] font-semibold text-red-600 hover:text-red-700" onclick="window.dubDubStore.removeBackgroundAudio()">
+                        Remove BGM
+                      </button>
+                    ` : ''}
                   </div>
-                  <div 
-                    class="p-1 rounded-lg border border-stone-200 hover:border-amber-400 text-center cursor-pointer bg-white"
-                    onclick="window.dubDubStore.updateSubtitleStyle('color', '#FACC15'); window.dubDubStore.updateSubtitleStyle('preset', 'tiktok_yellow');">
-                    <span class="text-stone-950 font-black text-[10px] block bg-yellow-300 rounded px-0.5 leading-tight">TikTok Yellow</span>
-                    <span class="text-[7px] text-stone-500 font-mono">High Energy</span>
-                  </div>
-                  <div 
-                    class="p-1 rounded-lg border border-stone-200 hover:border-stone-400 text-center cursor-pointer bg-white"
-                    onclick="window.dubDubStore.updateSubtitleStyle('color', '#FFFFFF'); window.dubDubStore.updateSubtitleStyle('preset', 'pill_minimal');">
-                    <span class="text-white font-bold text-[9px] block bg-stone-900 rounded px-0.5 leading-tight">Pill Minimal</span>
-                    <span class="text-[7px] text-stone-500 font-mono">Clean Box</span>
-                  </div>
-                  <div 
-                    class="p-1 rounded-lg border border-stone-200 hover:border-stone-400 text-center cursor-pointer bg-white"
-                    onclick="window.dubDubStore.updateSubtitleStyle('color', '#38BDF8'); window.dubDubStore.updateSubtitleStyle('preset', 'retro_outline');">
-                    <span class="text-stone-800 font-extrabold text-[9px] block border border-stone-300 rounded px-0.5 leading-tight shadow-xs">Retro Outline</span>
-                    <span class="text-[7px] text-stone-500 font-mono">Contrast</span>
-                  </div>
+
+                  <input id="stage4-background-input" type="file" accept="audio/*" class="hidden" onchange="window.dubDubStore.selectBackgroundAudio(this.files[0])" />
+
+                  ${edit.backgroundAudio ? `
+                    <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-[#8D4B00] text-amber-100 flex items-center justify-center flex-shrink-0">
+                          <span class="material-symbols-outlined text-base">music_note</span>
+                        </div>
+                        <div class="min-w-0">
+                          <div class="text-xs font-bold text-stone-900 truncate">${esc(edit.backgroundAudio.name)}</div>
+                          <div class="text-[10px] text-stone-500">Synchronized with master playhead</div>
+                        </div>
+                      </div>
+                      <button type="button" class="px-2 py-1 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-[11px] font-semibold text-stone-700 flex-shrink-0"
+                        onclick="document.getElementById('stage4-background-input').click()">
+                        Replace
+                      </button>
+                    </div>
+                  ` : `
+                    <button type="button" class="w-full rounded-xl border-2 border-dashed border-stone-300 hover:border-[#8D4B00] p-3 text-center transition-colors group cursor-pointer bg-white"
+                      onclick="document.getElementById('stage4-background-input').click()">
+                      <span class="material-symbols-outlined text-xl text-stone-400 group-hover:text-[#8D4B00] block mb-0.5">library_music</span>
+                      <span class="block text-xs font-bold text-stone-700 group-hover:text-[#8D4B00]">Add Background Music</span>
+                      <span class="block text-[10px] text-stone-400">MP3, WAV, AAC, M4A, FLAC, OGG</span>
+                    </button>
+                  `}
                 </div>
               </div>
-
-              <!-- SECTION B: TYPOGRAPHY, FONT SLIDERS & PALETTE -->
-              <div class="bg-[#FAF8F5] p-2 rounded-lg border border-stone-200 space-y-1.5">
-                <div class="grid grid-cols-2 gap-2">
-                  <div>
-                    <label class="text-[8px] font-bold uppercase tracking-wider text-stone-500 block mb-0.5">Font Family</label>
-                    <select 
-                      class="w-full bg-white border border-stone-300 rounded text-[10px] font-bold text-stone-800 py-1 px-1.5 focus:outline-none focus:ring-1 focus:ring-[#8D4B00]"
-                      onchange="window.dubDubStore.updateSubtitleStyle('fontFamily', this.value)">
-                      <option value="Plus Jakarta Sans" ${sub.fontFamily === 'Plus Jakarta Sans' ? 'selected' : ''}>Plus Jakarta Sans</option>
-                      <option value="Montserrat" ${sub.fontFamily === 'Montserrat' ? 'selected' : ''}>Montserrat (Punchy)</option>
-                      <option value="Inter" ${sub.fontFamily === 'Inter' ? 'selected' : ''}>Inter (Clean UI)</option>
-                      <option value="JetBrains Mono" ${sub.fontFamily === 'JetBrains Mono' ? 'selected' : ''}>JetBrains Mono</option>
-                    </select>
-                  </div>
-                  <div>
-                    <div class="flex items-center justify-between text-[8px] font-bold uppercase tracking-wider text-stone-500 mb-0.5">
-                      <span>Font Size</span>
-                      <span class="font-mono text-[#8D4B00]">${sub.fontSize} px</span>
-                    </div>
-                    <input 
-                      class="w-full accent-[#8D4B00] h-1 bg-stone-200 rounded cursor-pointer mt-1.5" 
-                      max="40" 
-                      min="12" 
-                      type="range" 
-                      value="${sub.fontSize}"
-                      oninput="window.dubDubStore.updateSubtitleStyle('fontSize', parseInt(this.value))"
-                    />
-                  </div>
+            ` : activeTab === 'subtitles' ? `
+              <!-- TAB 2: SUBTITLES & STYLING -->
+              <div class="space-y-3.5">
+                <div>
+                  <h3 class="text-xs font-bold text-stone-900">Subtitle Appearance</h3>
+                  <p class="text-[11px] text-stone-500">White text with black outline & shadow centered at bottom.</p>
                 </div>
 
-                <!-- Color Swatches -->
-                <div class="pt-1 border-t border-stone-200/80">
-                  <label class="text-[8px] font-bold uppercase tracking-wider text-stone-500 block mb-1">Color Palette</label>
-                  <div class="flex items-center gap-2">
-                    <button class="w-4 h-4 rounded-full bg-amber-300 ring-2 ring-[#8D4B00] ring-offset-1" onclick="window.dubDubStore.updateSubtitleStyle('color', '#FBBF24')"></button>
-                    <button class="w-4 h-4 rounded-full bg-white border border-stone-400" onclick="window.dubDubStore.updateSubtitleStyle('color', '#FFFFFF')"></button>
-                    <button class="w-4 h-4 rounded-full bg-yellow-400" onclick="window.dubDubStore.updateSubtitleStyle('color', '#FACC15')"></button>
-                    <button class="w-4 h-4 rounded-full bg-emerald-400" onclick="window.dubDubStore.updateSubtitleStyle('color', '#34D399')"></button>
-                    <button class="w-4 h-4 rounded-full bg-rose-400" onclick="window.dubDubStore.updateSubtitleStyle('color', '#FB7185')"></button>
-                    <button class="w-4 h-4 rounded-full bg-stone-900" onclick="window.dubDubStore.updateSubtitleStyle('color', '#1C1917')"></button>
+                <!-- Font Size Adjustment Slider & Number Input -->
+                <div class="rounded-xl border border-stone-200/80 bg-[#FAF9F6] p-3 space-y-2">
+                  <div class="flex items-center justify-between text-xs font-bold text-stone-800">
+                    <span class="flex items-center gap-1">
+                      <span class="material-symbols-outlined text-sm text-[#8D4B00]">format_size</span>
+                      <span>Font Size</span>
+                    </span>
+                    <div class="flex items-center gap-1.5">
+                      <input data-action="update-font-size-input" type="number" min="8" max="64" step="1" value="${style.fontSize || 22}"
+                        class="w-14 rounded border border-stone-300 px-1.5 py-0.5 font-mono text-xs text-right font-bold text-[#8D4B00] bg-white focus:border-[#8D4B00] focus:ring-1 focus:ring-[#8D4B00] focus:outline-none"
+                        oninput="const val=Math.max(8, Math.min(64, Number(this.value) || 22)); const sl=this.closest('div.space-y-2').querySelector('[data-action=\\'update-font-size\\']'); if (sl) sl.value=val; window.dubDubStore.updateSubtitleStyle('fontSize', val, false);"
+                        onchange="const val=Math.max(8, Math.min(64, Number(this.value) || 22)); this.value=val; window.dubDubStore.updateSubtitleStyle('fontSize', val, true);" />
+                      <span class="text-xs font-mono text-stone-500 font-bold">px</span>
+                    </div>
                   </div>
+                  <input data-action="update-font-size" class="w-full accent-[#8D4B00] cursor-pointer h-1.5 bg-stone-200 rounded-lg appearance-none"
+                    type="range" min="8" max="64" step="1" value="${style.fontSize || 22}"
+                    oninput="const num=this.closest('div.space-y-2').querySelector('[data-action=\\'update-font-size-input\\']'); if (num) num.value=this.value; window.dubDubStore.updateSubtitleStyle('fontSize', Number(this.value), false);"
+                    onchange="window.dubDubStore.updateSubtitleStyle('fontSize', Number(this.value), true)" />
+                </div>
+
+                <!-- Font Family & Outline & Shadow Controls -->
+                <div class="grid grid-cols-2 gap-2 text-[11px]">
+                  <label class="block space-y-1">
+                    <span class="font-semibold text-stone-600">Font Family</span>
+                    <select class="w-full rounded-lg border border-stone-300 bg-white px-2 py-1 text-xs" onchange="window.dubDubStore.updateSubtitleStyle('fontFamily', this.value)">
+                      ${['Arial', 'Inter', 'Montserrat', 'Plus Jakarta Sans', 'Roboto'].map(f => `
+                        <option value="${f}" ${style.fontFamily === f ? 'selected' : ''}>${f}</option>
+                      `).join('')}
+                    </select>
+                  </label>
+
+                  <label class="block space-y-1">
+                    <span class="font-semibold text-stone-600">Text Color</span>
+                    <div class="flex items-center gap-1.5 h-[29px] px-2 rounded-lg border border-stone-300 bg-white">
+                      <input type="color" value="${style.color || '#FFFFFF'}" class="w-5 h-5 rounded cursor-pointer border-0" onchange="window.dubDubStore.updateSubtitleStyle('color', this.value)" />
+                      <span class="font-mono text-[10px] text-stone-600">${style.color || '#FFFFFF'}</span>
+                    </div>
+                  </label>
+
+                  <label class="block space-y-1">
+                    <span class="font-semibold text-stone-600 flex justify-between">Outline <span>${style.outlineWidth ?? 2}px</span></span>
+                    <input type="range" min="0" max="5" value="${style.outlineWidth ?? 2}" class="w-full accent-[#8D4B00] cursor-pointer h-1.5 bg-stone-200 rounded-lg"
+                      oninput="window.dubDubStore.updateSubtitleStyle('outlineWidth', Number(this.value))" />
+                  </label>
+
+                  <label class="block space-y-1">
+                    <span class="font-semibold text-stone-600 flex justify-between">Shadow <span>${style.shadowSize ?? 2}px</span></span>
+                    <input type="range" min="0" max="6" value="${style.shadowSize ?? 2}" class="w-full accent-[#8D4B00] cursor-pointer h-1.5 bg-stone-200 rounded-lg"
+                      oninput="window.dubDubStore.updateSubtitleStyle('shadowSize', Number(this.value))" />
+                  </label>
+                </div>
+
+                <!-- Selected Subtitle Segment Editor -->
+                <div class="pt-2 border-t border-stone-200 space-y-2">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-1.5">
+                      <span class="px-2 py-0.5 rounded-full bg-[#8D4B00] text-white font-mono font-bold text-[10px]">
+                        Cue #${String(active?.id ?? 1).padStart(2, '0')}
+                      </span>
+                      <span class="text-xs font-bold text-stone-800">Edit Selected Subtitle</span>
+                    </div>
+                    <div class="flex items-center gap-1 text-[10px]">
+                      <button type="button" class="px-1.5 py-0.5 rounded border border-stone-300 hover:bg-stone-100 disabled:opacity-40"
+                        ${activeIndex <= 0 ? 'disabled' : ''}
+                        onclick="window.dubDubStore.seekAndPlay(${state.segments[activeIndex - 1]?.startSec || 0}, '${state.segments[activeIndex - 1]?.id}');">
+                        &larr; Prev
+                      </button>
+                      <button type="button" class="px-1.5 py-0.5 rounded border border-stone-300 hover:bg-stone-100 disabled:opacity-40"
+                        ${activeIndex >= state.segments.length - 1 ? 'disabled' : ''}
+                        onclick="window.dubDubStore.seekAndPlay(${state.segments[activeIndex + 1]?.startSec || 0}, '${state.segments[activeIndex + 1]?.id}');">
+                        Next &rarr;
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-2 text-[10px] font-mono text-stone-500">
+                    <span>${time(active?.startSec)} &rarr; ${time(active?.endSec)}</span>
+                    <label class="flex items-center gap-1">Start:
+                      <input type="number" step="0.001" min="0" value="${Number(active?.startSec) || 0}" class="w-14 rounded border border-stone-300 px-1 py-0.5 font-mono text-[10px]"
+                        onchange="window.dubDubStore.updateStage4Timing('${esc(active?.id)}', 'startSec', this.value)" />
+                    </label>
+                    <label class="flex items-center gap-1">End:
+                      <input type="number" step="0.001" min="0" value="${Number(active?.endSec) || 0}" class="w-14 rounded border border-stone-300 px-1 py-0.5 font-mono text-[10px]"
+                        onchange="window.dubDubStore.updateStage4Timing('${esc(active?.id)}', 'endSec', this.value)" />
+                    </label>
+                  </div>
+
+                  <textarea data-stage4-subtitle="${esc(active?.id)}" data-segment-input="stage4-${esc(active?.id)}" class="w-full min-h-[70px] resize-none rounded-lg border border-stone-300 bg-white p-2 text-xs leading-relaxed focus:border-[#8D4B00] focus:ring-1 focus:ring-[#8D4B00] focus:outline-none"
+                    placeholder="Enter translated subtitle text..."
+                    oninput="window.dubDubStore.updateStage4Subtitle('${esc(active?.id)}', this.value)"
+                    onblur="window.dubDubStore.updateStage4Subtitle('${esc(active?.id)}', this.value, true)">${esc(active?.targetText || active?.sourceText || active?.text || '')}</textarea>
                 </div>
               </div>
             ` : `
-              <!-- SECTION C: BGM & DUCKING TAB -->
-              <div class="space-y-2">
-                <div class="p-2 rounded-lg bg-stone-50 border border-stone-200">
-                  <div class="flex items-center justify-between text-xs font-bold text-stone-900 mb-1">
-                    <span>Dialogue Priority Ducking</span>
-                    <span class="font-mono text-[#8D4B00]">-14 dB</span>
-                  </div>
-                  <p class="text-[10px] text-stone-500 leading-snug">Automatically drops background music when Alex Carter speaks.</p>
-                  <input class="w-full accent-[#8D4B00] h-1 bg-stone-200 rounded mt-2" max="30" min="0" type="range" value="14" />
+              <!-- TAB 3: THUMBNAIL -->
+              <div class="space-y-3.5">
+                <div>
+                  <h3 class="text-xs font-bold text-stone-900">Video Thumbnail</h3>
+                  <p class="text-[11px] text-stone-500">Set the cover image embedded in the exported video file.</p>
                 </div>
 
-                <div class="p-2 rounded-lg bg-stone-50 border border-stone-200">
-                  <div class="flex items-center justify-between text-xs font-bold text-stone-900 mb-1">
-                    <span>Background Ambience Volume</span>
-                    <span class="font-mono text-stone-700">65%</span>
+                <input id="stage4-thumbnail-input" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" onchange="window.dubDubStore.selectThumbnail(this.files[0])" />
+
+                ${edit.thumbnail?.previewUrl ? `
+                  <div class="space-y-2">
+                    <div data-thumbnail-preview class="relative rounded-xl overflow-hidden border border-stone-300 bg-black aspect-video group">
+                      <img src="${esc(edit.thumbnail.previewUrl)}" alt="Selected video thumbnail" class="w-full h-full object-cover" />
+                      <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button type="button" class="px-2.5 py-1 rounded-lg bg-white/90 hover:bg-white text-stone-900 text-xs font-bold shadow-sm"
+                          onclick="document.getElementById('stage4-thumbnail-input').click()">
+                          Change Image
+                        </button>
+                        <button type="button" class="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm"
+                          onclick="window.dubDubStore.removeThumbnail()">
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                    <div class="flex items-center justify-between text-xs">
+                      <span class="font-medium text-stone-700 truncate max-w-[200px]">${esc(edit.thumbnail.name)}</span>
+                      <button type="button" class="text-[11px] font-semibold text-red-600 hover:text-red-700" onclick="window.dubDubStore.removeThumbnail()">
+                        Remove
+                      </button>
+                    </div>
                   </div>
-                  <input class="w-full accent-amber-700 h-1 bg-stone-200 rounded mt-2" max="100" min="0" type="range" value="65" />
-                </div>
+                ` : `
+                  <div class="rounded-xl border-2 border-dashed border-stone-300 p-6 text-center bg-white space-y-2">
+                    <div class="w-10 h-10 rounded-full bg-amber-50 text-[#8D4B00] flex items-center justify-center mx-auto">
+                      <span class="material-symbols-outlined text-xl">add_photo_alternate</span>
+                    </div>
+                    <div>
+                      <span class="block text-xs font-bold text-stone-800">No Custom Thumbnail</span>
+                      <span class="block text-[11px] text-stone-500">First frame of the video will be used by default</span>
+                    </div>
+                    <button type="button" class="px-3.5 py-1.5 rounded-lg bg-[#8D4B00] hover:bg-[#743d00] text-white font-bold text-xs shadow-xs transition-colors"
+                      onclick="document.getElementById('stage4-thumbnail-input').click()">
+                      Upload Thumbnail
+                    </button>
+                    <p class="text-[10px] text-stone-400">PNG, JPG, JPEG, WEBP (16:9 recommended)</p>
+                  </div>
+                `}
               </div>
             `}
+
+            ${edit.error ? `<p class="rounded-lg bg-red-50 p-2 text-xs text-red-700 border border-red-200">${esc(edit.error)}</p>` : ''}
           </div>
         </aside>
       </div>
 
-      <!-- BOTTOM ROW: CAPCUT MULTI-TRACK NLE TIMELINE DECK (48% Height) -->
-      <section class="flex-1 min-h-0 w-full bg-white rounded-xl border border-[#E4DEC3] shadow-xs flex flex-col overflow-hidden">
-        <!-- Timeline Controls & Toolbar -->
-        <div class="h-8 px-3 border-b border-[#E4DEC3] bg-[#FAF8F5] flex items-center justify-between flex-shrink-0">
-          <div class="flex items-center gap-2">
-            <div class="flex items-center gap-1 text-stone-700">
-              <button 
-                class="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-800"
-                onclick="window.dubDubStore.togglePlay()">
-                <span class="material-symbols-outlined text-sm">${state.playback.isPlaying ? 'pause' : 'play_arrow'}</span>
-              </button>
-              <button class="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600" title="Split Clip">
-                <span class="material-symbols-outlined text-xs">content_cut</span>
-              </button>
-              <button class="w-6 h-6 rounded bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600" title="Delete Selection">
-                <span class="material-symbols-outlined text-xs">delete</span>
-              </button>
+      <!-- LOWER DECK: Multi-Track Timeline Editing Studio (CapCut Style) -->
+      <section data-timeline-container class="h-[210px] flex-shrink-0 rounded-xl border border-[#E2DDD3] bg-white flex flex-col overflow-hidden shadow-xs">
+        <!-- Timeline Toolbar -->
+        <div class="h-9 px-3 border-b border-stone-200 bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
+          <div class="flex items-center gap-3">
+            <button type="button" class="w-6 h-6 rounded-md bg-[#8D4B00] text-white flex items-center justify-center hover:bg-[#743d00] transition-colors shadow-2xs"
+              onclick="window.dubDubStore.togglePlay()">
+              <span data-preview-action-icon class="material-symbols-outlined text-base">play_arrow</span>
+            </button>
+            <div class="font-mono text-xs font-bold text-stone-800">
+              <span data-playhead-timecode>${state.playback.formattedTime}</span>
+              <span class="text-stone-400">/</span>
+              <span class="text-stone-500">${state.project.duration}</span>
             </div>
-
-            <div class="h-3.5 w-px bg-stone-300"></div>
-
-            <div class="flex items-center gap-1.5 text-[10px] text-stone-600">
-              <label class="flex items-center gap-1 cursor-pointer">
-                <input checked class="rounded text-[#8D4B00] w-3 h-3 focus:ring-0" type="checkbox" />
-                <span>Snap (N)</span>
-              </label>
-              <label class="flex items-center gap-1 cursor-pointer">
-                <input checked class="rounded text-[#8D4B00] w-3 h-3 focus:ring-0" type="checkbox" />
-                <span>Auto-Ripple</span>
-              </label>
-            </div>
+            <button type="button" class="text-[10px] font-semibold text-stone-600 hover:text-stone-900 border border-stone-200 bg-white px-2 py-0.5 rounded shadow-2xs"
+              onclick="window.dubDubStore.seekPreview(0)">
+              Seek Start
+            </button>
           </div>
 
-          <div class="flex items-center gap-3">
-            <div class="flex items-center gap-1 font-mono text-[10px] text-stone-600">
-              <span class="font-bold text-stone-900">${state.playback.formattedTime}</span>
-              <span class="text-stone-300">/</span>
-              <span>${p.duration}</span>
-            </div>
-
-            <div class="flex items-center gap-1">
-              <span class="material-symbols-outlined text-xs text-stone-400">zoom_out</span>
-              <input class="w-20 accent-[#8D4B00] h-1 bg-stone-200 rounded" max="200" min="50" type="range" value="100" />
-              <span class="material-symbols-outlined text-xs text-stone-400">zoom_in</span>
-            </div>
+          <div class="flex items-center gap-3 text-[11px] text-stone-500">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Subtitle Cues</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Dubbed TTS</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> BGM</span>
           </div>
         </div>
 
-        <!-- Multi-Track Lanes Container with Playhead -->
-        <div class="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-stone-50 p-2 space-y-1.5">
-          <!-- Draggable Red Playhead Line -->
-          <div class="absolute top-0 bottom-0 z-30 pointer-events-none flex flex-col items-center" style="left: calc(100px + (100% - 110px) * ${playheadPercent / 100});">
-            <div class="w-2.5 h-2.5 bg-[#8D4B00] rotate-45 -mt-1 shadow-xs"></div>
-            <div class="w-0.5 flex-1 bg-[#8D4B00] shadow-sm"></div>
-          </div>
-
-          <!-- TRACK 1: Video Master (V1) -->
-          <div class="h-10 bg-white rounded-lg border border-stone-200 flex items-center shadow-2xs overflow-hidden">
-            <div class="w-24 h-full bg-stone-100 border-r border-stone-200 px-2 flex items-center justify-between flex-shrink-0 text-[10px] font-bold text-stone-700">
-              <span>V1 Video</span>
-              <span class="material-symbols-outlined text-xs text-stone-400">lock</span>
+        <!-- Tracks Container (Left: Track Headers, Right: Interactive Multi-Track Lanes) -->
+        <div class="flex-1 min-h-0 flex overflow-hidden">
+          <!-- Track Headers Column (130px) -->
+          <div class="w-36 flex-shrink-0 border-r border-stone-200 bg-[#FAF9F6] flex flex-col text-[11px] font-semibold text-stone-700 divide-y divide-stone-200 select-none">
+            <!-- Time Ruler Header -->
+            <div class="h-6 px-2 flex items-center text-[10px] text-stone-400 font-mono">TIMELINE</div>
+            <!-- Video Track Header -->
+            <div class="h-8 px-2 flex items-center justify-between hover:bg-stone-100 cursor-pointer" onclick="window.dubDubStore.setStage4InspectorTab('thumbnail')">
+              <span class="flex items-center gap-1 truncate"><span class="material-symbols-outlined text-xs text-stone-500">movie</span>Video</span>
+              <span class="text-[9px] font-mono text-stone-400">16:9</span>
             </div>
-            <div class="flex-1 h-full bg-indigo-50/50 p-1 flex items-center gap-1 overflow-hidden">
-              <div class="h-full px-3 rounded bg-indigo-100/90 border border-indigo-200 flex items-center text-[9px] font-mono font-bold text-indigo-900 truncate">
-                TEDx_Talk_Main_1080p60.mp4 (4K Super-Res Enhanced)
-              </div>
+            <!-- Subtitle Track Header -->
+            <div class="h-8 px-2 flex items-center justify-between hover:bg-stone-100 cursor-pointer" onclick="window.dubDubStore.setStage4InspectorTab('subtitles')">
+              <span class="flex items-center gap-1 truncate"><span class="material-symbols-outlined text-xs text-amber-600">subtitles</span>Subs</span>
+              <span class="text-[9px] font-mono px-1 rounded bg-amber-100 text-[#8D4B00]">${state.segments.length}</span>
             </div>
-          </div>
-
-          <!-- TRACK 2: Original Audio Stem (A1) -->
-          <div class="h-10 bg-white rounded-lg border border-stone-200 flex items-center shadow-2xs overflow-hidden">
-            <div class="w-24 h-full bg-stone-100 border-r border-stone-200 px-2 flex items-center justify-between flex-shrink-0 text-[10px] font-bold text-stone-700">
-              <span>A1 Orig Vocals</span>
-              <span class="material-symbols-outlined text-xs text-stone-400">volume_up</span>
+            <!-- Dubbed TTS Track Header -->
+            <div class="h-8 px-2 flex items-center justify-between hover:bg-stone-100 cursor-pointer" onclick="window.dubDubStore.setStage4InspectorTab('audio')">
+              <span class="flex items-center gap-1 truncate"><span class="material-symbols-outlined text-xs text-indigo-600">record_voice_over</span>Dubbed</span>
+              <span class="text-[9px] font-mono text-stone-500">${edit.audioMix.dubbed}%</span>
             </div>
-            <div class="flex-1 h-full bg-stone-50 p-1 flex items-center gap-1 overflow-hidden">
-              <div class="h-full w-2/3 rounded bg-stone-200 border border-stone-300 px-2 flex items-center justify-between text-[9px] font-mono text-stone-600 truncate">
-                <span>Original English Vocals (Muted in Dub)</span>
-                <span class="text-[8px] bg-stone-300 px-1 rounded">-24dB</span>
-              </div>
+            <!-- Background Music Track Header -->
+            <div class="h-8 px-2 flex items-center justify-between hover:bg-stone-100 cursor-pointer" onclick="window.dubDubStore.setStage4InspectorTab('audio')">
+              <span class="flex items-center gap-1 truncate"><span class="material-symbols-outlined text-xs text-emerald-600">music_note</span>BGM</span>
+              <span class="text-[9px] font-mono text-stone-500">${edit.audioMix.background}%</span>
             </div>
           </div>
 
-          <!-- TRACK 3: AI Dubbed Audio Stem (A2) -->
-          <div class="h-10 bg-white rounded-lg border border-stone-200 flex items-center shadow-2xs overflow-hidden">
-            <div class="w-24 h-full bg-amber-50 border-r border-amber-200 px-2 flex items-center justify-between flex-shrink-0 text-[10px] font-bold text-[#8D4B00]">
-              <span>A2 AI Dub ★</span>
-              <span class="material-symbols-outlined text-xs text-[#8D4B00]">graphic_eq</span>
-            </div>
-            <div class="flex-1 h-full bg-amber-50/30 p-1 flex items-center gap-1 overflow-hidden">
-              <div class="h-full w-3/4 rounded bg-amber-200/80 border border-amber-400/80 px-2 flex items-center justify-between text-[9px] font-mono font-bold text-amber-950 truncate shadow-2xs">
-                <span>Spanish Neural Dub (Alex Carter Clone • Lip-Mesh Synced)</span>
-                <span class="text-[8px] bg-amber-400 text-amber-950 px-1 rounded font-mono">0dB Active</span>
+          <!-- Multi-Track Lanes & Scrubber Area -->
+          <div class="flex-1 min-h-0 relative overflow-x-auto overflow-y-hidden bg-[#F8F7F4] select-none"
+            onclick="const r=this.getBoundingClientRect(); const p=Math.max(0, Math.min(1, (event.clientX-r.left)/r.width)); window.dubDubStore.seekPreview(p * ${totalDuration});"
+            onpointerdown="const r=this.getBoundingClientRect(); const p=Math.max(0, Math.min(1, (event.clientX-r.left)/r.width)); window.dubDubStore.seekPreview(p * ${totalDuration}); this._scrubbing=true;"
+            onpointermove="if (this._scrubbing && event.buttons > 0) { const r=this.getBoundingClientRect(); const p=Math.max(0, Math.min(1, (event.clientX-r.left)/r.width)); window.dubDubStore.seekPreview(p * ${totalDuration}); }"
+            onpointerup="this._scrubbing=false;">
+            
+            <!-- Interactive Playhead Needle across all tracks -->
+            <div data-timeline-playhead class="absolute top-0 bottom-0 w-0.5 bg-amber-500 z-30 pointer-events-none transition-all duration-75" style="left: ${(state.playback.currentTime / totalDuration) * 100}%;">
+              <div class="w-3 h-3 bg-amber-500 rounded-b -ml-1.25 shadow-md flex items-center justify-center">
+                <div class="w-1 h-1 bg-white rounded-full"></div>
               </div>
             </div>
-          </div>
 
-          <!-- TRACK 4: Background Music & Sound Effects (A3) -->
-          <div class="h-10 bg-white rounded-lg border border-stone-200 flex items-center shadow-2xs overflow-hidden">
-            <div class="w-24 h-full bg-stone-100 border-r border-stone-200 px-2 flex items-center justify-between flex-shrink-0 text-[10px] font-bold text-stone-700">
-              <span>A3 BGM Stem</span>
-              <span class="material-symbols-outlined text-xs text-stone-400">music_note</span>
+            <!-- Time Ruler Lane -->
+            <div class="h-6 border-b border-stone-200 bg-[#FAF9F6] relative text-[9px] font-mono text-stone-400 flex items-center px-1 pointer-events-none">
+              <div class="absolute left-0">00:00.000</div>
+              <div class="absolute left-1/4 -translate-x-1/2">${time(totalDuration * 0.25)}</div>
+              <div class="absolute left-2/4 -translate-x-1/2">${time(totalDuration * 0.50)}</div>
+              <div class="absolute left-3/4 -translate-x-1/2">${time(totalDuration * 0.75)}</div>
+              <div class="absolute right-1">${time(totalDuration)}</div>
             </div>
-            <div class="flex-1 h-full bg-emerald-50/30 p-1 flex items-center gap-1 overflow-hidden">
-              <div class="h-full w-full rounded bg-emerald-100 border border-emerald-300 px-2 flex items-center justify-between text-[9px] font-mono text-emerald-900 truncate">
-                <span>Original BGM &amp; Keynote Ambience (Auto-Ducked -14dB during speech)</span>
-                <span class="text-[8px] bg-emerald-200 px-1 rounded">Ducked</span>
-              </div>
-            </div>
-          </div>
 
-          <!-- TRACK 5: Burned Subtitle & OCR Cues (T1) -->
-          <div class="h-10 bg-white rounded-lg border border-stone-200 flex items-center shadow-2xs overflow-hidden">
-            <div class="w-24 h-full bg-stone-100 border-r border-stone-200 px-2 flex items-center justify-between flex-shrink-0 text-[10px] font-bold text-stone-700">
-              <span>T1 Subtitles</span>
-              <span class="material-symbols-outlined text-xs text-stone-400">subtitles</span>
+            <!-- Track 1: Video Track Lane -->
+            <div data-timeline-track="video" class="h-8 border-b border-stone-200/80 relative p-0.5">
+              <div class="h-full rounded-md bg-stone-800 text-stone-200 px-2 flex items-center justify-between text-[10px] font-mono border border-stone-700 shadow-2xs">
+                <span class="flex items-center gap-1 truncate"><span class="material-symbols-outlined text-xs">video_file</span>${esc(state.project.title || 'Source Video')}</span>
+                <span class="text-[9px] text-stone-400">${state.project.resolution}</span>
+              </div>
             </div>
-            <div class="flex-1 h-full bg-amber-50/20 p-1 flex items-center gap-1 overflow-hidden">
-              <div class="h-full w-1/4 rounded bg-amber-300/80 border border-amber-400 px-2 flex items-center text-[9px] font-mono font-bold text-amber-950 truncate shadow-2xs">
-                Cue #01 (ES Sub)
-              </div>
-              <div class="h-full w-1/4 rounded bg-amber-400 border border-amber-500 px-2 flex items-center text-[9px] font-mono font-bold text-amber-950 truncate shadow-2xs">
-                Cue #02 (OCR Target)
-              </div>
-              <div class="h-full w-1/4 rounded bg-amber-300/80 border border-amber-400 px-2 flex items-center text-[9px] font-mono font-bold text-amber-950 truncate shadow-2xs">
-                Cue #03 (Elena)
-              </div>
+
+            <!-- Track 2: Subtitles Track Lane -->
+            <div data-timeline-track="subtitles" class="h-8 border-b border-stone-200/80 relative p-0.5">
+              ${state.segments.map(seg => {
+                const left = (seg.startSec / totalDuration) * 100;
+                const width = Math.max(0.8, ((seg.endSec - seg.startSec) / totalDuration) * 100);
+                const isSelected = String(seg.id) === String(active?.id);
+                return `
+                  <div data-segment-card="${esc(seg.id)}" data-timeline-cue="${esc(seg.id)}"
+                    class="absolute top-0.5 bottom-0.5 rounded px-1.5 flex items-center overflow-hidden cursor-pointer transition-all border ${isSelected ? 'bg-amber-400 text-stone-950 font-bold border-[#8D4B00] shadow-xs z-10' : 'bg-amber-100/90 text-amber-950 border-amber-300 hover:bg-amber-200'}"
+                    style="left: ${left}%; width: ${width}%;"
+                    title="${time(seg.startSec)} → ${time(seg.endSec)}: ${esc(seg.targetText || seg.sourceText || '')}"
+                    onclick="event.stopPropagation(); window.dubDubStore.seekAndPlay(${Number(seg.startSec) || 0}, '${esc(seg.id)}'); window.dubDubStore.setStage4InspectorTab('subtitles');">
+                    <span class="text-[9px] truncate font-medium">${esc(seg.targetText || seg.sourceText || `Cue #${seg.id}`)}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- Track 3: Dubbed TTS Audio Track Lane -->
+            <div data-timeline-track="dubbing" class="h-8 border-b border-stone-200/80 relative p-0.5">
+              ${state.segments.map(seg => {
+                const left = (seg.startSec / totalDuration) * 100;
+                const width = Math.max(0.8, ((seg.endSec - seg.startSec) / totalDuration) * 100);
+                return `
+                  <div class="absolute top-0.5 bottom-0.5 rounded px-1 flex items-center overflow-hidden bg-indigo-100 border border-indigo-300 text-indigo-900 cursor-pointer hover:bg-indigo-200"
+                    style="left: ${left}%; width: ${width}%;"
+                    title="Dubbed TTS Voice: ${esc(seg.voiceOverride || 'Speaker Default')}"
+                    onclick="event.stopPropagation(); window.dubDubStore.seekAndPlay(${Number(seg.startSec) || 0}, '${esc(seg.id)}'); window.dubDubStore.setStage4InspectorTab('audio');">
+                    <span class="material-symbols-outlined text-[10px] mr-0.5 text-indigo-700">graphic_eq</span>
+                    <span class="text-[9px] truncate font-mono">${esc(seg.voiceOverride || seg.speakerName || 'Voice')}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- Track 4: Background Music Track Lane -->
+            <div data-timeline-track="bgm" class="h-8 relative p-0.5">
+              ${edit.backgroundAudio ? `
+                <div class="h-full rounded-md bg-emerald-100 border border-emerald-300 text-emerald-950 px-2 flex items-center justify-between text-[10px] cursor-pointer hover:bg-emerald-200"
+                  onclick="event.stopPropagation(); window.dubDubStore.setStage4InspectorTab('audio');">
+                  <span class="flex items-center gap-1 truncate font-medium"><span class="material-symbols-outlined text-xs text-emerald-700">music_note</span>${esc(edit.backgroundAudio.name)}</span>
+                  <span class="text-[9px] font-mono text-emerald-800">${edit.audioMix.background}%</span>
+                </div>
+              ` : `
+                <button type="button" class="w-full h-full rounded border border-dashed border-stone-300 hover:border-[#8D4B00] text-stone-400 hover:text-[#8D4B00] flex items-center justify-center gap-1 text-[10px] font-medium bg-white/50"
+                  onclick="event.stopPropagation(); document.getElementById('stage4-background-input').click();">
+                  <span class="material-symbols-outlined text-xs">add</span> Add BGM track
+                </button>
+              `}
             </div>
           </div>
         </div>
