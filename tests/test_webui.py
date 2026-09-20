@@ -641,6 +641,39 @@ def test_media_ingest_rejects_unreadable_media_and_removes_upload(tmp_path):
     asyncio.run(scenario())
 
 
+def test_prepare_job_stops_at_transcript_checkpoint_and_skips_render_work(tmp_path, monkeypatch):
+    received = {}
+
+    def fake_run(request, sink, token, *, stop_after_stage=None):
+        received["stop_after_stage"] = stop_after_stage
+        received["params"] = dict(request.params)
+        sink(TaskEvent("task", EventKind.STAGE_STARTED, "recogn"))
+        return TaskResult("task", TaskStatus.SUCCEEDED, tmp_path, ())
+
+    monkeypatch.setattr(webui, "run", fake_run)
+    request = TaskRequest({
+        "name": str(tmp_path / "input.mp4"),
+        "target_dir": str(tmp_path / "output"),
+    })
+    (tmp_path / "input.mp4").write_bytes(b"video")
+
+    result = webui.run_prepare_review(request, lambda event: None, CancellationToken())
+
+    assert result.status == TaskStatus.SUCCEEDED
+    assert received["stop_after_stage"] == "diariz"
+
+
+def test_prepare_polling_does_not_remount_video():
+    app_source = (Path(webui.FRONTEND_DIR) / "js" / "app.js").read_text(encoding="utf-8")
+    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
+    footer_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "StatusFooter.js").read_text(encoding="utf-8")
+
+    assert "renderStatusOnly" in app_source
+    assert "scope === 'status'" in app_source
+    assert "this.notify(terminal ? 'full' : 'status')" in state_source
+    assert "data-status-footer" in footer_source
+
+
 def test_prepare_frontend_uses_ingested_media_and_real_disabled_state():
     state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
     footer_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "StatusFooter.js").read_text(encoding="utf-8")
