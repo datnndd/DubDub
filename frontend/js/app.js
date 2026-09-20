@@ -48,8 +48,23 @@ function renderApp() {
   `;
 }
 
-// Initial mount & subscribe to reactive state changes
-store.subscribe(() => {
+function renderStatusOnly() {
+  const footer = document.querySelector('[data-status-footer]');
+  if (!footer) {
+    renderApp();
+    return;
+  }
+  footer.outerHTML = renderStatusFooter(store.getState());
+}
+
+// Initial mount & subscribe to reactive state changes.
+// Job polling updates only the status footer so the active <video> node is not
+// destroyed and recreated every 750 ms while ASR is running.
+store.subscribe((_state, scope = 'full') => {
+  if (scope === 'status') {
+    renderStatusOnly();
+    return;
+  }
   renderApp();
 });
 
