@@ -95,51 +95,21 @@ export function renderStage1Prepare(state) {
                 src="https://api.iconify.design/lucide:video-off.svg" 
               />
             `}
-            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/35 pointer-events-none"></div>
 
-            <!-- Floating Badges Top -->
-            <div class="absolute top-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
-              <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-amber-300 font-mono text-[10px] border border-amber-400/20">
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 warm-pulse"></span>
-                <span><span data-preview-current>${state.playback.formattedTime}</span> / ${p.duration}</span>
-              </div>
-              <div class="flex items-center gap-1.5">
-                <span class="px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-white font-mono text-[10px] border border-white/10">
-                  ${p.resolution} • ${p.fps}
-                </span>
-                <span class="px-2 py-0.5 rounded-full bg-emerald-600/90 text-white font-bold text-[9px] uppercase tracking-wider">
-                  ${p.verified ? 'Ready' : 'Inspecting'}
-                </span>
-              </div>
-            </div>
-
-            <!-- Center Quick Play Overlay Button -->
-            <button 
-              class="absolute z-10 w-11 h-11 rounded-full bg-[#8D4B00]/90 hover:bg-[#8D4B00] text-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 border border-amber-300/30"
-              ${p.previewUrl ? '' : 'disabled'} onclick="window.dubDubStore.togglePlay()">
-              <span data-preview-action-icon class="material-symbols-outlined text-2xl ml-0.5">${state.playback.isPlaying ? 'pause' : 'play_arrow'}</span>
-            </button>
-
-            <!-- Bottom Preview Snippet -->
-            <div class="absolute inset-x-2 bottom-10 z-10 flex justify-center text-center pointer-events-none">
-              <div class="w-full max-w-lg bg-black/75 backdrop-blur-md px-3 py-1 rounded-lg border border-white/10">
-                <p class="text-white text-xs font-medium truncate">
-                  ${p.verified ? 'Source media is ready for transcription and translation.' : 'Choose a video to inspect its metadata.'}
-                </p>
-              </div>
-            </div>
           </div>
 
           <!-- Compact Audio Waveform Bar -->
-          <div class="h-8 px-3 bg-[#FAF9F6] border-t border-[#E7E4DC] flex items-center gap-2.5 flex-shrink-0">
-            <div class="flex items-center gap-1 font-mono text-[10px] text-stone-600">
-              <span class="material-symbols-outlined text-xs text-[#8D4B00]">equalizer</span>
-              <span>Waveform</span>
-            </div>
+          <div class="h-8 px-3 bg-[#FAF9F6] border-t border-[#E7E4DC] flex items-center gap-2 flex-shrink-0">
+            <button 
+              type="button"
+              class="w-6 h-6 rounded-md bg-[#8D4B00] text-white hover:bg-[#743d00] flex items-center justify-center shadow-xs transition-transform active:scale-95 disabled:opacity-50 flex-shrink-0"
+              ${p.previewUrl ? '' : 'disabled'} onclick="window.dubDubStore.togglePlay()">
+              <span data-preview-action-icon class="material-symbols-outlined text-xs">${state.playback.isPlaying ? 'pause' : 'play_arrow'}</span>
+            </button>
             <input data-preview-timeline aria-label="Video timeline" class="flex-1 cursor-pointer disabled:cursor-not-allowed" type="range"
               min="0" max="${p.durationSec || 0}" step="0.01" value="${state.playback.currentTime}"
               ${p.previewUrl ? '' : 'disabled'} oninput="window.dubDubStore.seekPreview(this.value)" />
-            <span class="font-mono text-[10px] text-stone-500 font-semibold"><span data-preview-current>${state.playback.formattedTime}</span> / ${p.duration}</span>
+            <span class="font-mono text-[10px] text-stone-500 font-semibold flex-shrink-0"><span data-preview-current>${state.playback.formattedTime}</span> / ${p.duration}</span>
           </div>
         </div>
 
