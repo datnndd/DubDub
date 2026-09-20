@@ -226,10 +226,10 @@ class WorkflowStore {
     return () => this.listeners.delete(listener);
   }
 
-  notify() {
+  notify(scope = 'full') {
     for (const listener of this.listeners) {
       try {
-        listener(this.state);
+        listener(this.state, scope);
       } catch (err) {
         console.error("State listener error:", err);
       }
@@ -859,6 +859,11 @@ class WorkflowStore {
       } else if (['failed', 'cancelled'].includes(job.status)) {
         window.clearInterval(this.pollTimer);
         this.pollTimer = null;
+      } else {
+        // Do not remount the entire app while polling. Replacing root.innerHTML
+        // recreates the <video> element and resets playback every 500 ms.
+        this.notify('status');
+        return;
       }
     } catch (error) {
       this.state.backend.status = 'failed';
@@ -911,7 +916,7 @@ class WorkflowStore {
     if (!id) return;
     await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
     this.state.backend.message = 'Cancellation requested…';
-    this.notify();
+    this.notify('status');
   }
 
   formatTime(seconds) {
