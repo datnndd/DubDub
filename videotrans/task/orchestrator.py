@@ -62,6 +62,7 @@ class TaskResult:
     outputs: tuple[Path, ...] = ()
     failure: TaskFailure | None = None
     segments: tuple[dict[str, Any], ...] = ()
+    asr_duration: float | None = None
 
 
 class CancellationToken:
@@ -120,6 +121,7 @@ def run(
     event_sink: EventSink | None = None,
     cancellation_token: CancellationToken | None = None,
     stage_limit: str | None = None,
+    stop_after_stage: str | None = None,
 ) -> TaskResult:
     """Validate and execute one task, optionally stopping after a completed stage."""
     emit = event_sink or (lambda _event: None)
@@ -153,11 +155,22 @@ def run(
         output_dir.mkdir(parents=True, exist_ok=True)
         values["clear_cache"] = False
 
+        asr_duration_val: float | None = None
+
         def relay(raw: dict) -> None:
+            nonlocal asr_duration_val
             raw_type = raw.get("type", "logs")
             if raw_type == "set_precent":
                 text, _, percent = str(raw.get("text", "")).partition("???")
                 send(EventKind.PROGRESS, text, progress=float(percent or 0))
+            elif raw_type == "asr_timing":
+                dur = raw.get("duration")
+                if dur is not None:
+                    try:
+                        asr_duration_val = float(dur)
+                    except (ValueError, TypeError):
+                        pass
+                send(EventKind.LOG, str(raw.get("text", "")), details={"source_type": raw_type, "duration": asr_duration_val})
             elif raw_type in {"logs", "subtitle", "replace_subtitle"}:
                 send(EventKind.LOG, str(raw.get("text", "")), details={"source_type": raw_type})
 
@@ -209,8 +222,10 @@ def run(
         _embed_thumbnail(task.cfg)
         outputs = _collect_outputs(task.cfg)
         segments = extract_transcript_segments(task)
-        send(EventKind.SUCCEEDED, details={"outputs": tuple(map(str, outputs)), "segments": list(segments)})
-        return TaskResult(job_id, TaskStatus.SUCCEEDED, output_dir, outputs, segments=tuple(segments))
+        if asr_duration_val is None:
+            asr_duration_val = getattr(task, "asr_duration", None)
+        send(EventKind.SUCCEEDED, details={"outputs": tuple(map(str, outputs)), "segments": list(segments), "asr_duration": asr_duration_val})
+        return TaskResult(job_id, TaskStatus.SUCCEEDED, output_dir, outputs, segments=tuple(segments), asr_duration=asr_duration_val)
     except Exception as exc:
         cause = "".join(traceback.format_exception(exc))
         logger.exception("Task %s failed during %s", job_id, stage, exc_info=True)
@@ -220,7 +235,10 @@ def run(
             message=get_msg_from_except(exc) or str(exc),
             cause=cause,
         )
-        send(EventKind.FAILED, failure.message, details={"code": failure.code})
+        try:
+            send(EventKind.FAILED, failure.message, details={"code": failure.code})
+        except Exception:
+            logger.exception("Failed to send terminal failure event for task %s", job_id, exc_info=True)
         return TaskResult(job_id, TaskStatus.FAILED, output_dir, failure=failure)
 
 

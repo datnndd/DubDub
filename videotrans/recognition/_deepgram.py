@@ -69,9 +69,15 @@ class DeepgramRecogn(BaseRecogn):
             len(buffer_data) / (1024 * 1024),
         )
         res = deepgram.listen.rest.v("1").transcribe_file(payload, options, timeout=600)
+        request_duration = round(time.perf_counter() - request_started, 2)
         logger.info(
             "[Deepgram] prerecorded request completed in %.2fs",
-            time.perf_counter() - request_started,
+            request_duration,
+        )
+        self.signal(
+            text=f"Deepgram ASR completed in {request_duration}s",
+            type="asr_timing",
+            duration=request_duration,
         )
 
         raws = []

@@ -48,10 +48,12 @@ export function renderStatusFooter(state) {
   })[char]);
   const liveTitle = escapeHtml(backend.error || (step === 1 ? backend.message : backend.status !== 'idle' ? backend.message : curMsg.title));
   const liveSubtitle = busy && backend.stage
-    ? `Current stage: ${backend.stage}${backend.progress == null ? '' : ` • ${backend.progress.toFixed(1)}%`}`
-    : step === 1 && !state.project.verified
-      ? 'Upload a video, then choose languages and backend engines.'
-      : curMsg.subtitle;
+    ? `Current stage: ${backend.stage}${backend.progress == null ? '' : ` • ${backend.progress.toFixed(1)}%`}${backend.elapsedSeconds ? ` • ⏱️ ${backend.elapsedSeconds}s` : ''}`
+    : step === 2 && backend.asrDuration
+      ? `Transcript & cues analyzed in ${backend.asrDuration}s. Review transcript cues and configure LLM translation.`
+      : step === 1 && !state.project.verified
+        ? 'Upload a video, then choose languages and backend engines.'
+        : curMsg.subtitle;
   const statusIcon = backend.status === 'failed' ? 'error' : busy ? 'progress_activity' : backend.status === 'succeeded' ? 'check_circle' : curMsg.icon;
   const statusColor = backend.status === 'failed' ? 'bg-red-100 text-red-700' : busy ? 'bg-amber-100 text-[#8D4B00]' : 'bg-emerald-100 text-emerald-700';
   const terminalOutputs = backend.outputs.map(output => `
@@ -73,7 +75,7 @@ export function renderStatusFooter(state) {
       action = '';
       actionIcon = 'progress_activity';
       actionDisabled = true;
-      actionTooltip = `ASR Processing in progress (${backend.stage || 'running'}${backend.progress != null ? ` - ${backend.progress.toFixed(0)}%` : ''})`;
+      actionTooltip = `ASR Processing in progress (${backend.stage || 'running'}${backend.progress != null ? ` - ${backend.progress.toFixed(0)}%` : ''}${backend.elapsedSeconds ? ` - ⏱️ ${backend.elapsedSeconds}s` : ''})`;
     } else {
       actionText = 'Start Dub';
       action = 'window.dubDubStore.startDub()';

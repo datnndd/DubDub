@@ -4,6 +4,31 @@
  */
 
 
+export function renderAsrProgressCard(backend) {
+  if (!['submitting', 'queued', 'running'].includes(backend.status)) return '';
+  const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+  return `
+    <div data-asr-progress class="p-2 rounded-lg bg-amber-50/80 border border-amber-200 text-xs text-amber-950 flex flex-col gap-1 shadow-2xs">
+      <div class="flex items-center justify-between font-bold text-[10px] text-[#8D4B00]">
+        <span class="flex items-center gap-1">
+          <span class="material-symbols-outlined text-xs animate-spin">progress_activity</span>
+          <span>ASR Preparation: ${escapeHtml(backend.stage || 'Executing')}</span>
+        </span>
+        <div class="flex items-center gap-1.5 font-mono">
+          <span class="px-1.5 py-0.5 rounded bg-amber-100/80 text-[#8D4B00] text-[9px] font-medium">⏱️ ${backend.elapsedSeconds || 0}s</span>
+          <span>${backend.progress != null ? `${backend.progress.toFixed(1)}%` : 'In progress'}</span>
+        </div>
+      </div>
+      <div class="w-full bg-amber-200/50 rounded-full h-1.5 overflow-hidden">
+        <div class="bg-[#8D4B00] h-full transition-all duration-300 rounded-full" style="width: ${backend.progress != null ? Math.min(100, Math.max(5, backend.progress)) : 25}%"></div>
+      </div>
+      <div class="text-[9px] text-stone-600 truncate font-mono">${escapeHtml(backend.message || 'Extracting audio & running models...')}</div>
+    </div>
+  `;
+}
+
 export function renderStage1Prepare(state) {
   const p = state.project;
   const l = state.languages;
@@ -146,21 +171,7 @@ export function renderStage1Prepare(state) {
               </div>
             ` : ''}
 
-            ${['submitting', 'queued', 'running'].includes(backend.status) ? `
-              <div class="p-2 rounded-lg bg-amber-50/80 border border-amber-200 text-xs text-amber-950 flex flex-col gap-1 shadow-2xs">
-                <div class="flex items-center justify-between font-bold text-[10px] text-[#8D4B00]">
-                  <span class="flex items-center gap-1">
-                    <span class="material-symbols-outlined text-xs animate-spin">progress_activity</span>
-                    <span>ASR Preparation: ${escapeHtml(backend.stage || 'Executing')}</span>
-                  </span>
-                  <span class="font-mono">${backend.progress != null ? `${backend.progress.toFixed(1)}%` : 'In progress'}</span>
-                </div>
-                <div class="w-full bg-amber-200/50 rounded-full h-1.5 overflow-hidden">
-                  <div class="bg-[#8D4B00] h-full transition-all duration-300 rounded-full" style="width: ${backend.progress != null ? Math.min(100, Math.max(5, backend.progress)) : 25}%"></div>
-                </div>
-                <div class="text-[9px] text-stone-600 truncate font-mono">${escapeHtml(backend.message || 'Extracting audio & running models...')}</div>
-              </div>
-            ` : ''}
+            ${renderAsrProgressCard(backend)}
 
             <!-- 4 Grid Technical Specs -->
             <div class="grid grid-cols-4 gap-1.5 py-1">

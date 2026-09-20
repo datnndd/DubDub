@@ -212,7 +212,10 @@ class WorkflowStore {
         progress: null,
         message: "Choose a video to start",
         error: null,
-        outputs: []
+        outputs: [],
+        asrDuration: null,
+        startTime: null,
+        elapsedSeconds: 0
       }
     };
   }
@@ -792,6 +795,9 @@ class WorkflowStore {
     backend.message = 'Initiating speech recognition & diarization…';
     backend.error = null;
     backend.outputs = [];
+    backend.asrDuration = null;
+    backend.startTime = Date.now();
+    backend.elapsedSeconds = 0;
     this.notify();
     const body = {
       mediaId: backend.mediaId,
@@ -843,11 +849,15 @@ class WorkflowStore {
   async pollJob() {
     if (!this.state.backend.jobId) return;
     try {
+      if (this.state.backend.startTime) {
+        this.state.backend.elapsedSeconds = Math.round((Date.now() - this.state.backend.startTime) / 1000);
+      }
       const response = await fetch(`/api/jobs/${this.state.backend.jobId}`);
       if (!response.ok) throw new Error(await response.text());
       const job = await response.json();
       this.applyJob(job);
-      if (job.status === 'succeeded') {
+      const terminal = ['succeeded', 'failed', 'cancelled'].includes(job.status) || Boolean(job.error);
+      if (job.status === 'succeeded' && !job.error) {
         window.clearInterval(this.pollTimer);
         this.pollTimer = null;
         if (Array.isArray(job.segments)) {
@@ -856,9 +866,12 @@ class WorkflowStore {
         if (this.state.currentStep === 1) {
           this.setStep(2);
         }
-      } else if (['failed', 'cancelled'].includes(job.status)) {
+      } else if (terminal) {
         window.clearInterval(this.pollTimer);
         this.pollTimer = null;
+        if (job.error && !['failed', 'cancelled'].includes(this.state.backend.status)) {
+          this.state.backend.status = 'failed';
+        }
       } else {
         // Do not remount the entire app while polling. Replacing root.innerHTML
         // recreates the <video> element and resets playback every 500 ms.
@@ -885,7 +898,8 @@ class WorkflowStore {
       progress: job.progress,
       message: job.message,
       error: job.error,
-      outputs: job.outputs || []
+      outputs: job.outputs || [],
+      asrDuration: job.asrDuration ?? this.state.backend.asrDuration
     });
     if (job.segments && job.segments.length > 0) {
       this.state.segments = job.segments;
@@ -918,9 +932,18 @@ class WorkflowStore {
   async cancelProcessing() {
     const id = this.state.backend.jobId;
     if (!id) return;
-    await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
-    this.state.backend.message = 'Cancellation requested…';
-    this.notify('status');
+    if (this.pollTimer) {
+      window.clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+    this.state.backend.status = 'cancelled';
+    this.state.backend.message = 'Processing cancelled';
+    try {
+      await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
+    } catch (e) {
+      // Ignore network error on cancel
+    }
+    this.notify();
   }
 
   formatTime(seconds) {

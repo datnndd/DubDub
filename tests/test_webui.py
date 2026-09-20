@@ -56,7 +56,7 @@ def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch)
         "speakerDiarization": True,
         "speakerCount": 2,
         "voiceRate": "+10%",
-    })
+    }, job_type="asr")
 
     assert params["name"] == source.resolve().as_posix()
     assert params["source_language_code"] == "en"
