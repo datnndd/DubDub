@@ -100,6 +100,27 @@ def test_runner_owns_conditional_stage_routing(runner_env, enabled, expected):
     assert result.outputs == (output.resolve() / "result.mp4",)
 
 
+def test_runner_can_stop_after_review_checkpoint(runner_env):
+    source, output, temp_root = runner_env
+    FakeTask.enabled = {
+        "recogn": True,
+        "trans": True,
+        "dubbing": True,
+        "assembling": True,
+    }
+
+    result = orchestrator.run(
+        request(source, output, temp_root),
+        stop_after_stage="diariz",
+    )
+
+    assert result.status == TaskStatus.SUCCEEDED
+    assert FakeTask.calls == ["prepare", "recogn", "diariz"]
+    assert "trans" not in FakeTask.calls
+    assert "dubbing" not in FakeTask.calls
+    assert "assembling" not in FakeTask.calls
+
+
 def test_events_are_ordered_and_have_one_terminal_event(runner_env):
     source, output, temp_root = runner_env
     events = []
