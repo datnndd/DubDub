@@ -38,7 +38,9 @@ class AlignMixin:
             target_audio=self.cfg.target_wav,
             cache_folder=self.cfg.cache_folder,
             align_sub_audio=self.cfg.align_sub_audio and not self.cfg.voice_autorate and not self.cfg.video_autorate,
-            remove_silent_mid=self.cfg.remove_silent_mid
+            remove_silent_mid=self.cfg.remove_silent_mid,
+            event_sink=self.event_sink,
+            cancellation_token=self.cancellation_token,
         )
         self.queue_tts = rate_inst.run()
         if vail_file(self.cfg.novoice_mp4):

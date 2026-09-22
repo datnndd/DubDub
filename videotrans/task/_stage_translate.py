@@ -35,6 +35,8 @@ class TranslateMixin:
             source_code=self.cfg.source_language_code,
             target_code=self.cfg.target_language_code,
             aisendsrt=self.cfg.aisendsrt,
+            event_sink=self.event_sink,
+            cancellation_token=self.cancellation_token,
         )
         if self._exit():  return
 

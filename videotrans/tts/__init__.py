@@ -17,14 +17,14 @@ CHANGE_BY_LANGUAGE = []
 
 _ID_NAME_DICT = {
     ELEVENLABS_TTS: ChannelProvider(
-        "ElevenLabs", "._elevenlabs", key_name="elevenlabstts_key", win="elevenlabs"
+        "ElevenLabs", "._elevenlabs", key_name="elevenlabstts_key"
     ),
     OMNIVOICE_TTS: ChannelProvider(
         f"OmniVoice({tr('Built-in')})", "._omnivoice"
     ),
     VIENEU_TTS: ChannelProvider("VieNeu-TTS", "._vieneutts"),
     GEMINI_TTS: ChannelProvider(
-        "Gemini TTS", "._geminitts", key_name="gemini_key", win="gemini"
+        "Gemini TTS", "._geminitts", key_name="gemini_key"
     ),
 }
 TTS_NAME_LIST = [provider.name for provider in _ID_NAME_DICT.values()]
@@ -46,11 +46,7 @@ def is_input_api(tts_type: int = None, return_str=False):
     if not provider:
         return True
     if provider.key_name and not params.get(provider.key_name):
-        if return_str:
-            return "Please configure the SK or API information of the channel first."
-        from videotrans import winform
-
-        return winform.get_win(provider.win).openwin()
+        return "Please configure the SK or API information of the channel first."
     return True
 
 
@@ -70,6 +66,8 @@ def run(
     tts_type=DEFAULT_TTS,
     is_cuda=False,
     is_redubb=False,
+    event_sink=None,
+    cancellation_token=None,
 ) -> None:
     if len(queue_tts) < 1 or app_cfg.exit_soft or (uuid and uuid in app_cfg.stoped_uuid_set):
         return
@@ -83,6 +81,8 @@ def run(
         "tts_type": tts_type,
         "is_cuda": is_cuda,
         "is_redubb": is_redubb,
+        "event_sink": event_sink,
+        "cancellation_token": cancellation_token,
     }
     provider_class: Union[Type[BaseTTS], None] = get_class(
         tts_type, "tts", _ID_NAME_DICT

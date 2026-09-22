@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional, Union
 from pathlib import Path
 
@@ -103,6 +103,7 @@ class SrtItem:
 class TaskCfgBase:
     # 通用区域
     uuid: str = None  # 默认唯一任务id
+    project_id: Optional[str] = None  # 所属项目id
 
     name: Union[os.PathLike,str]=None  # 规范化处理的原始文件绝对路径 D:/XXX/1.MP4
     dirname: Union[os.PathLike,str]=None  # 原始文件所在目录 D:/XXX
@@ -153,6 +154,7 @@ class TaskCfgTTS(TaskCfgBase):
     pitch: str = "+0Hz"  # 音调
     voice_rate: str = "+0%"  # 语速
     voice_role: str = None  # 配音角色
+    line_roles: dict[str, str] = field(default_factory=dict)  # per-subtitle voice assignments
     voice_autorate: bool = False  # 是否音频自动加速
     video_autorate: bool = False  # 是否视频自动慢速
     remove_silent_mid: bool = False  # 是否移除字幕间的空隙

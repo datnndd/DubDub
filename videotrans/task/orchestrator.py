@@ -220,12 +220,35 @@ def run(
             if token.is_cancelled():
                 send(EventKind.CANCELLED, "Task cancelled")
                 return TaskResult(job_id, TaskStatus.CANCELLED, output_dir)
+
+            if stage_name == "recogn" and task.should_recogn and getattr(task.cfg, "project_id", None):
+                from videotrans.core.content_hash import compute_content_hash
+                from videotrans.core.project_store import find_project_by_audio_hash
+                audio_path = getattr(task.cfg, "shibie_audio", None) or getattr(task.cfg, "name", None)
+                if audio_path and Path(audio_path).is_file():
+                    h = compute_content_hash(audio_path)
+                    if h:
+                        cached = find_project_by_audio_hash(h)
+                        if cached and cached.get("id") != task.cfg.project_id and cached.get("state", {}).get("segments"):
+                            cached_segs = cached["state"]["segments"]
+                            send(EventKind.LOG, f"Reusing transcript from project {cached['id']} (content hash {h[:8]}...)")
+                            task.source_srt_list = [
+                                {
+                                    "line": seg.get("id", i + 1),
+                                    "time": f"{seg.get('startTime', '00:00:00,000')} --> {seg.get('endTime', '00:00:00,000')}",
+                                    "text": seg.get("sourceText") or seg.get("text", "")
+                                }
+                                for i, seg in enumerate(cached_segs)
+                            ]
+                            task.should_recogn = False
+
             send(EventKind.STAGE_STARTED)
             getattr(task, stage_name)()
             if token.is_cancelled():
                 send(EventKind.CANCELLED, "Task cancelled")
                 return TaskResult(job_id, TaskStatus.CANCELLED, output_dir)
             send(EventKind.STAGE_COMPLETED)
+            _persist_stage_artifacts(task, stage_name)
             if stage_name == stop_after_stage:
                 break
 
@@ -292,6 +315,74 @@ def _embed_thumbnail(cfg: TaskCfgVTT) -> None:
         staged.replace(video)
 
 
+def _persist_stage_artifacts(task: Any, stage_name: str) -> None:
+    """Store intermediate stage outputs in output/projects/{project_id}/ and update project state."""
+    pid = getattr(task.cfg, "project_id", None)
+    if not pid:
+        return
+    try:
+        from videotrans.core.project_store import init_project_dirs, update_project_state, get_project, update_project
+        import shutil
+        import json
+        dirs = init_project_dirs(pid)
+
+        if stage_name == "prepare":
+            for attr in ("shibie_audio", "vocal_file", "novocal_file", "source_wav"):
+                src = getattr(task.cfg, attr, None)
+                if src and Path(src).is_file():
+                    dst = dirs["media"] / Path(src).name
+                    if not dst.exists() or dst.stat().st_size != Path(src).stat().st_size:
+                        shutil.copy2(src, dst)
+            p = get_project(pid)
+            if p and not p.get("audio_hash"):
+                from videotrans.core.content_hash import compute_content_hash
+                ref_audio = getattr(task.cfg, "shibie_audio", None) or getattr(task.cfg, "name", None)
+                if ref_audio and Path(ref_audio).is_file():
+                    h = compute_content_hash(ref_audio)
+                    if h:
+                        update_project(pid, audio_hash=h)
+
+        elif stage_name in ("recogn", "diariz"):
+            if getattr(task.cfg, "source_sub", None) and Path(task.cfg.source_sub).is_file():
+                shutil.copy2(task.cfg.source_sub, dirs["transcripts"] / "source.srt")
+            speaker_file = Path(task.cfg.cache_folder) / "speaker.json"
+            if speaker_file.is_file():
+                shutil.copy2(speaker_file, dirs["transcripts"] / "speaker.json")
+            segments = extract_transcript_segments(task)
+            if segments:
+                (dirs["transcripts"] / "segments.json").write_text(json.dumps(list(segments), ensure_ascii=False, indent=2), encoding="utf-8")
+                p = get_project(pid)
+                cur_state = dict(p.get("state") or {}) if p else {}
+                cur_state["segments"] = list(segments)
+                update_project_state(pid, cur_state, stage=2, status="completed" if stage_name == "diariz" else "processing")
+
+        elif stage_name == "trans":
+            if getattr(task.cfg, "target_sub", None) and Path(task.cfg.target_sub).is_file():
+                shutil.copy2(task.cfg.target_sub, dirs["transcripts"] / "target.srt")
+            segments = extract_transcript_segments(task)
+            if segments:
+                (dirs["transcripts"] / "segments.json").write_text(json.dumps(list(segments), ensure_ascii=False, indent=2), encoding="utf-8")
+                p = get_project(pid)
+                cur_state = dict(p.get("state") or {}) if p else {}
+                cur_state["segments"] = list(segments)
+                update_project_state(pid, cur_state, stage=3, status="completed")
+
+        elif stage_name in ("dubbing", "align"):
+            queue_file = Path(task.cfg.cache_folder) / "queue_tts.json"
+            if queue_file.is_file():
+                shutil.copy2(queue_file, dirs["dubbing"] / "queue_tts.json")
+            if getattr(task.cfg, "target_wav", None) and Path(task.cfg.target_wav).is_file():
+                shutil.copy2(task.cfg.target_wav, dirs["dubbing"] / Path(task.cfg.target_wav).name)
+
+        elif stage_name in ("assembling", "task_done"):
+            p = get_project(pid)
+            cur_state = dict(p.get("state") or {}) if p else {}
+            update_project_state(pid, cur_state, stage=4, status="completed")
+
+    except Exception as exc:
+        logger.warning("Failed to persist stage %s artifacts for project %s: %s", stage_name, pid, exc)
+
+
 def run_staged_asr(
     request: TaskRequest,
     event_sink: EventSink | None = None,
@@ -325,6 +416,13 @@ def run_staged_translation(
                 return
             terminal_emitted = True
         emit(TaskEvent(job_id, kind, stage, message, progress, details or {}))
+
+    def relay(raw: dict) -> None:
+        send(
+            EventKind.LOG,
+            str(raw.get("text", "")),
+            details={"source_type": raw.get("type", "logs")},
+        )
 
     try:
         values = request.normalize()
@@ -405,6 +503,8 @@ def run_staged_translation(
             target_code=target_code,
             aisendsrt=aisendsrt,
             uuid=job_id,
+            event_sink=relay,
+            cancellation_token=token,
         )
 
         if token.is_cancelled():
@@ -439,6 +539,23 @@ def run_staged_translation(
 
         send(EventKind.PROGRESS, "Translation complete", progress=100.0)
         send(EventKind.STAGE_COMPLETED, "Translation stage finished")
+
+        pid = values.get("project_id")
+        if pid:
+            try:
+                from videotrans.core.project_store import init_project_dirs, update_project_state, get_project
+                import json
+                dirs = init_project_dirs(str(pid))
+                (dirs["transcripts"] / "segments.json").write_text(
+                    json.dumps(updated_segments, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                p = get_project(str(pid))
+                cur_state = dict(p.get("state") or {}) if p else {}
+                cur_state["segments"] = updated_segments
+                update_project_state(str(pid), cur_state, stage=3, status="completed")
+            except Exception as e:
+                logger.warning("Failed to persist translation stage artifacts for project %s: %s", pid, e)
+
         send(EventKind.SUCCEEDED, "Translation succeeded", details={"segments": updated_segments})
         return TaskResult(job_id, TaskStatus.SUCCEEDED, output_dir, segments=tuple(updated_segments))
 

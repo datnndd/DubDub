@@ -26,7 +26,9 @@ def run(*, translate_type=0,
         source_code=None,
         target_code=None,
         uuid=None,
-        aisendsrt=None) -> Union[List, str, None]:
+        aisendsrt=None,
+        event_sink=None,
+        cancellation_token=None) -> Union[List, str, None]:
     translate_type = int(translate_type)
     # ai渠道下，target_language_name 是语言名称
     # 其他渠道下是语言代码
@@ -44,6 +46,8 @@ def run(*, translate_type=0,
         "is_test": is_test,
         "translate_type": translate_type,
         "aisendsrt": aisendsrt,
+        "event_sink": event_sink,
+        "cancellation_token": cancellation_token,
     }
 
     # Google is an explicit provider choice. Do not silently switch providers.

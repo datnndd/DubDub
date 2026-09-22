@@ -12,7 +12,14 @@ class WorkflowStore {
     this.translationPollTimer = null;
     this.translationJobId = null;
     this.activeEditor = null;
+    this.activeProjectId = (typeof localStorage !== 'undefined') ? localStorage.getItem('dubdub_active_project_id') : null;
+    this.eventSource = null;
+    this.lastJobSeq = 0;
+    this.autosaveTimer = null;
     this.state = {
+      activeProjectId: this.activeProjectId,
+      drawerOpen: false,
+      projectsList: [],
       currentStep: 1, // 1: Prepare, 2: Review Transcript, 3: Voice & Dubbing, 4: Edit Video
       maxUnlockedStep: 4,
       activeSegmentId: 1,
@@ -246,6 +253,9 @@ class WorkflowStore {
       } catch (err) {
         console.error("State listener error:", err);
       }
+    }
+    if (scope === 'full' && this.activeProjectId) {
+      this.triggerAutosave();
     }
   }
 
@@ -516,6 +526,10 @@ class WorkflowStore {
         this.state.languages.target = { ...languages[0] };
       }
       await this.loadVoices();
+      await this.loadProjectsList();
+      if (this.activeProjectId) {
+        await this.loadProject(this.activeProjectId, false);
+      }
     } catch (error) {
       this.state.backend.error = `Backend unavailable: ${error.message}`;
     }
@@ -574,6 +588,7 @@ class WorkflowStore {
       this.state.project.verified = true;
       backend.status = 'ready';
       backend.message = 'Media verified — ready to process';
+      await this.initProjectFromMedia(media);
     } catch (error) {
       if (selectionVersion !== this.mediaSelectionVersion) return;
       backend.status = 'failed';
@@ -815,9 +830,11 @@ class WorkflowStore {
     this.notify();
     const body = {
       mediaId: backend.mediaId,
+      projectId: this.activeProjectId,
       jobType: 'asr',
       options: {
         ...backend.config,
+        projectId: this.activeProjectId,
         sourceLanguage: this.state.languages.source.code,
         targetLanguage: this.state.languages.target.code,
         timingMode: this.state.languages.timingMode,
@@ -836,6 +853,8 @@ class WorkflowStore {
       if (!response.ok) throw new Error(await response.text());
       const job = await response.json();
       backend.jobId = job.id;
+      backend.startTime = Date.now();
+      backend.elapsedSeconds = 0;
       this.applyJob(job);
       if (job.status === 'succeeded') {
         if (Array.isArray(job.segments)) {
@@ -845,8 +864,9 @@ class WorkflowStore {
           this.setStep(2);
         }
       } else {
+        this.subscribeJobStream(job.id);
         if (this.pollTimer) window.clearInterval(this.pollTimer);
-        this.pollTimer = window.setInterval(() => this.pollJob(), 500);
+        this.pollTimer = window.setInterval(() => this.pollJob(), 1000);
       }
     } catch (error) {
       backend.status = 'failed';
@@ -946,6 +966,10 @@ class WorkflowStore {
   async cancelProcessing() {
     const id = this.state.backend.jobId;
     if (!id) return;
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
     if (this.pollTimer) {
       window.clearInterval(this.pollTimer);
       this.pollTimer = null;
@@ -1031,9 +1055,11 @@ class WorkflowStore {
 
     const payload = {
       mediaId: this.state.backend.mediaId,
+      projectId: this.activeProjectId,
       jobType: 'translation',
       options: {
         ...this.state.backend.config,
+        projectId: this.activeProjectId,
         sourceLanguage: this.state.languages.source.code,
         targetLanguage: this.state.languages.target.code,
         translateType: Number(this.state.backend.config.translateType) || 0,
@@ -1786,29 +1812,374 @@ class WorkflowStore {
     try {
       const response = await fetch('/api/jobs', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mediaId: backend.mediaId, jobType: 'render', options: {
-          ...backend.config,
-          sourceLanguage: this.state.languages.source.code,
-          targetLanguage: this.state.languages.target.code,
-          timingMode: this.state.languages.timingMode,
-          subtitles: this.serializeEditedSrt(),
-          volume: `${mix.dubbed - 100 >= 0 ? '+' : ''}${mix.dubbed - 100}%`,
-          originalAudioVolume: mix.original / 100,
-          backgroundAudioVolume: mix.background / 100,
-          backgroundAudioId: editVideo.backgroundAudio?.id || null,
-          thumbnailId: editVideo.thumbnail?.id || null,
-          subtitleStyle: this.state.subtitleStyles
-        }})
+        body: JSON.stringify({
+          mediaId: backend.mediaId,
+          projectId: this.activeProjectId,
+          jobType: 'render',
+          options: {
+            ...backend.config,
+            projectId: this.activeProjectId,
+            sourceLanguage: this.state.languages.source.code,
+            targetLanguage: this.state.languages.target.code,
+            timingMode: this.state.languages.timingMode,
+            subtitles: this.serializeEditedSrt(),
+            segments: this.state.segments,
+            speakerVoiceMap: this.state.speakerVoiceMap,
+            volume: `${mix.dubbed - 100 >= 0 ? '+' : ''}${mix.dubbed - 100}%`,
+            originalAudioVolume: mix.original / 100,
+            backgroundAudioVolume: mix.background / 100,
+            backgroundAudioId: editVideo.backgroundAudio?.id || null,
+            thumbnailId: editVideo.thumbnail?.id || null,
+            subtitleStyle: this.state.subtitleStyles
+          }
+        })
       });
       if (!response.ok) throw new Error(await response.text());
       const job = await response.json();
       backend.jobId = job.id;
+      backend.startTime = Date.now();
+      backend.elapsedSeconds = 0;
       this.applyJob(job);
+      this.subscribeJobStream(job.id);
       if (this.pollTimer) clearInterval(this.pollTimer);
-      this.pollTimer = setInterval(() => this.pollJob(), 500);
+      this.pollTimer = setInterval(() => this.pollJob(), 1000);
     } catch (error) {
       backend.status = 'failed'; backend.error = error.message; editVideo.error = error.message;
     } finally { editVideo.exporting = false; this.notify(); }
+  }
+
+  async initProjectFromMedia(media) {
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mediaId: media.id,
+          name: media.filename,
+          duration: (media.durationMs || 0) / 1000,
+          stage: 1,
+          status: 'pending',
+          state: {
+            languages: this.state.languages,
+            speakerVoiceMap: this.state.speakerVoiceMap,
+          }
+        })
+      });
+      if (res.ok) {
+        const proj = await res.json();
+        this.activeProjectId = proj.id;
+        this.state.activeProjectId = proj.id;
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('dubdub_active_project_id', proj.id);
+        }
+        if (proj.state && Array.isArray(proj.state.segments) && proj.state.segments.length > 0) {
+          this.state.segments = proj.state.segments;
+          if (proj.stage > 1) {
+            this.setStep(proj.stage);
+          }
+        }
+        await this.loadProjectsList();
+      }
+    } catch (err) {
+      console.warn('Failed to persist project:', err);
+    }
+  }
+
+  async loadProjectsList() {
+    try {
+      const res = await fetch('/api/projects');
+      if (res.ok) {
+        const data = await res.json();
+        this.state.projectsList = data.projects || [];
+        this.notify('status');
+      }
+    } catch (err) {
+      console.warn('Failed to fetch projects list:', err);
+    }
+  }
+
+  async loadProject(projectId, notifyFull = true) {
+    if (!projectId) return;
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          this.activeProjectId = null;
+          this.state.activeProjectId = null;
+          if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem('dubdub_active_project_id');
+          }
+        }
+        return;
+      }
+      const proj = await res.json();
+      this.activeProjectId = proj.id;
+      this.state.activeProjectId = proj.id;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('dubdub_active_project_id', proj.id);
+      }
+      this.state.currentStep = proj.stage || 1;
+      this.state.project.filename = proj.name;
+      this.state.project.durationSec = proj.duration || 0;
+      this.state.project.duration = this.formatTime(proj.duration || 0);
+      this.state.backend.mediaId = proj.media_id;
+      if (proj.media_path) {
+        this.state.project.verified = true;
+      }
+
+      if (proj.state) {
+        if (Array.isArray(proj.state.segments)) {
+          this.state.segments = proj.state.segments;
+        }
+        if (proj.state.languages) {
+          this.state.languages = { ...this.state.languages, ...proj.state.languages };
+        }
+        if (proj.state.speakerVoiceMap) {
+          this.state.speakerVoiceMap = { ...proj.state.speakerVoiceMap };
+        }
+        if (proj.state.speakers) {
+          this.state.speakers = proj.state.speakers;
+        }
+        if (proj.state.tuning) {
+          this.state.tuning = { ...this.state.tuning, ...proj.state.tuning };
+        }
+        if (proj.state.editVideo) {
+          this.state.editVideo = { ...this.state.editVideo, ...proj.state.editVideo };
+        }
+        if (proj.state.engines) {
+          this.state.engines = { ...this.state.engines, ...proj.state.engines };
+        }
+      }
+
+      this.state.drawerOpen = false;
+
+      if (proj.status === 'processing') {
+        this.checkAndResumeActiveJob(proj.id);
+      }
+
+      if (notifyFull) {
+        this.notify('full');
+      }
+    } catch (err) {
+      console.warn('Failed to load project:', err);
+    }
+  }
+
+  startNewProject() {
+    this.activeProjectId = null;
+    this.state.activeProjectId = null;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('dubdub_active_project_id');
+    }
+    this.state.currentStep = 1;
+    this.state.project = {
+      filename: "Select a video to begin",
+      format: "—",
+      resolution: "—",
+      fps: "—",
+      duration: "00:00.000",
+      durationSec: 0,
+      fileSize: "—",
+      videoCodec: "—",
+      audioCodec: "—",
+      bitrate: "Not reported",
+      hasAudio: false,
+      hasVideo: false,
+      verified: false,
+      lastSaved: "Just now"
+    };
+    this.state.backend.mediaId = null;
+    this.state.backend.jobId = null;
+    this.state.backend.status = 'idle';
+    this.state.backend.progress = 0;
+    this.state.backend.message = '';
+    this.state.drawerOpen = false;
+    this.notify('full');
+  }
+
+  async deleteProject(projectId) {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (this.activeProjectId === projectId) {
+          this.startNewProject();
+        }
+        await this.loadProjectsList();
+      }
+    } catch (err) {
+      console.warn('Failed to delete project:', err);
+    }
+  }
+
+  toggleDrawer() {
+    this.state.drawerOpen = !this.state.drawerOpen;
+    if (this.state.drawerOpen) {
+      this.loadProjectsList();
+    }
+    this.notify();
+  }
+
+  openDrawer() {
+    this.state.drawerOpen = true;
+    this.loadProjectsList();
+    this.notify();
+  }
+
+  closeDrawer() {
+    this.state.drawerOpen = false;
+    this.notify();
+  }
+
+  triggerAutosave() {
+    if (!this.activeProjectId) return;
+    if (this.autosaveTimer) {
+      clearTimeout(this.autosaveTimer);
+    }
+    this.autosaveTimer = setTimeout(() => this.saveProject(), 1000);
+  }
+
+  async saveProject() {
+    if (!this.activeProjectId) return;
+    try {
+      const body = {
+        stage: this.state.currentStep,
+        status: this.state.backend.status,
+        state: {
+          segments: this.state.segments,
+          languages: this.state.languages,
+          speakerVoiceMap: this.state.speakerVoiceMap,
+          speakers: this.state.speakers,
+          tuning: this.state.tuning,
+          editVideo: this.state.editVideo,
+          engines: this.state.engines,
+        }
+      };
+      const res = await fetch(`/api/projects/${encodeURIComponent(this.activeProjectId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const now = new Date();
+        this.state.project.lastSaved = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        this.notify('status');
+      }
+    } catch (err) {
+      console.warn('Autosave failed:', err);
+    }
+  }
+
+  subscribeJobStream(jobId) {
+    if (!jobId) return;
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+
+    const sseUrl = `/api/jobs/${encodeURIComponent(jobId)}/stream?after_seq=${this.lastJobSeq || 0}`;
+    try {
+      const es = new EventSource(sseUrl);
+      this.eventSource = es;
+
+      es.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (event.lastEventId) {
+            this.lastJobSeq = parseInt(event.lastEventId, 10);
+          }
+          this.applyJobStreamUpdate(payload);
+        } catch (e) {
+          console.warn('Failed to parse SSE payload:', e);
+        }
+      };
+
+      es.addEventListener('done', (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          this.applyJobStreamUpdate(payload);
+        } catch (_) {}
+        es.close();
+        this.eventSource = null;
+      });
+
+      es.onerror = () => {
+        if (this.eventSource === es) {
+          es.close();
+          this.eventSource = null;
+          if (['running', 'queued', 'submitting'].includes(this.state.backend.status)) {
+            if (this.pollTimer) clearInterval(this.pollTimer);
+            this.pollTimer = setInterval(() => this.pollJob(), 1000);
+          }
+        }
+      };
+    } catch (err) {
+      if (this.pollTimer) clearInterval(this.pollTimer);
+      this.pollTimer = setInterval(() => this.pollJob(), 500);
+    }
+  }
+
+  applyJobStreamUpdate(payload) {
+    const backend = this.state.backend;
+    if (payload.status) backend.status = payload.status;
+    if (payload.stage) backend.stage = payload.stage;
+    if (typeof payload.progress === 'number') backend.progress = payload.progress;
+    if (payload.message) backend.message = payload.message;
+    if (payload.error) backend.error = payload.error;
+    if (payload.details && payload.details.segments) {
+      this.setSegments(payload.details.segments);
+    }
+
+    if (backend.startTime) {
+      backend.elapsedSeconds = Math.round((Date.now() - backend.startTime) / 1000);
+    }
+
+    const terminal = ['succeeded', 'failed', 'cancelled'].includes(backend.status) || Boolean(backend.error);
+    if (backend.status === 'succeeded' && !backend.error) {
+      if (this.state.currentStep === 1) {
+        this.setStep(2);
+      }
+      this.triggerAutosave();
+    }
+
+    this.notify(terminal ? 'full' : 'status');
+  }
+
+  navigateToActiveJob() {
+    const backend = this.state.backend;
+    if (!backend || !backend.jobId) return;
+    if (['prepare', 'recogn', 'diariz'].includes(backend.stage)) {
+      this.setStep(1);
+    } else if (backend.stage === 'trans') {
+      this.setStep(2);
+    } else if (['dubbing', 'align'].includes(backend.stage)) {
+      this.setStep(3);
+    } else if (['assembling', 'render'].includes(backend.stage)) {
+      this.setStep(4);
+    }
+  }
+
+  dismissPill() {
+    this.state.backend.jobId = null;
+    this.state.backend.status = 'idle';
+    this.notify('status');
+  }
+
+  async checkAndResumeActiveJob(projectId) {
+    try {
+      const res = await fetch('/api/jobs?project_id=' + encodeURIComponent(projectId));
+      if (res.ok) {
+        const jobs = await res.json();
+        const active = (jobs.jobs || []).find(j => ['pending', 'running'].includes(j.status));
+        if (active) {
+          this.state.backend.jobId = active.id;
+          this.state.backend.status = active.status;
+          this.state.backend.stage = active.stage;
+          this.state.backend.progress = active.progress;
+          this.state.backend.message = active.message;
+          this.subscribeJobStream(active.id);
+        }
+      }
+    } catch (_) {}
   }
 }
 

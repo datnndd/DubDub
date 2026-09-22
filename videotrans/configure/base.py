@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
-from videotrans.configure.config import tr, settings, app_cfg, logger, push_queue, TEMP_ROOT
+from videotrans.configure.config import tr, settings, app_cfg, logger, TEMP_ROOT
 from videotrans.util.help_misc import set_proxy,vail_file
 
 @dataclass
@@ -43,15 +43,7 @@ class BaseCon:
         if app_cfg.exec_mode=='cli':
             print(kwargs.get('text'))
             return
-        if 'uuid' not in kwargs or not kwargs.get('uuid'):
-            kwargs['uuid'] = self.uuid
-        # 已停止，则不再发送消息
-        if kwargs.get('uuid') in app_cfg.stoped_uuid_set:
-            return
-        if 'type' not in kwargs or not kwargs.get('type'):
-            kwargs['type']='logs'
-        from videotrans.task.taskcfg import SignMsg
-        push_queue(kwargs.get('uuid') or "", SignMsg(**kwargs))
+        logger.info(str(kwargs.get('text') or ''))
 
     def _process_callback(self, data):
         _t=time.time()

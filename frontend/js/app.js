@@ -11,6 +11,8 @@ import { renderStage1Prepare, renderAsrProgressCard } from './screens/Stage1Prep
 import { renderStage2ReviewTranscript } from './screens/Stage2ReviewTranscript.js';
 import { renderStage3VoiceDubbing } from './screens/Stage3VoiceDubbing.js';
 import { renderStage4EditVideo } from './screens/Stage4EditVideo.js';
+import { renderProjectDrawer } from './components/ProjectDrawer.js';
+import { renderFloatingPill } from './components/FloatingPill.js';
 
 function renderApp() {
   const root = document.getElementById('app');
@@ -49,6 +51,10 @@ function renderApp() {
         ${stageHtml}
       </main>
       ${renderStatusFooter(state)}
+      ${renderProjectDrawer(state)}
+      <div data-floating-pill-container>
+        ${renderFloatingPill(state)}
+      </div>
     </div>
   `;
 
@@ -79,7 +85,12 @@ function renderStatusOnly() {
       progressCard.outerHTML = newHtml;
     }
   }
+  const pillContainer = document.querySelector('[data-floating-pill-container]');
+  if (pillContainer) {
+    pillContainer.innerHTML = renderFloatingPill(state);
+  }
 }
+
 
 // Initial mount & subscribe to reactive state changes.
 // ASR polling updates only the status footer so the active <video> element is

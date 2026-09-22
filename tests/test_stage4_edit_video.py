@@ -536,6 +536,11 @@ def test_render_params_reuse_edited_srt_and_mix_settings(tmp_path, monkeypatch):
         "translateType": webui.TRANSLATION_PROVIDERS[0]["translateType"],
         "ttsType": 0, "voiceRole": "No", "sourceLanguage": "zh-cn", "targetLanguage": "vi",
         "subtitles": "1\n00:00:00,000 --> 00:00:01,000\nEdited",
+        "segments": [
+            {"speakerId": "speaker-1", "voiceOverride": None},
+            {"speakerId": "speaker-2", "voiceOverride": "Per-line voice"},
+        ],
+        "speakerVoiceMap": {"speaker-1": "Speaker voice", "speaker-2": "Ignored default"},
         "volume": "-20%", "originalAudioVolume": .25, "backgroundAudioVolume": .4,
         "backgroundMusicPath": (tmp_path / "music.wav").as_posix(),
         "thumbnailPath": (tmp_path / "cover.jpg").as_posix(),
@@ -546,6 +551,7 @@ def test_render_params_reuse_edited_srt_and_mix_settings(tmp_path, monkeypatch):
 
     assert params["clear_cache"] is False
     assert params["subtitles"].endswith("Edited")
+    assert params["line_roles"] == {"1": "Speaker voice", "2": "Per-line voice"}
     assert params["volume"] == "-20%"
     assert params["source_audio_volume"] == .25
     assert params["backaudio_volume"] == .4
@@ -819,6 +825,8 @@ def test_stage4_frontend_uses_shared_segments_and_connected_render_action():
     assert "updateStage4Timing" in state
     assert "serializeEditedSrt" in state
     assert "jobType: 'render'" in state
+    assert "segments: this.state.segments" in state
+    assert "speakerVoiceMap: this.state.speakerVoiceMap" in state
     assert "exportEditedVideo()" in footer
 
 

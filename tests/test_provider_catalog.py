@@ -5,6 +5,11 @@ from videotrans import recognition, translator, tts
 from videotrans.configure._app_params import AppParams, PROVIDER_CATALOG_VERSION
 
 
+class _EmptyProviderSettings:
+    def get(self, _key, default=None):
+        return default
+
+
 def test_asr_catalog_is_the_supported_contiguous_set():
     assert list(recognition._ID_NAME_DICT) == list(range(6))
     assert [
@@ -51,6 +56,62 @@ def test_tts_catalog_is_the_supported_contiguous_set_with_vieneu_default():
         "._vieneutts",
         "._geminitts",
     ]
+
+
+def test_missing_provider_credentials_return_errors(monkeypatch):
+    monkeypatch.setattr(recognition, "params", _EmptyProviderSettings())
+    monkeypatch.setattr(tts, "params", _EmptyProviderSettings())
+    monkeypatch.setattr("videotrans.translator._lang_utils.params", _EmptyProviderSettings())
+
+    assert "configure" in recognition.is_input_api(recognition.Deepgram).lower()
+    assert "configure" in tts.is_input_api(tts.ELEVENLABS_TTS).lower()
+    assert "configure" in translator.is_allow_translate(
+        translate_type=translator.CHATGPT_INDEX,
+        show_target="vi",
+    ).lower()
+
+
+def test_provider_execution_forwards_job_context(monkeypatch):
+    captured = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            captured.append(kwargs)
+
+        def run(self):
+            return []
+
+    event_sink = object()
+    cancellation_token = object()
+
+    monkeypatch.setattr("videotrans.recognition.get_class", lambda *_args: FakeProvider)
+    recognition.run(
+        recogn_type=recognition.FASTER_WHISPER,
+        event_sink=event_sink,
+        cancellation_token=cancellation_token,
+    )
+
+    monkeypatch.setattr("videotrans.translator._runner.get_class", lambda *_args: FakeProvider)
+    translator.run(
+        translate_type=translator.CHATGPT_INDEX,
+        text_list=[],
+        source_code="en",
+        target_code="vi",
+        event_sink=event_sink,
+        cancellation_token=cancellation_token,
+    )
+
+    monkeypatch.setattr(tts, "get_class", lambda *_args: FakeProvider)
+    tts.run(
+        queue_tts=[{"text": "hello"}],
+        tts_type=tts.VIENEU_TTS,
+        event_sink=event_sink,
+        cancellation_token=cancellation_token,
+    )
+
+    assert len(captured) == 3
+    assert all(kwargs["event_sink"] is event_sink for kwargs in captured)
+    assert all(kwargs["cancellation_token"] is cancellation_token for kwargs in captured)
 
 
 def test_removed_provider_implementations_are_absent():

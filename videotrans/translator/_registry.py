@@ -9,8 +9,8 @@ from videotrans.translator._constants import (
 
 _ID_NAME_DICT = {
     GOOGLE_INDEX: ChannelProvider(tr("Google"), imp="._google"),
-    CHATGPT_INDEX: ChannelProvider(tr("OpenAI ChatGPT"), key_name="chatgpt_key", win="chatgpt", imp="._chatgpt"),
-    GEMINI_INDEX: ChannelProvider("Gemini AI", key_name="gemini_key", win="gemini", imp="._gemini"),
-    DEEPSEEK_INDEX: ChannelProvider("DeepSeek", key_name="deepseek_key", win="deepseek", imp="._deepseek"),
+    CHATGPT_INDEX: ChannelProvider(tr("OpenAI ChatGPT"), key_name="chatgpt_key", imp="._chatgpt"),
+    GEMINI_INDEX: ChannelProvider("Gemini AI", key_name="gemini_key", imp="._gemini"),
+    DEEPSEEK_INDEX: ChannelProvider("DeepSeek", key_name="deepseek_key", imp="._deepseek"),
 }
 TRANSLASTE_NAME_LIST = [provider.name for provider in _ID_NAME_DICT.values()]

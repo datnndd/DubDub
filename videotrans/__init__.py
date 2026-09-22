@@ -13,7 +13,6 @@ class ChannelProvider:
     name: str
     imp: str
     key_name: Optional[str] = None
-    win: Optional[str] = None
 
 
 # provider_type: TTS|STT|STS 配音，转录，翻译字幕

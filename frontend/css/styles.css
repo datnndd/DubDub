@@ -57,3 +57,13 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .active-teleprompter-card {
   box-shadow: 0 0 0 2px #8D4B00, 0 4px 12px rgba(141, 75, 0, 0.08);
 }
+
+/* Slide in drawer animation */
+@keyframes slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+

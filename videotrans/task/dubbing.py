@@ -120,7 +120,9 @@ class DubbingSrt(BaseTask):
             language=self.cfg.target_language_code,
             uuid=self.uuid,
             tts_type=self.cfg.tts_type,
-            is_cuda=self.cfg.is_cuda
+            is_cuda=self.cfg.is_cuda,
+            event_sink=self.event_sink,
+            cancellation_token=self.cancellation_token,
         )
         # 如果需要单独保存每条字幕的配音
         if settings.get('save_segment_audio', False):
@@ -164,7 +166,9 @@ class DubbingSrt(BaseTask):
             cache_folder=self.cfg.cache_folder,
             remove_silent_mid=self.cfg.remove_silent_mid if not self.cfg.target_sub.endswith('.txt') else True,
             # 是否移除字幕间空隙 仅在未自动加速时且是srt文件时才起作用,txt配音时移除，即直接音频文件相连
-            align_sub_audio=False  # 不对齐字幕 字幕配音不修原始字幕，因此对齐无意义
+            align_sub_audio=False,  # 不对齐字幕 字幕配音不修原始字幕，因此对齐无意义
+            event_sink=self.event_sink,
+            cancellation_token=self.cancellation_token,
         )
         self.queue_tts = rate_inst.run()
         volume = self.cfg.volume.strip()
