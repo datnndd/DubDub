@@ -32,11 +32,11 @@ export function renderStage2ReviewTranscript(state) {
   };
 
   return `
-    <div class="flex-1 min-h-0 w-full p-2 flex flex-col gap-2 overflow-hidden">
-      <!-- TOP SECTION: MAXIMIZED BROADCAST MONITOR & COMPACT TRANSLATION PANEL (62% Height) -->
-      <section class="h-[62%] min-h-0 w-full grid grid-cols-12 gap-2">
-        <!-- LEFT: MAXIMIZED SYNCHRONIZED VIDEO PLAYER (9 cols) -->
-        <div class="col-span-12 lg:col-span-8 xl:col-span-9 h-full flex flex-col min-h-0">
+    <div class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden">
+      <!-- UPPER DECK: Video Screen (Left) + Translation Config (Right) -->
+      <section class="flex-1 min-h-0 w-full grid grid-cols-12 gap-2.5 overflow-hidden">
+        <!-- LEFT: SYNCHRONIZED VIDEO PLAYER (7-8 cols) -->
+        <div class="col-span-12 lg:col-span-7 xl:col-span-8 h-full flex flex-col min-h-0">
           ${renderVideoPlayer(state, {
             title: "Synchronized Video Player",
             showOcrBox: false,
@@ -44,17 +44,17 @@ export function renderStage2ReviewTranscript(state) {
           })}
         </div>
 
-        <!-- RIGHT: COMPACT LLM TRANSLATION CONFIGURATION PANEL (3 cols) -->
+        <!-- RIGHT: COMPACT LLM TRANSLATION CONFIGURATION PANEL (4-5 cols) -->
         ${renderTranslationConfig(state, {
-          containerClass: "col-span-12 lg:col-span-4 xl:col-span-3 h-full",
+          containerClass: "col-span-12 lg:col-span-5 xl:col-span-4 h-full",
           title: "LLM Translation",
           headerHeight: "h-7.5",
           badge: "Reasoning"
         })}
       </section>
 
-      <!-- BOTTOM SECTION: COMPACT TELEPROMPTER & SCRIPT FEED (38% Height) -->
-      <section class="h-[38%] min-h-0 w-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col overflow-hidden">
+      <!-- LOWER DECK: COMPACT TELEPROMPTER & SCRIPT FEED (Same height as Stage 4 lower deck: 210px) -->
+      <section class="h-[210px] flex-shrink-0 w-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col overflow-hidden">
         <!-- Teleprompter Stream Header Bar -->
         <div class="h-7.5 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
           <div class="flex items-center gap-2.5">

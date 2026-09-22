@@ -1242,8 +1242,26 @@ async def split_segment_handler(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "segments": [seg1, seg2]})
 
 
+@web.middleware
+async def no_cache_middleware(request: web.Request, handler: Callable) -> web.StreamResponse:
+    response = await handler(request)
+    if (
+        request.path == "/"
+        or request.path.endswith((".html", ".js", ".css"))
+        or request.path.startswith(("/js", "/css", "/assets"))
+    ):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 async def index_handler(_request: web.Request) -> web.StreamResponse:
-    return web.FileResponse(FRONTEND_DIR / "index.html")
+    response = web.FileResponse(FRONTEND_DIR / "index.html")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 def create_app(
@@ -1258,7 +1276,7 @@ def create_app(
 ) -> web.Application:
     if not (FRONTEND_DIR / "index.html").is_file():
         raise RuntimeError(f"Frontend not found: {FRONTEND_DIR}")
-    app = web.Application(client_max_size=20 * 1024 ** 3)
+    app = web.Application(middlewares=[no_cache_middleware], client_max_size=20 * 1024 ** 3)
     app["job_manager"] = job_manager or JOBS
     app["media_store"] = MEDIA if upload_dir is None and media_probe is get_video_info else MediaStore(upload_dir or UPLOAD_DIR, media_probe)
     app["settings_store"] = app_params if settings_store is None else settings_store

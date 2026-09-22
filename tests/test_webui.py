@@ -36,6 +36,28 @@ def test_new_frontend_is_the_only_webui():
     assert "gradio" not in Path(webui.__file__).read_text(encoding="utf-8").lower()
 
 
+def test_frontend_static_and_html_have_no_cache_headers():
+    app = webui.create_app()
+
+    async def scenario():
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            res_html = await client.get("/")
+            assert res_html.status == 200
+            assert "no-cache" in res_html.headers.get("Cache-Control", "")
+            assert "no-store" in res_html.headers.get("Cache-Control", "")
+
+            res_js = await client.get("/js/app.js")
+            assert res_js.status == 200
+            assert "no-cache" in res_js.headers.get("Cache-Control", "")
+            assert "no-store" in res_js.headers.get("Cache-Control", "")
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+
 def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch):
     source = tmp_path / "sample video.mp4"
     source.write_bytes(b"video")

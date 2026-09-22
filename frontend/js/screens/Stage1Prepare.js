@@ -62,17 +62,18 @@ export function renderStage1Prepare(state) {
   ];
 
   return `
-    <div class="flex-1 min-h-0 w-full p-3 flex flex-col gap-2.5 overflow-hidden">
-      <!-- TOP HERO MEDIA STRIP: Video Player Card & Rich Metadata Card (38% Height) -->
-      <section class="h-[50%] min-h-0 flex-shrink-0 w-full grid grid-cols-12 gap-2.5">
-        <!-- LEFT: 16:9 Video Snapshot & Live Waveform Preview (7 cols) -->
-        <div class="col-span-12 md:col-span-7 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+    <div class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden">
+      <!-- TOP HERO MEDIA STRIP: Video Player Card & Rich Metadata Card -->
+      <section class="flex-1 min-h-0 w-full grid grid-cols-12 gap-2.5 overflow-hidden">
+        <!-- LEFT: 16:9 Video Snapshot & Live Waveform Preview (7-8 cols) -->
+        <div class="col-span-12 md:col-span-7 lg:col-span-7 xl:col-span-8 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
           <!-- Card Header -->
           <div class="h-7 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] flex-shrink-0">
             <div class="flex items-center gap-2">
               <span class="material-symbols-outlined text-[#8D4B00] text-sm">movie_filter</span>
               <span class="text-xs font-bold text-stone-900">Source Video &amp; Sound Canvas</span>
-              <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-[#8D4B00] uppercase tracking-wide">${p.verified ? 'Media Verified' : 'Awaiting Media'}</span>
+              <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-[#8D4B00] uppercase tracking-wide cursor-pointer hover:bg-amber-200 transition-colors"
+                onclick="window.dubDubStore.chooseMedia()" title="Click to choose a video">${p.verified ? 'Media Verified' : 'Awaiting Media'}</span>
             </div>
             <div class="flex items-center gap-2 font-mono text-[10px] text-stone-500">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
@@ -81,7 +82,8 @@ export function renderStage1Prepare(state) {
           </div>
 
           <!-- Widescreen Visual Preview -->
-          <div class="relative flex-1 min-h-0 bg-neutral-950 flex items-center justify-center overflow-hidden group">
+          <div class="relative flex-1 min-h-0 bg-neutral-950 flex items-center justify-center overflow-hidden group ${p.previewUrl ? '' : 'cursor-pointer hover:bg-neutral-900 transition-colors'}"
+            ${p.previewUrl ? '' : 'onclick="window.dubDubStore.chooseMedia()"'}>
             ${p.previewUrl ? `
               <video data-source-preview class="w-full h-full object-contain bg-black" src="${p.previewUrl}" controls preload="metadata"
                 onloadedmetadata="window.dubDubStore.syncPreviewPlayback(this)"
@@ -89,13 +91,19 @@ export function renderStage1Prepare(state) {
                 onplay="window.dubDubStore.syncPreviewPlayback(this)"
                 onpause="window.dubDubStore.syncPreviewPlayback(this)"></video>
             ` : `
-              <img 
-                alt="Upload video placeholder" 
-                class="w-full h-full object-contain p-8 opacity-80" 
-                src="https://api.iconify.design/lucide:video-off.svg" 
-              />
+              <div class="flex flex-col items-center justify-center gap-2.5 p-6 text-center select-none" data-action="choose-media-screen">
+                <div class="w-12 h-12 rounded-xl bg-stone-800/80 border border-stone-700/60 flex items-center justify-center text-amber-400 group-hover:scale-105 group-hover:bg-stone-800 group-hover:text-amber-300 transition-all shadow-md">
+                  <span class="material-symbols-outlined text-2xl">upload_file</span>
+                </div>
+                <div class="flex flex-col items-center gap-0.5">
+                  <span class="text-xs font-bold text-stone-200 group-hover:text-white transition-colors">Click to select or upload a video</span>
+                  <span class="text-[10px] text-stone-400">MP4, MKV, MOV, WebM (up to 4K supported)</span>
+                </div>
+                <button type="button" class="px-3 py-1 rounded-lg bg-[#8D4B00] group-hover:bg-[#743d00] text-white text-[11px] font-bold shadow-xs transition-colors mt-0.5 pointer-events-none">
+                  Choose Video
+                </button>
+              </div>
             `}
-
           </div>
 
           <!-- Compact Audio Waveform Bar -->
@@ -113,8 +121,8 @@ export function renderStage1Prepare(state) {
           </div>
         </div>
 
-        <!-- RIGHT: Rich File Metadata & Voice Diagnostics Card (5 cols) -->
-        <div class="col-span-12 md:col-span-5 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+        <!-- RIGHT: Rich File Metadata & Voice Diagnostics Card (4-5 cols) -->
+        <div class="col-span-12 md:col-span-5 lg:col-span-5 xl:col-span-4 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
           <div class="h-7 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] flex-shrink-0">
             <div class="flex items-center gap-2">
               <span class="material-symbols-outlined text-[#8D4B00] text-sm">description</span>
@@ -189,8 +197,8 @@ export function renderStage1Prepare(state) {
         </div>
       </section>
 
-      <!-- BOTTOM CONFIGURATION GRID: fills the remaining height -->
-      <section class="flex-1 min-h-0 w-full grid grid-cols-12 gap-2.5">
+      <!-- BOTTOM CONFIGURATION GRID: fills the lower deck (Same with Stage4 lower deck: 210px) -->
+      <section class="h-[210px] flex-shrink-0 w-full grid grid-cols-12 gap-2.5">
         <!-- SECTION 1: Source & Target Languages (6 cols) -->
         <div class="col-span-12 md:col-span-6 lg:col-span-6 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
           <div class="h-7 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
