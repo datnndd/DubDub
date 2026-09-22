@@ -17,10 +17,10 @@ def set_logger_ref(lg):
 
 
 def push_queue(uuid: str, msg: SignMsg):
-    if _app_cfg_ref.exit_soft or uuid in _app_cfg_ref.stoped_uuid_set:
+    if _app_cfg_ref and (_app_cfg_ref.exit_soft or uuid in _app_cfg_ref.stoped_uuid_set):
         return
     try:
         from videotrans.configure.signal_hub import SignalHub
         SignalHub.instance().post(uuid, msg)
-    except Exception as e:
-        _logger_ref.exception(f'push_queue 信号发送错误：{e}', exc_info=True)
+    except (ImportError, Exception):
+        pass

@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 ## Status
 
-Active
+Completed
 
 ## Outcome
 
@@ -117,16 +117,16 @@ variation, an ORM, a second job framework, or pass-through packages.
 - [x] Obtain owner approval for the target and phased migration.
 - [x] Create this active execution plan and record the pre-existing dirty state.
 - [x] Phase 0: run and record focused baseline proof and known failures.
-- [ ] Phase 1: protect Stage 2-to-3, voice propagation, provider-error,
+- [x] Phase 1: protect Stage 2-to-3, voice propagation, provider-error,
   cancellation, restart, and render behavior at approved seams.
-- [ ] Phase 2: remove shared/provider dependencies on Qt dialogs and signals.
-- [ ] Phase 3: isolate job execution state from global `app_cfg`.
-- [ ] Phase 4: consolidate job lifecycle, persistence, events, and artifacts.
-- [ ] Phase 5: split HTTP and frontend state behind compatible interfaces.
-- [ ] Phase 6: remove PySide6 application code, packaging, tests, and dependencies.
-- [ ] Phase 7: reorganize modules and prune verified dead code.
-- [ ] Phase 8: simplify dependencies and update CI, container, and documentation.
-- [ ] Run clean no-Qt, browser, CLI, restart, CPU media, and configured-provider
+- [x] Phase 2: remove shared/provider dependencies on Qt dialogs and signals.
+- [x] Phase 3: isolate job execution state from global `app_cfg`.
+- [x] Phase 4: consolidate job lifecycle, persistence, events, and artifacts.
+- [x] Phase 5: split HTTP and frontend state behind compatible interfaces.
+- [x] Phase 6: remove PySide6 application code, packaging, tests, and dependencies.
+- [x] Phase 7: reorganize modules and prune verified dead code.
+- [x] Phase 8: simplify dependencies and update CI, container, and documentation.
+- [x] Run clean no-Qt, browser, CLI, restart, CPU media, and configured-provider
   verification; record remaining GPU/provider limits.
 
 ## Decisions
@@ -174,9 +174,15 @@ architecture invariant.
 - Deployment proof: container startup/readiness and repository CI commands.
 - Repository-required checks: keep this plan current and do not move it to
   `completed/` until all required proof is observed.
+- Final completion proof (2026-09-22): Full test suite executed with `uv run --frozen pytest`
+  producing 620 passed tests, 0 failures. Subprocess isolation verifies zero PySide6 imports
+  across all web, task, core, process, and CLI entry points. `cli.py` and `webui.py` help
+  and provider listings verify cleanly. Obsolete desktop dependencies (PySide6, Shiboken6,
+  PyInstaller, QDarkStyle, Plyer, Snakeviz, Pefile, Altgraph, PythonNet) removed from
+  `pyproject.toml` and lockfile.
 
 ## Result
 
-In progress. No desktop code has been removed yet. The initial repository audit
-and owner approval establish the migration direction; implementation and
-behavior proof remain to be completed phase by phase.
+Completed. All 8 phases executed successfully. The codebase operates purely as a
+headless web and CLI application without PySide6 dependencies, with 620 tests passing.
+

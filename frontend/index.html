@@ -6,45 +6,10 @@
   <title>DubDub Studio — AI Video Translation &amp; Dubbing Suite</title>
   <link href="https://fonts.googleapis.com" rel="preconnect" />
   <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Montserrat:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
-  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-  <script id="tailwind-config">
-    tailwind.config = {
-      darkMode: "class",
-      theme: {
-        extend: {
-          colors: {
-            "surface": "#FAF8F5",
-            "surface-container": "#F3ECE2",
-            "surface-container-low": "#FAF6F0",
-            "surface-container-high": "#EDE5DA",
-            "surface-container-lowest": "#FFFFFF",
-            "on-surface": "#1F2328",
-            "on-surface-variant": "#595E68",
-            "outline": "#898174",
-            "outline-variant": "#E5DED4",
-            "primary": "#8D4B00",
-            "primary-hover": "#743D00",
-            "primary-container": "#B15F00",
-            "primary-light": "#FFDCC3",
-            "on-primary": "#FFFFFF",
-            "secondary": "#A13E28",
-            "tertiary": "#506053"
-          },
-          fontFamily: {
-            sans: ["Plus Jakarta Sans", "sans-serif"],
-            mono: ["JetBrains Mono", "monospace"]
-          }
-        }
-      }
-    }
-  </script>
-  <link rel="stylesheet" href="./css/styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body class="h-screen w-screen overflow-hidden bg-[#F9F8F5] text-stone-800 font-sans antialiased select-none">
-  <div id="app" class="h-full w-full"></div>
-  <input id="media-input" class="hidden" type="file" accept="video/*,audio/*" />
-  <script type="module" src="./js/app.js"></script>
+  <div id="root" class="h-full w-full"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

@@ -67,7 +67,7 @@ description: 菜单栏--帮助/关于 中有很多链接，比如模型下载地
     git clone https://github.com/jianchang512/pyvideotrans
     cd pyvideotrans
     uv sync
-    uv run sp.py
+    uv run webui.py
     ```
 *   **可选依赖**：`uv sync --all-extra` 安装所有可选渠道（qwen-tts, qwen-asr, moss-tts, chatterbox）
 

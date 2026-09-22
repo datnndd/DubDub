@@ -27,10 +27,16 @@ except ForbiddenQtImport:
 else:
     raise AssertionError("the no-Qt guard did not detect a forbidden import")
 
-import webui
+# Verify that internal package modules import cleanly in isolation BEFORE webui is loaded
+from videotrans import recognition, translator, tts, ocr
+from videotrans.task import orchestrator, speech2text, dubbing, trans_create
+from videotrans.api import app
+from videotrans.core import project_store, job_store, job_manager, media_store
+from videotrans.process import process_manager
+
+# Verify that top-level CLI and WebUI entrypoints also import cleanly
 import cli
-from videotrans import recognition, translator, tts
-from videotrans.task import orchestrator
+import webui
 '''
 
     result = subprocess.run(

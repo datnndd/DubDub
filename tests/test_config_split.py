@@ -82,7 +82,7 @@ class TestAppCfgClass:
         assert hasattr(app_cfg, 'exit_soft')
         assert hasattr(app_cfg, 'stoped_uuid_set')
         assert hasattr(app_cfg, 'current_status')
-        assert hasattr(app_cfg, 'prepare_queue')
+        assert hasattr(app_cfg, 'queue_novice')
 
     def test_app_cfg_rm_uuid(self):
         from videotrans.configure.config import app_cfg

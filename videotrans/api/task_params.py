@@ -1,0 +1,208 @@
+# -*- coding: utf-8 -*-
+"""Helpers for translating WebUI frontend options into task configuration dictionaries."""
+
+from __future__ import annotations
+
+import math
+import re
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from videotrans import recognition, translator, tts
+from videotrans.configure import config as runtime_config
+from videotrans.configure.config import TEMP_DIR
+from videotrans.util._ffmpeg_misc import format_video
+from videotrans.util.help_role import role_menu
+from videotrans.api.catalog import (
+    ASR_BY_TYPE,
+    ASR_PROVIDERS,
+    OUTPUT_DIR,
+    TIMING_MODES,
+    TRANSLATION_BY_TYPE,
+    TRANSLATION_MODES,
+)
+
+
+def _required_index(value: Any, size: int, label: str) -> int:
+    try:
+        index = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"A valid {label} is required") from None
+    if not 0 <= index < size:
+        raise ValueError(f"Unknown {label}: {value}")
+    return index
+
+
+def _optional_index(value: Any, size: int, default: int = 0) -> int:
+    try:
+        index = int(value)
+    except (TypeError, ValueError):
+        return default
+    return index if 0 <= index < size else default
+
+
+def _safe_volume(value: Any, default: float) -> float:
+    """Safely coerce volume float value clamped to [0.0, 1.5], with fallback default."""
+    if value is None or isinstance(value, bool):
+        return default
+    try:
+        val = float(value)
+        if math.isnan(val):
+            return default
+        return max(0.0, min(1.5, val))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _translation_mode(value: Any = None) -> tuple[str, bool]:
+    mode_id = str(value or ("srt" if runtime_config.settings.get("aisendsrt", True) else "line"))
+    mode = TRANSLATION_MODES.get(mode_id)
+    if mode is None:
+        raise ValueError(f"Unknown translation mode: {mode_id}")
+    return mode_id, bool(mode["aisendsrt"])
+
+
+def build_task_params(
+    input_path: Path,
+    options: dict[str, Any],
+    job_type: str = "full",
+    project_id: str | None = None,
+) -> dict[str, Any]:
+    """Translate supported frontend fields into the existing task configuration."""
+    import sys
+    fmt_vid = getattr(sys.modules.get("webui"), "format_video", format_video) if "webui" in sys.modules else format_video
+    file_info = fmt_vid(input_path.resolve().as_posix())
+    safe_stem = re.sub(r"[^\w.-]+", "-", file_info.basename, flags=re.UNICODE).strip("-")
+    pid = project_id or options.get("projectId") or options.get("project_id")
+    out_dir = getattr(sys.modules.get("webui"), "OUTPUT_DIR", OUTPUT_DIR) if "webui" in sys.modules else OUTPUT_DIR
+    tmp_dir = getattr(sys.modules.get("webui"), "TEMP_DIR", TEMP_DIR) if "webui" in sys.modules else TEMP_DIR
+    if pid:
+        from videotrans.core.project_store import get_project_dir
+        target_dir = get_project_dir(str(pid)) / "exports"
+        target_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        target_dir = Path(out_dir) / (safe_stem or file_info.uuid)
+    cache_dir = Path(tmp_dir) / file_info.uuid
+
+    if job_type in {"render", "translation"}:
+        recogn_type = _optional_index(options.get("recognType"), len(recognition.RECOGN_NAME_LIST), 0)
+        asr_provider = ASR_BY_TYPE.get(recogn_type) or ASR_PROVIDERS[0]
+        model_name = str(options.get("modelName") or asr_provider["models"][0])
+    else:
+        recogn_type = _required_index(options.get("recognType"), len(recognition.RECOGN_NAME_LIST), "ASR engine")
+        asr_provider = ASR_BY_TYPE.get(recogn_type)
+        if asr_provider is None:
+            raise ValueError(f"Unsupported ASR engine: {recogn_type}")
+        model_name = str(options.get("modelName") or asr_provider["models"][0])
+        if model_name not in asr_provider["models"]:
+            raise ValueError(f"Model {model_name} is not supported by {asr_provider['label']}")
+
+    source_language = str(options.get("sourceLanguage") or "zh-cn")
+    if source_language not in translator.LANGNAME_DICT:
+        raise ValueError(f"Unknown source language: {source_language or 'missing'}")
+
+    is_asr_only = (job_type == "asr")
+    if is_asr_only or job_type == "render":
+        translate_type = int(options.get("translateType") or 0)
+        aisendsrt = False
+        tts_type = int(options.get("ttsType") or 0)
+        target_language = str(options.get("targetLanguage") or source_language)
+        if target_language not in translator.LANGNAME_DICT:
+            target_language = source_language
+        timing_mode = str(options.get("timingMode") or "voice")
+        timing_flags = TIMING_MODES.get(timing_mode, TIMING_MODES["voice"])
+        # Stage 1 is ASR-only. Voice assignment belongs to Stage 3 and must
+        # not activate dubbing/render preparation while transcription is running.
+        voice_role = "No"
+    else:
+        translate_type = _required_index(options.get("translateType"), len(translator.TRANSLASTE_NAME_LIST), "translation engine")
+        if translate_type not in TRANSLATION_BY_TYPE:
+            raise ValueError(f"Unsupported translation engine: {translate_type}")
+        _, aisendsrt = _translation_mode(options.get("translationMode"))
+        tts_type = _optional_index(
+            options.get("ttsType", tts.DEFAULT_TTS), len(tts.TTS_NAME_LIST), default=tts.DEFAULT_TTS
+        )
+        target_language = str(options.get("targetLanguage") or "")
+        if target_language not in translator.LANGNAME_DICT:
+            raise ValueError(f"Unknown target language: {target_language or 'missing'}")
+        timing_mode = str(options.get("timingMode") or "voice")
+        timing_flags = TIMING_MODES.get(timing_mode)
+        if timing_flags is None:
+            timing_flags = TIMING_MODES["voice"]
+        voice_role = str(options.get("voiceRole") or "")
+        if not voice_role and job_type != "translation":
+            role_fn = getattr(sys.modules.get("webui"), "role_menu", role_menu) if "webui" in sys.modules else role_menu
+            try:
+                voice_role = next((voice for voice in role_fn(tts_type, langcode=target_language) if voice != "No"), "No")
+            except Exception:
+                voice_role = "No"
+        elif not voice_role:
+            voice_role = "No"
+
+    raw_vol = options.get("volume")
+    if isinstance(raw_vol, (int, float)) and not isinstance(raw_vol, bool):
+        try:
+            diff = int(round((float(raw_vol) - 1.0) * 100))
+            norm_volume = f"{diff:+d}%"
+        except (OverflowError, ValueError):
+            norm_volume = "+0%"
+    elif raw_vol is not None and str(raw_vol).strip():
+        s = str(raw_vol).strip()
+        if re.match(r'^[+-]?\d+(\.\d+)?%$', s):
+            norm_volume = s if s.startswith(("+", "-")) else f"+{s}"
+        else:
+            norm_volume = s
+    else:
+        norm_volume = "+0%"
+
+    segments = options.get("segments") if isinstance(options.get("segments"), list) else []
+    speaker_voice_map = options.get("speakerVoiceMap") if isinstance(options.get("speakerVoiceMap"), dict) else {}
+    line_roles = {}
+    for index, segment in enumerate(segments, 1):
+        if not isinstance(segment, dict):
+            continue
+        voice = segment.get("voiceOverride") or speaker_voice_map.get(segment.get("speakerId"))
+        if voice:
+            line_roles[str(index)] = str(voice)
+
+    params = asdict(file_info)
+    params.update({
+        "name": input_path.resolve().as_posix(),
+        "target_dir": target_dir.resolve().as_posix(),
+        "cache_folder": cache_dir.resolve().as_posix(),
+        "source_language_code": source_language,
+        "target_language_code": target_language,
+        "recogn_type": recogn_type,
+        "model_name": model_name,
+        "translate_type": translate_type,
+        "aisendsrt": aisendsrt,
+        "tts_type": tts_type,
+        "voice_role": voice_role,
+        "line_roles": line_roles,
+        "is_cuda": bool(options.get("useCuda", False)),
+        "remove_noise": bool(options.get("removeNoise", False)),
+        "enable_diariz": bool(options.get("speakerDiarization", False)),
+        "nums_diariz": int(options.get("speakerCount", 0) or 0),
+        "voice_rate": str(options.get("voiceRate") or "+0%"),
+        "volume": norm_volume,
+        "pitch": "+0Hz",
+        **timing_flags,
+        # ASR-only jobs should extract audio, transcribe, and diarize only.
+        # Prevent PrepareMixin from spawning the no-audio video render thread,
+        # which otherwise competes with Deepgram for CPU/GPU/disk resources.
+        "video_autorate": False if is_asr_only else timing_flags.get("video_autorate", False),
+        "subtitle_type": 0 if is_asr_only else 1,
+        "only_out_dubbed_audio": bool(is_asr_only),
+        "subtitles": str(options.get("subtitles") or ""),
+        "segments": list(segments),
+        "background_music": None if is_asr_only else options.get("backgroundMusicPath"),
+        "backaudio_volume": _safe_volume(options.get("backgroundAudioVolume"), 0.8),
+        "source_audio_volume": _safe_volume(options.get("originalAudioVolume"), 0.0),
+        "thumbnail": None if is_asr_only else options.get("thumbnailPath"),
+        "subtitle_style": options.get("subtitleStyle") if isinstance(options.get("subtitleStyle"), dict) else None,
+        "clear_cache": job_type not in {"render", "translation"},
+        "embed_bgm": not is_asr_only,
+        "project_id": str(pid) if pid else None,
+    })
+    return params

@@ -50,7 +50,7 @@ def get_video_codec(compat=None,force=False) -> str:
     }
 
     try:
-        test_input_file = Path(ROOT_DIR) / "videotrans/styles/no-remove.mp4"
+        test_input_file = Path(ROOT_DIR) / "videotrans/assets/no-remove.mp4"
         temp_dir = Path(config.TEMP_DIR)
     except Exception as e:
         logger.warning(f"准备测试硬件编码器时出错: {e}。将使用软件编码 {default_codec}。")

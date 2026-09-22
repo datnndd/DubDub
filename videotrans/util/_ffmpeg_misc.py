@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from videotrans.configure.config import ROOT_DIR, app_cfg, settings
+from videotrans.configure.config import ROOT_DIR, app_cfg, settings, logger
 from videotrans.task.taskcfg import InputFile
 
 
@@ -12,18 +12,7 @@ def send_notification(title, message):
         return
     if app_cfg.exit_soft or settings.get('dont_notify', False):
         return
-    from plyer import notification
-    try:
-        notification.notify(
-            title=title[:60],
-            message=message[:120],
-            ticker="pyVideoTrans",
-            app_name="pyVideoTrans",
-            app_icon=ROOT_DIR + '/videotrans/styles/icon.ico',
-            timeout=10
-        )
-    except Exception:
-        pass
+    logger.info(f"[{title}]: {message}")
 
 
 def format_video(name, target_dir=None)->InputFile:

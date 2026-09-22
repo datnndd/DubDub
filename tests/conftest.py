@@ -19,7 +19,6 @@ def _is_installed(name):
         return False
 
 
-_HAS_PYSIDE6 = _is_installed("PySide6")
 _HAS_TORCH = _is_installed("torch")
 _HAS_REQUESTS = _is_installed("requests")
 _HAS_TENACITY = _is_installed("tenacity")
@@ -32,39 +31,6 @@ _HAS_HTTPX = _is_installed("httpx")
 _HAS_HF_HUB = _is_installed("huggingface_hub")
 _HAS_TENVAD = _is_installed("ten_vad")
 _HAS_PYDUB = _is_installed("pydub")
-
-if not _HAS_PYSIDE6:
-    _pyside_mock = MagicMock()
-    _pyside_mock.QtCore = MagicMock()
-    _pyside_mock.QtCore.QObject = type("QObject", (), {"__init__": lambda self, *a, **kw: None})
-    _pyside_mock.QtCore.QThread = type("QThread", (), {"__init__": lambda self, *a, **kw: None})
-    _pyside_mock.QtCore.Signal = MagicMock(return_value=MagicMock())
-    _pyside_mock.QtCore.QLocale = MagicMock()
-    _pyside_mock.QtCore.Qt = MagicMock()
-    _pyside_mock.QtCore.Slot = lambda *a, **kw: lambda f: f
-    _pyside_mock.QtCore.QSettings = MagicMock()
-    _pyside_mock.QtCore.QTimer = MagicMock()
-    _pyside_mock.QtCore.QEvent = MagicMock()
-    _pyside_mock.QtCore.QCoreApplication = MagicMock()
-    _pyside_mock.QtCore.QThreadPool = MagicMock()
-    _pyside_mock.QtCore.QThreadPool.globalInstance = MagicMock()
-    _pyside_mock.QtGui.QIcon = MagicMock()
-    _pyside_mock.QtGui.QPixmap = MagicMock()
-    _pyside_mock.QtGui.QGuiApplication = MagicMock()
-    _pyside_mock.QtGui.QTextCursor = MagicMock()
-    _pyside_mock.QtWidgets.QApplication = MagicMock()
-    _pyside_mock.QtWidgets.QMainWindow = type("QMainWindow", (), {})
-    _pyside_mock.QtWidgets.QWidget = type("QWidget", (), {})
-    _pyside_mock.QtWidgets.QFileDialog = MagicMock()
-    _pyside_mock.QtWidgets.QMessageBox = MagicMock()
-    _pyside_mock.QtWidgets.QLabel = MagicMock()
-    _pyside_mock.QtWidgets.QVBoxLayout = MagicMock()
-    _pyside_mock.QtWidgets.QPushButton = MagicMock()
-
-    sys.modules["PySide6"] = _pyside_mock
-    sys.modules["PySide6.QtCore"] = _pyside_mock.QtCore
-    sys.modules["PySide6.QtGui"] = _pyside_mock.QtGui
-    sys.modules["PySide6.QtWidgets"] = _pyside_mock.QtWidgets
 
 # Exception base classes for isinstance() checks in excepts.py
 if not _HAS_TENACITY:
