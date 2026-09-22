@@ -1,5 +1,4 @@
 from videotrans.configure.config import tr, params, logger
-from videotrans import winform
 from videotrans.translator._constants import (
     GOOGLE_INDEX, AI_TRANS_CHANNELS,
 )
@@ -85,7 +84,7 @@ def is_allow_translate(*, translate_type=None, show_target=None, only_key=False,
     if not _cls:
         return True
     if _cls.key_name and not params.get(_cls.key_name):
-        return "Please configure the SK or API information of the channel first." if return_str else winform.get_win(_cls.win).openwin()
+        return "Please configure the SK or API information of the channel first."
 
     # 如果只需要判断是否填写了 api key 等信息，到此返回
     if only_key:

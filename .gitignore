@@ -65,3 +65,9 @@ Thumbs.db
 # Harness core maintenance binary
 scripts/bin/harness
 scripts/bin/harness.exe
+
+# Database files
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*

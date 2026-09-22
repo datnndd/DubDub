@@ -43,8 +43,17 @@ export function renderHeader(state) {
         <span class="font-medium text-stone-700">Project: <strong class="text-stone-900">${state.project.filename}</strong></span>
       </div>
 
-      <!-- Right: Auto-save & Warm GPU status -->
+      <!-- Right: Projects Drawer, Auto-save & Warm GPU status -->
       <div class="flex items-center gap-3 flex-shrink-0">
+        <button
+          onclick="window.dubDubStore.toggleDrawer()"
+          class="px-2.5 py-1 rounded-md font-semibold text-stone-700 hover:text-stone-900 bg-stone-100/90 hover:bg-stone-200/80 border border-stone-200 transition-colors flex items-center gap-1.5 leading-none cursor-pointer shadow-2xs"
+          title="Open Projects Drawer"
+        >
+          <span class="material-symbols-outlined text-xs text-[#8D4B00]">folder_open</span>
+          <span>Projects</span>
+          ${state.projectsList?.length ? `<span class="px-1.5 py-0.2 bg-amber-100 text-[#8D4B00] rounded-full text-[9px] font-bold">${state.projectsList.length}</span>` : ''}
+        </button>
         <div class="hidden sm:flex items-center gap-1 text-[11px] text-stone-500 font-medium">
           <span class="material-symbols-outlined text-xs text-stone-400">auto_fix_high</span>
           <span>Auto-saved ${state.project.lastSaved}</span>

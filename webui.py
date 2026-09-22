@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import json
 import math
 import re
+
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -40,6 +42,36 @@ from videotrans.configure.excepts import get_msg_from_except
 from videotrans.util.gpus import getset_gpu
 from videotrans.util.help_misc import process_openai_api
 from videotrans.util.help_role import role_menu
+from videotrans.core.db import init_db
+from videotrans.core.project_store import (
+    create_project,
+    get_project,
+    list_projects,
+    update_project,
+    update_project_state,
+    delete_project,
+    find_project_by_audio_hash,
+)
+from videotrans.core.job_store import (
+    create_job as db_create_job,
+    get_job as db_get_job,
+    list_jobs as db_list_jobs,
+    update_job as db_update_job,
+    mark_running as db_mark_running,
+    mark_done as db_mark_done,
+    mark_failed as db_mark_failed,
+    mark_cancelled as db_mark_cancelled,
+    append_event,
+    events_since,
+    sweep_orphans_on_startup,
+)
+from videotrans.core.proc_registry import (
+    kill_job_procs,
+    set_current_job_id,
+    get_current_job_id,
+)
+from videotrans.core.content_hash import compute_content_hash
+
 
 
 FRONTEND_DIR = Path(ROOT_DIR) / "frontend"
@@ -165,7 +197,17 @@ class JobRecord:
     error: str | None = None
     media_id: str | None = None
     job_type: str = "full"
+    project_id: str | None = None
+    _subscribers: list[tuple[Any, Any]] = field(default_factory=list, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def subscribe(self, queue: Any, loop: Any) -> None:
+        with self._lock:
+            self._subscribers.append((queue, loop))
+
+    def unsubscribe(self, queue: Any) -> None:
+        with self._lock:
+            self._subscribers = [sub for sub in self._subscribers if sub[0] is not queue]
 
     def accept(self, event: TaskEvent) -> None:
         item = {
@@ -210,12 +252,43 @@ class JobRecord:
                     if isinstance(raw_segs, (list, tuple)):
                         self.segments = tuple(raw_segs)
 
+            payload = {
+                "kind": event.kind.value,
+                "stage": self.stage,
+                "message": self.message,
+                "progress": self.progress,
+                "status": self.status,
+                "error": self.error,
+                "details": dict(event.details),
+            }
+            try:
+                seq = append_event(self.id, payload)
+                db_update_job(
+                    self.id,
+                    status=self.status,
+                    stage=self.stage,
+                    progress=self.progress,
+                    message=self.message,
+                    error=self.error,
+                )
+            except Exception:
+                seq = len(self.events)
+
+            subs = list(self._subscribers)
+
+        for q, loop in subs:
+            try:
+                loop.call_soon_threadsafe(q.put_nowait, (seq, payload))
+            except Exception:
+                pass
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "id": self.id,
                 "status": self.status,
                 "jobType": self.job_type,
+                "projectId": self.project_id,
                 "stage": self.stage,
                 "progress": self.progress,
                 "message": self.message,
@@ -244,22 +317,69 @@ class JobManager:
         self._asr_runner = asr_runner or run_staged_asr
         self._translation_runner = translation_runner or run_staged_translation
 
-    def submit(self, params: dict[str, Any], *, media_id: str, job_type: str = "full") -> JobRecord:
+    def submit(
+        self,
+        params: dict[str, Any],
+        *,
+        media_id: str,
+        job_type: str = "full",
+        project_id: str | None = None,
+    ) -> JobRecord:
         with self._lock:
             active_id = self._active_by_media.get(media_id)
             if active_id:
                 raise ActiveJobError(f"Media already running in job {active_id}")
-            job = JobRecord(uuid.uuid4().hex, CancellationToken(), media_id=media_id, job_type=job_type)
+            job = JobRecord(
+                uuid.uuid4().hex,
+                CancellationToken(),
+                media_id=media_id,
+                job_type=job_type,
+                project_id=project_id,
+            )
             self._jobs[job.id] = job
             self._active_by_media[media_id] = job.id
+            try:
+                db_create_job(
+                    job.id,
+                    type=job_type,
+                    project_id=project_id,
+                    meta={"media_id": media_id},
+                )
+            except Exception as e:
+                runtime_config.logger.warning("Failed to create job in db: %s", e)
         threading.Thread(target=self._execute, args=(job, params), daemon=True).start()
         return job
 
     def get(self, job_id: str) -> JobRecord | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            record = self._jobs.get(job_id)
+        if record is not None:
+            return record
+        try:
+            db_job = db_get_job(job_id)
+            if db_job:
+                rec = JobRecord(
+                    id=db_job["id"],
+                    token=CancellationToken(),
+                    status=db_job.get("status", "failed"),
+                    stage=db_job.get("stage"),
+                    progress=db_job.get("progress"),
+                    message=db_job.get("message", ""),
+                    error=db_job.get("error"),
+                    project_id=db_job.get("project_id"),
+                    job_type=db_job.get("type", "full"),
+                )
+                return rec
+        except Exception:
+            pass
+        return None
 
     def cancel(self, job_id: str) -> JobRecord | None:
+        kill_job_procs(job_id)
+        try:
+            db_mark_cancelled(job_id)
+        except Exception:
+            pass
         job = self.get(job_id)
         if job:
             job.token.cancel()
@@ -267,10 +387,40 @@ class JobManager:
                 if job.status not in {"succeeded", "failed", "cancelled"}:
                     job.status = "cancelled"
                     job.message = "Processing cancelled"
+                    payload = {
+                        "kind": "cancelled",
+                        "status": "cancelled",
+                        "message": "Processing cancelled",
+                        "progress": job.progress,
+                    }
+                    try:
+                        seq = append_event(job.id, payload)
+                    except Exception:
+                        seq = 0
+                    subs = list(job._subscribers)
+                else:
+                    subs = []
+            for q, loop in subs:
+                try:
+                    loop.call_soon_threadsafe(q.put_nowait, (seq, payload))
+                except Exception:
+                    pass
+            if job.project_id:
+                try:
+                    update_project(job.project_id, status="paused")
+                except Exception:
+                    pass
         return job
 
     def _execute(self, job: JobRecord, params: dict[str, Any]) -> None:
+        set_current_job_id(job.id)
         try:
+            db_mark_running(job.id)
+            if job.project_id:
+                try:
+                    update_project(job.project_id, status="processing")
+                except Exception:
+                    pass
             if job.job_type == "asr":
                 runner = self._asr_runner
             elif job.job_type == "translation":
@@ -289,25 +439,43 @@ class JobManager:
                     if result.status == TaskStatus.SUCCEEDED:
                         job.message = "Processing complete"
                         job.progress = 100.0
+                        db_mark_done(job.id, message=job.message)
+                        if job.project_id:
+                            target_stage = 2 if job.job_type == "asr" else (3 if job.job_type == "translation" else 4)
+                            update_project(job.project_id, stage=target_stage, status="completed")
                     elif result.status == TaskStatus.CANCELLED:
                         job.message = "Processing cancelled"
+                        db_mark_cancelled(job.id, message=job.message)
+                        if job.project_id:
+                            update_project(job.project_id, status="paused")
                     else:
                         job.error = result.failure.message if getattr(result, "failure", None) else "Processing failed"
                         job.message = job.error
+                        db_mark_failed(job.id, error=job.error)
+                        if job.project_id:
+                            update_project(job.project_id, status="failed")
                 else:
                     job.status = TaskStatus.FAILED.value
                     job.error = "Job runner returned an invalid result"
                     job.message = job.error
+                    db_mark_failed(job.id, error=job.error)
+                    if job.project_id:
+                        update_project(job.project_id, status="failed")
         except Exception as exc:
             runtime_config.logger.exception("Unhandled exception in job execution %s: %s", job.id, exc, exc_info=True)
             with job._lock:
                 job.status = TaskStatus.FAILED.value
                 job.error = str(exc) or "Internal job execution error"
                 job.message = f"Processing failed: {job.error}"
+            db_mark_failed(job.id, error=job.error)
+            if job.project_id:
+                update_project(job.project_id, status="failed")
         finally:
+            set_current_job_id(None)
             with self._lock:
                 if self._active_by_media.get(job.media_id) == job.id:
                     self._active_by_media.pop(job.media_id, None)
+
 
 
 def run_prepare_review(
@@ -554,12 +722,19 @@ def test_asr_provider(recogn_type: int, model_name: str) -> str:
     return str(result[0]["text"])
 
 
-def build_task_params(input_path: Path, options: dict[str, Any], job_type: str = "full") -> dict[str, Any]:
+def build_task_params(input_path: Path, options: dict[str, Any], job_type: str = "full", project_id: str | None = None) -> dict[str, Any]:
     """Translate supported frontend fields into the existing task configuration."""
     file_info = format_video(input_path.resolve().as_posix())
     safe_stem = re.sub(r"[^\w.-]+", "-", file_info.basename, flags=re.UNICODE).strip("-")
-    target_dir = OUTPUT_DIR / (safe_stem or file_info.uuid)
+    pid = project_id or options.get("projectId") or options.get("project_id")
+    if pid:
+        from videotrans.core.project_store import get_project_dir
+        target_dir = get_project_dir(str(pid)) / "exports"
+        target_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        target_dir = OUTPUT_DIR / (safe_stem or file_info.uuid)
     cache_dir = Path(TEMP_DIR) / file_info.uuid
+
 
     if job_type in {"render", "translation"}:
         recogn_type = _optional_index(options.get("recognType"), len(recognition.RECOGN_NAME_LIST), 0)
@@ -631,6 +806,16 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
     else:
         norm_volume = "+0%"
 
+    segments = options.get("segments") if isinstance(options.get("segments"), list) else []
+    speaker_voice_map = options.get("speakerVoiceMap") if isinstance(options.get("speakerVoiceMap"), dict) else {}
+    line_roles = {}
+    for index, segment in enumerate(segments, 1):
+        if not isinstance(segment, dict):
+            continue
+        voice = segment.get("voiceOverride") or speaker_voice_map.get(segment.get("speakerId"))
+        if voice:
+            line_roles[str(index)] = str(voice)
+
     params = asdict(file_info)
     params.update({
         "name": input_path.resolve().as_posix(),
@@ -644,6 +829,7 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
         "aisendsrt": aisendsrt,
         "tts_type": tts_type,
         "voice_role": voice_role,
+        "line_roles": line_roles,
         "is_cuda": bool(options.get("useCuda", False)),
         "remove_noise": bool(options.get("removeNoise", False)),
         "enable_diariz": bool(options.get("speakerDiarization", False)),
@@ -659,7 +845,7 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
         "subtitle_type": 0 if is_asr_only else 1,
         "only_out_dubbed_audio": bool(is_asr_only),
         "subtitles": str(options.get("subtitles") or ""),
-        "segments": list(options.get("segments") or []),
+        "segments": list(segments),
         "background_music": None if is_asr_only else options.get("backgroundMusicPath"),
         "backaudio_volume": _safe_volume(options.get("backgroundAudioVolume"), 0.8),
         "source_audio_volume": _safe_volume(options.get("originalAudioVolume"), 0.0),
@@ -667,6 +853,7 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
         "subtitle_style": options.get("subtitleStyle") if isinstance(options.get("subtitleStyle"), dict) else None,
         "clear_cache": job_type not in {"render", "translation"},
         "embed_bgm": not is_asr_only,
+        "project_id": str(pid) if pid else None,
     })
     return params
 
@@ -956,15 +1143,23 @@ async def create_job_handler(request: web.Request) -> web.Response:
             raise web.HTTPBadRequest(text=f"Unknown or expired {option_key}")
         options[path_key] = asset_path.resolve().as_posix()
 
+    project_id = str(payload.get("projectId") or payload.get("project_id") or options.get("projectId") or options.get("project_id") or "") or None
+    if project_id:
+        options["projectId"] = project_id
     try:
-        params = build_task_params(media.path, options, job_type=job_type)
+        params = build_task_params(media.path, options, job_type=job_type, project_id=project_id)
         if job_type not in {"render", "translation"}:
             ensure_asr_configured(params["recogn_type"], request.app["settings_store"])
         if job_type not in {"asr", "render"}:
             ensure_translation_configured(params["translate_type"], request.app["settings_store"])
         getset_gpu()
         manager: JobManager = request.app["job_manager"]
-        job = manager.submit(params, media_id=media.id, job_type=job_type)
+        job = manager.submit(params, media_id=media.id, job_type=job_type, project_id=project_id)
+        if project_id:
+            try:
+                update_project(project_id, status="processing")
+            except Exception:
+                pass
     except ActiveJobError as exc:
         raise web.HTTPConflict(text=str(exc)) from exc
     except (ValueError, TypeError, OverflowError) as exc:
@@ -1004,6 +1199,226 @@ async def output_handler(request: web.Request) -> web.StreamResponse:
     if not output.is_file():
         raise web.HTTPNotFound(text="Output no longer exists")
     return web.FileResponse(output, headers={"Content-Disposition": f'attachment; filename="{output.name}"'})
+
+
+async def list_projects_handler(request: web.Request) -> web.Response:
+    try:
+        limit = int(request.query.get("limit", 100))
+    except (ValueError, TypeError):
+        limit = 100
+    projects = list_projects(limit=limit)
+    return web.json_response({"projects": projects})
+
+
+async def create_project_handler(request: web.Request) -> web.Response:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise web.HTTPBadRequest(text="A JSON project request is required") from exc
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="Project payload must be a JSON object")
+
+    media_id = str(payload.get("mediaId") or payload.get("media_id") or "") or None
+    name = str(payload.get("name") or "Untitled Project").strip() or "Untitled Project"
+    media_store: MediaStore = request.app["media_store"]
+    media = media_store.get(media_id) if media_id else None
+    media_path = str(media.path) if media else (str(payload.get("mediaPath") or "") or None)
+
+    duration = 0.0
+    if media and media.info.get("time"):
+        try:
+            duration = float(media.info["time"]) / 1000.0
+        except (ValueError, TypeError):
+            pass
+    elif payload.get("duration"):
+        try:
+            duration = float(payload["duration"])
+        except (ValueError, TypeError):
+            pass
+
+    audio_hash = ""
+    if media and media.path.is_file():
+        try:
+            audio_hash = compute_content_hash(media.path)
+        except Exception:
+            pass
+
+    stage = 1
+    if payload.get("stage"):
+        try:
+            stage = int(payload["stage"])
+        except (ValueError, TypeError):
+            pass
+
+    status = str(payload.get("status") or "pending")
+    state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
+
+    if audio_hash and not state.get("segments"):
+        cached_proj = find_project_by_audio_hash(audio_hash)
+        if cached_proj and cached_proj.get("state", {}).get("segments"):
+            state["segments"] = cached_proj["state"]["segments"]
+            if cached_proj.get("stage", 1) > stage:
+                stage = cached_proj["stage"]
+
+    project = create_project(
+        project_id=str(payload.get("id") or "") or None,
+        name=name,
+        media_id=media_id,
+        media_path=media_path,
+        duration=duration,
+        stage=stage,
+        status=status,
+        audio_hash=audio_hash,
+        state=state,
+    )
+
+    return web.json_response(project, status=201)
+
+
+async def get_project_handler(request: web.Request) -> web.Response:
+    pid = request.match_info["project_id"]
+    project = get_project(pid)
+    if not project:
+        raise web.HTTPNotFound(text="Project not found")
+    return web.json_response(project)
+
+
+async def update_project_handler(request: web.Request) -> web.Response:
+    pid = request.match_info["project_id"]
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise web.HTTPBadRequest(text="A JSON update request is required") from exc
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="Payload must be a JSON object")
+
+    kwargs: dict[str, Any] = {}
+    if "state" in payload and isinstance(payload["state"], dict):
+        kwargs["state"] = payload["state"]
+    if "stage" in payload:
+        try:
+            kwargs["stage"] = int(payload["stage"])
+        except (ValueError, TypeError):
+            pass
+    if "status" in payload:
+        kwargs["status"] = str(payload["status"])
+    if "name" in payload:
+        kwargs["name"] = str(payload["name"])
+    if "duration" in payload:
+        try:
+            kwargs["duration"] = float(payload["duration"])
+        except (ValueError, TypeError):
+            pass
+
+    project = update_project(pid, **kwargs)
+    if not project:
+        raise web.HTTPNotFound(text="Project not found")
+    return web.json_response(project)
+
+
+async def delete_project_handler(request: web.Request) -> web.Response:
+    pid = request.match_info["project_id"]
+    deleted = delete_project(pid, delete_files=True)
+    if not deleted:
+        raise web.HTTPNotFound(text="Project not found")
+    return web.json_response({"ok": True, "id": pid})
+
+
+async def resume_project_handler(request: web.Request) -> web.Response:
+    pid = request.match_info["project_id"]
+    project = get_project(pid)
+    if not project:
+        raise web.HTTPNotFound(text="Project not found")
+    return web.json_response({"ok": True, "project": project})
+
+
+async def job_stream_handler(request: web.Request) -> web.StreamResponse:
+    job_id = request.match_info["job_id"]
+    try:
+        after_seq = int(request.query.get("after_seq", 0))
+    except (ValueError, TypeError):
+        after_seq = 0
+
+    response = web.StreamResponse(
+        status=200,
+        reason="OK",
+        headers={
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+    await response.prepare(request)
+
+    past_events = events_since(job_id, after_seq=after_seq)
+    last_seq = after_seq
+    for ev in past_events:
+        seq = ev["seq"]
+        payload = ev["payload"]
+        raw = payload if isinstance(payload, str) else json.dumps(payload)
+        line = f"id: {seq}\nevent: message\ndata: {raw}\n\n"
+        await response.write(line.encode("utf-8"))
+        last_seq = max(last_seq, seq)
+
+    manager: JobManager = request.app["job_manager"]
+    job = manager.get(job_id)
+    db_job = db_get_job(job_id)
+    status = (job.status if job else (db_job.get("status") if db_job else None)) or "unknown"
+
+    if status in {"succeeded", "failed", "cancelled"}:
+        close_payload = json.dumps({"status": status, "terminal": True, "seq": last_seq})
+        await response.write(f"id: {last_seq + 1}\nevent: done\ndata: {close_payload}\n\n".encode("utf-8"))
+        try:
+            await response.write_eof()
+        except Exception:
+            pass
+        return response
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    if job:
+        job.subscribe(queue, loop)
+
+    try:
+        while True:
+            try:
+                seq, payload = await asyncio.wait_for(queue.get(), timeout=15.0)
+                if seq > last_seq:
+                    raw_data = json.dumps(payload) if isinstance(payload, dict) else str(payload)
+                    line = f"id: {seq}\nevent: message\ndata: {raw_data}\n\n"
+                    await response.write(line.encode("utf-8"))
+                    last_seq = seq
+                    if isinstance(payload, dict) and payload.get("status") in {"succeeded", "failed", "cancelled"}:
+                        break
+            except asyncio.TimeoutError:
+                await response.write(b": keep-alive\n\n")
+                cur_job = db_get_job(job_id)
+                if cur_job and cur_job.get("status") in {"succeeded", "failed", "cancelled"}:
+                    break
+    except (ConnectionResetError, asyncio.CancelledError):
+        pass
+    finally:
+        if job:
+            job.unsubscribe(queue)
+
+    try:
+        await response.write_eof()
+    except Exception:
+        pass
+    return response
+
+
+async def list_jobs_handler(request: web.Request) -> web.Response:
+    status = request.query.get("status")
+    project_id = request.query.get("project_id") or request.query.get("projectId")
+    try:
+        limit = int(request.query.get("limit", 100))
+    except (ValueError, TypeError):
+        limit = 100
+    jobs = db_list_jobs(status=status, project_id=project_id, limit=limit)
+    return web.json_response({"jobs": jobs})
+
 
 
 class NormalizedRoi(tuple):
@@ -1368,6 +1783,8 @@ def create_app(
     ocr_extractor: Callable | None = None,
     reload: bool = False,
 ) -> web.Application:
+    init_db()
+    sweep_orphans_on_startup()
     if not (FRONTEND_DIR / "index.html").is_file():
         raise RuntimeError(f"Frontend not found: {FRONTEND_DIR}")
     app = web.Application(middlewares=[no_cache_middleware], client_max_size=20 * 1024 ** 3)
@@ -1394,11 +1811,19 @@ def create_app(
     app.router.add_post("/api/translation-settings/{provider_id}/test", test_translation_settings_handler)
     app.router.add_post("/api/media", media_handler)
     app.router.add_post("/api/assets/{kind}", edit_asset_handler)
+    app.router.add_get("/api/projects", list_projects_handler)
+    app.router.add_post("/api/projects", create_project_handler)
+    app.router.add_get("/api/projects/{project_id}", get_project_handler)
+    app.router.add_put("/api/projects/{project_id}", update_project_handler)
+    app.router.add_delete("/api/projects/{project_id}", delete_project_handler)
+    app.router.add_post("/api/projects/{project_id}/resume", resume_project_handler)
+    app.router.add_get("/api/jobs", list_jobs_handler)
     app.router.add_post("/api/jobs", create_job_handler)
     app.router.add_post("/api/translate", translate_handler)
     app.router.add_post("/api/render", create_job_handler)
     app.router.add_post("/api/export", create_job_handler)
     app.router.add_get("/api/jobs/{job_id}", job_handler)
+    app.router.add_get("/api/jobs/{job_id}/stream", job_stream_handler)
     app.router.add_get("/api/jobs/{job_id}/transcript", job_transcript_handler)
     app.router.add_get("/api/jobs/{job_id}/segments", job_transcript_handler)
     app.router.add_post("/api/jobs/{job_id}/cancel", cancel_job_handler)

@@ -231,7 +231,9 @@ class SpeedRate:
                  target_audio=None,
                  cache_folder=None,
                  remove_silent_mid=False,
-                 align_sub_audio=True
+                 align_sub_audio=True,
+                 event_sink=None,
+                 cancellation_token=None,
                  ):
         self.align_sub_audio = align_sub_audio
         self.raw_total_time = raw_total_time if raw_total_time is not None else 0
@@ -241,6 +243,8 @@ class SpeedRate:
         self.should_videorate = should_videorate
         self.should_audiorate = should_audiorate
         self.uuid = uuid
+        self.event_sink = event_sink
+        self.cancellation_token = cancellation_token
         self.novoice_mp4_original = novoice_mp4
         self.novoice_mp4 = novoice_mp4
         self.cache_folder = cache_folder if cache_folder else Path(
@@ -281,6 +285,12 @@ class SpeedRate:
         if not HAS_RUBBERBAND or not self.audio_speed_rubberband:
             logger.warning(f"[SpeedRate] Rubberband 不可用，将使用 pydub+ffmpeg 处理音频加速(较粗糙)。\n建议安装，加速效果更精确\n{INSTALL_RUBBERBAND_TIPS}")
 
+    def signal(self, text="", type="logs"):
+        if self.event_sink:
+            self.event_sink({"text": text, "type": type, "uuid": self.uuid})
+        else:
+            logger.info(text)
+
     def run(self):
         if not self.queue_tts:
             return []
@@ -299,12 +309,12 @@ class SpeedRate:
         
         # 3. 音频变速
         if self.audio_data:
-            tools.set_process(text=tr('Sound speed alignment stage')+'...', uuid=self.uuid)
+            self.signal(tr('Sound speed alignment stage')+'...')
             self._execute_audio_speedup_rubberband()
 
         # 4. 视频变速
         if self.should_videorate and self.video_for_clips:
-            tools.set_process(text=tr('Slow video')+'...', uuid=self.uuid)
+            self.signal(tr('Slow video')+'...')
             processed_video_clips = self._video_speeddown()           
             self._concat_video(processed_video_clips)
             
@@ -317,14 +327,14 @@ class SpeedRate:
                     pass
             
         # 5. 音频对齐拼接
-        tools.set_process(text=tr('Concatenating final audio'), uuid=self.uuid)
+        self.signal(tr('Concatenating final audio'))
         self._concat_audio_aligned()
 
         return self.queue_tts
 
     def _prepare_data(self):
         """数据清洗与预处理"""
-        tools.set_process(text=tr("Preparing data"), uuid=self.uuid)
+        self.signal(tr("Preparing data"))
         
         if self.novoice_mp4_original and tools.vail_file(self.novoice_mp4_original):
             self.raw_total_time = tools.get_video_duration(self.novoice_mp4_original)
@@ -368,7 +378,7 @@ class SpeedRate:
 
     def _calculate_adjustments(self):
         """计算策略"""
-        tools.set_process(text=tr("Calculating sync adjustments"), uuid=self.uuid)
+        self.signal(tr("Calculating sync adjustments"))
         # 视频慢速，第0条字幕之前可能有无声音视频
         if self.should_videorate and self.queue_tts[0]['start_time_source']>0:
             self.video_for_clips.append({
@@ -477,7 +487,7 @@ class SpeedRate:
         
         for i,task in enumerate(all_task):
             try:
-                tools.set_process(text=f'Audio {i}/{len(all_task)}',uuid=self.uuid)
+                self.signal(f'Audio {i}/{len(all_task)}')
                 res=task.result()
             except Exception:
                 pass
@@ -512,7 +522,7 @@ class SpeedRate:
         processed_clips = []
         for i,task in enumerate(all_task):
             try:
-                tools.set_process(text=f'Video {i}/{len(all_task)}',uuid=self.uuid)
+                self.signal(f'Video {i}/{len(all_task)}')
                 res = task.result()
                 if res: 
                     processed_clips.append(res)
@@ -558,7 +568,7 @@ class SpeedRate:
         
         cmd = ['-y', '-f', 'concat', '-safe', '0', '-i', concat_list, '-c', 'copy', output_path]
         logger.debug(f"[Video-Concat] 合并 {valid_cnt} 个片段 -> {output_path}\n{cmd=}")
-        tools.set_process(text=tr('Concat videos'),uuid=self.uuid)
+        self.signal(tr('Concat videos'))
         tools.runffmpeg(cmd, force_cpu=True, cmd_dir=self.cache_folder)
 
         if Path(output_path).exists():
@@ -610,7 +620,7 @@ class SpeedRate:
     
     def _run_no_rate_change_mode(self):
         # 不变速时直接拼接
-        tools.set_process(text=tr("Merging audio (No Speed Change)..."), uuid=self.uuid)
+        self.signal(tr("Merging audio (No Speed Change)..."))
         
         audio_concat_list = []
         total_audio_duration = 0
@@ -700,18 +710,18 @@ class TtsSpeedRate(SpeedRate):
 
         # 3. 音频变速
         if self.audio_data:
-            tools.set_process(text='Processing audio speed...', uuid=self.uuid)
+            self.signal('Processing audio speed...')
             self._execute_audio_speedup_rubberband()
 
 
-        tools.set_process(text='Concatenating final audio...', uuid=self.uuid)
+        self.signal('Concatenating final audio...')
         self._concat_audio_aligned()
 
         return self.queue_tts
 
     def _prepare_data(self):
         """数据清洗与预处理"""
-        tools.set_process(text="Preparing data...", uuid=self.uuid)
+        self.signal("Preparing data...")
         
         _len=len(self.queue_tts)
         for i in range(_len):
@@ -734,7 +744,7 @@ class TtsSpeedRate(SpeedRate):
 
     def _calculate_adjustments(self):
         """计算策略"""
-        tools.set_process(text="Calculating sync adjustments...", uuid=self.uuid)
+        self.signal("Calculating sync adjustments...")
 
         for i, it in enumerate(self.queue_tts):
             source_dur = it['source_duration']

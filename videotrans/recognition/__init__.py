@@ -1,6 +1,6 @@
 from typing import List, Type, Union
 
-from videotrans import ChannelProvider, get_class, winform
+from videotrans import ChannelProvider, get_class
 from videotrans.configure import contants
 from videotrans.configure.config import app_cfg, params, tr
 from videotrans.recognition._base import BaseRecogn
@@ -18,10 +18,10 @@ ALLOW_CHANGE_MODEL = [QWENASR, Deepgram, FASTER_WHISPER]
 
 _ID_NAME_DICT = {
     QWENASR: ChannelProvider(f"Qwen-ASR({tr('Built-in')})", imp="._qwenasrlocal"),
-    Deepgram: ChannelProvider("Deepgram.com", key_name="deepgram_apikey", win="deepgram", imp="._deepgram"),
-    GEMINI_SPEECH: ChannelProvider(tr("Gemini AI"), key_name="gemini_key", win="gemini", imp="._gemini"),
+    Deepgram: ChannelProvider("Deepgram.com", key_name="deepgram_apikey", imp="._deepgram"),
+    GEMINI_SPEECH: ChannelProvider(tr("Gemini AI"), key_name="gemini_key", imp="._gemini"),
     GOOGLE_SPEECH: ChannelProvider(tr("Google Speech to Text"), imp="._google"),
-    ElevenLabs: ChannelProvider("ElevenLabs.io", key_name="elevenlabstts_key", win="elevenlabs", imp="._elevenlabs"),
+    ElevenLabs: ChannelProvider("ElevenLabs.io", key_name="elevenlabstts_key", imp="._elevenlabs"),
     FASTER_WHISPER: ChannelProvider("Whisper Large-v3", imp="._whisper"),
 }
 RECOGN_NAME_LIST = [provider.name for provider in _ID_NAME_DICT.values()]
@@ -58,13 +58,9 @@ def is_allow_lang(langcode: str = None, recogn_type: int = None, model_name=None
 def is_input_api(recogn_type: int = None, return_str=False):
     provider = _ID_NAME_DICT.get(recogn_type)
     if not provider:
-        return tr("Unsupported speech recognition provider.") if return_str else False
+        return tr("Unsupported speech recognition provider.")
     if provider.key_name and not params.get(provider.key_name):
-        return (
-            tr("Please configure the API information of the selected recognition provider first.")
-            if return_str
-            else winform.get_win(provider.win).openwin()
-        )
+        return tr("Please configure the API information of the selected recognition provider first.")
     return True
 
 
@@ -82,6 +78,7 @@ def run(
     llm_post=False,
     recogn2pass=False,
     event_sink=None,
+    cancellation_token=None,
 ) -> Union[List[SrtItem], None]:
     if app_cfg.exit_soft or (uuid and uuid in app_cfg.stoped_uuid_set):
         return None
@@ -98,6 +95,7 @@ def run(
         "llm_post": llm_post,
         "recogn2pass": recogn2pass,
         "event_sink": event_sink,
+        "cancellation_token": cancellation_token,
     }
     cls: Union[Type[BaseRecogn], None] = get_class(recogn_type, "recognition", _ID_NAME_DICT)
     if not cls:

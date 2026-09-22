@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from videotrans.configure._paths import DUBBING_CACHE
-from videotrans.configure.config import tr, app_cfg, settings, logger
+from videotrans.configure.config import tr, settings, logger
 from videotrans.configure.excepts import DubbingSrtError
 from videotrans.tts import run as run_tts, SUPPORT_CLONE
 from videotrans.util.help_misc import get_md5, vail_file
@@ -51,7 +51,7 @@ class DubbingMixin:
 
         rate = f"+{rate}%" if rate >= 0 else f"{rate}%"
 
-        line_roles = app_cfg.line_roles
+        line_roles = self.cfg.line_roles
         voice_role = self.cfg.voice_role
         logger.debug(f'{line_roles=}')
         for i, it in enumerate(subs):
@@ -102,7 +102,9 @@ class DubbingMixin:
             language=self.cfg.target_language_code,
             uuid=self.uuid,
             tts_type=self.cfg.tts_type,
-            is_cuda=self.cfg.is_cuda
+            is_cuda=self.cfg.is_cuda,
+            event_sink=self.event_sink,
+            cancellation_token=self.cancellation_token,
         )
         outname=None
         if settings.get('save_segment_audio', False):

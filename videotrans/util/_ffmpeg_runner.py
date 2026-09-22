@@ -24,7 +24,7 @@ def extract_concise_error(stderr_text: str) -> str:
     return " ".join(result)
 
 
-def runffmpeg(arg, *, noextname=None, force_cpu=True, cmd_dir=None):
+def runffmpeg(arg, *, noextname=None, force_cpu=True, cmd_dir=None, job_id=None, cancellation_token=None):
     if settings.get('force_lib'):
         force_cpu = True
 
@@ -41,22 +41,58 @@ def runffmpeg(arg, *, noextname=None, force_cpu=True, cmd_dir=None):
     if settings.get('ffmpeg_cmd'):
         custom_params = [p for p in settings.get('ffmpeg_cmd', '').split(' ') if p]
         cmd = cmd[:-1] + custom_params + cmd[-1:]
-    #if cmd[-1].endswith('.mp4'):
-    #    logger.debug(f'runffmpeg:{cmd=}')
+
+    from videotrans.core.proc_registry import (
+        get_current_job_id,
+        register_proc,
+        unregister_proc,
+        kill_process_tree,
+    )
+
+    active_job_id = job_id or get_current_job_id()
+    proc = None
     try:
-        if app_cfg.exit_soft:
-            return
-        subprocess.run(
+        if app_cfg.exit_soft or (cancellation_token and cancellation_token.is_cancelled()):
+            return False
+
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding="utf-8",
             errors='replace',
-            check=True,
             text=True,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-            cwd=cmd_dir
+            cwd=cmd_dir,
         )
+        if active_job_id:
+            register_proc(active_job_id, proc)
+
+        stdout = ""
+        stderr = ""
+        while True:
+            if app_cfg.exit_soft or (cancellation_token and cancellation_token.is_cancelled()):
+                kill_process_tree(proc)
+                try:
+                    out, err = proc.communicate(timeout=1.0)
+                    stdout += out or ""
+                    stderr += err or ""
+                except Exception:
+                    pass
+                from videotrans.configure.excepts import FFmpegError
+                raise FFmpegError("FFmpeg execution was cancelled")
+
+            try:
+                out, err = proc.communicate(timeout=0.2)
+                stdout += out or ""
+                stderr += err or ""
+                break
+            except subprocess.TimeoutExpired:
+                continue
+
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd, output=stdout, stderr=stderr)
+
         if noextname:
             app_cfg.queue_novice[noextname] = "end"
         return True
@@ -81,6 +117,9 @@ def runffmpeg(arg, *, noextname=None, force_cpu=True, cmd_dir=None):
             app_cfg.queue_novice[noextname] = f"error:{e}"
         logger.error(f"执行 ffmpeg 时发生未知错误,{cmd=}:\n{e}")
         raise
+    finally:
+        if proc and active_job_id:
+            unregister_proc(active_job_id, proc)
 
 
 def get_filepath_from_cmd(cmd: list):

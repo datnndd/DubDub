@@ -12,3 +12,4 @@ documents here as real choices are accepted, then index them in this file.
 ## Accepted Decisions
 
 - [0001 Video OCR As A Subtitle Source](0001-video-ocr-as-subtitle-source.md)
+- [0002 Web-Only Runtime](0002-web-only-runtime.md)
