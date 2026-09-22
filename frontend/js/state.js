@@ -9,11 +9,21 @@ class WorkflowStore {
     this.selectedFile = null;
     this.mediaSelectionVersion = 0;
     this.pollTimer = null;
+    this.translationPollTimer = null;
+    this.translationJobId = null;
     this.activeEditor = null;
     this.state = {
       currentStep: 1, // 1: Prepare, 2: Review Transcript, 3: Voice & Dubbing, 4: Edit Video
       maxUnlockedStep: 4,
       activeSegmentId: 1,
+      translationModal: {
+        active: false,
+        status: "idle",
+        progress: 0,
+        message: "Translating transcript...",
+        error: null,
+      },
+      translationError: null,
       ocrCrop: {
         active: false,
         segmentId: null,
@@ -247,6 +257,10 @@ class WorkflowStore {
   }
 
   nextStep() {
+    if (this.state.currentStep === 2) {
+      this.proceedToVoiceDubbing();
+      return;
+    }
     if (this.state.currentStep < 4) {
       this.setStep(this.state.currentStep + 1);
     }
@@ -946,6 +960,256 @@ class WorkflowStore {
     this.notify();
   }
 
+  syncSpeakerVoices() {
+    if (!this.state.speakerVoiceMap) {
+      this.state.speakerVoiceMap = {};
+    }
+    const defaultVoice = (this.state.backend?.config?.voiceRole && this.state.backend.config.voiceRole !== 'No' ? this.state.backend.config.voiceRole : null) ||
+      (this.state.backend?.options?.voiceRoles && this.state.backend.options.voiceRoles.find(v => v !== 'No')) ||
+      (this.state.backend?.options?.voiceRoles && this.state.backend.options.voiceRoles[0]) ||
+      'default';
+    const distinctSpeakers = this.getDistinctSpeakers();
+    distinctSpeakers.forEach(spk => {
+      if (!this.state.speakerVoiceMap[spk.speakerId]) {
+        this.state.speakerVoiceMap[spk.speakerId] = defaultVoice;
+      }
+    });
+  }
+
+  async proceedToVoiceDubbing() {
+    if (this.state.translationModal && this.state.translationModal.active) {
+      return;
+    }
+
+    this.state.translationError = null;
+
+    const src = (this.state.languages?.source?.code || '').toLowerCase().trim();
+    const tgt = (this.state.languages?.target?.code || '').toLowerCase().trim();
+    const sameLanguage = Boolean(src && tgt && src === tgt);
+
+    const segments = this.state.segments || [];
+    const allSegmentsHaveTarget = segments.length > 0 && segments.every(
+      s => typeof s.targetText === 'string' && s.targetText.trim().length > 0
+    );
+
+    if (sameLanguage || allSegmentsHaveTarget) {
+      if (sameLanguage) {
+        this.state.segments = segments.map(seg => {
+          const targetText = (seg.targetText && seg.targetText.trim().length > 0)
+            ? seg.targetText
+            : (seg.sourceText !== undefined && seg.sourceText !== null ? seg.sourceText : (seg.text || ''));
+          const dur = Math.max(0.1, (seg.endSec || 0) - (seg.startSec || 0));
+          const cps = Number((String(targetText).trim().length / dur).toFixed(1));
+          return {
+            ...seg,
+            targetText,
+            targetCps: cps,
+            cps,
+            cpsStatus: cps <= 14.5 ? 'Optimal' : cps <= 18.0 ? 'Good' : 'Fast',
+          };
+        });
+      }
+      this.syncSpeakerVoices();
+      this.setStep(3);
+      return;
+    }
+
+    if (segments.length === 0) {
+      this.syncSpeakerVoices();
+      this.setStep(3);
+      return;
+    }
+
+    this.state.translationModal = {
+      active: true,
+      status: 'starting',
+      progress: 0,
+      message: 'Initiating LLM translation...',
+      error: null,
+    };
+    this.notify();
+
+    const payload = {
+      mediaId: this.state.backend.mediaId,
+      jobType: 'translation',
+      options: {
+        ...this.state.backend.config,
+        sourceLanguage: this.state.languages.source.code,
+        targetLanguage: this.state.languages.target.code,
+        translateType: Number(this.state.backend.config.translateType) || 0,
+        translationMode: this.state.backend.config.translationMode || 'srt',
+        segments: segments.map(seg => ({
+          id: seg.id,
+          startSec: seg.startSec,
+          endSec: seg.endSec,
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+          sourceText: seg.sourceText !== undefined && seg.sourceText !== null ? seg.sourceText : (seg.text || ''),
+          text: seg.sourceText !== undefined && seg.sourceText !== null ? seg.sourceText : (seg.text || ''),
+          speakerId: seg.speakerId,
+          speakerName: seg.speakerName,
+          speakerCode: seg.speakerCode,
+          speakerColor: seg.speakerColor,
+          voiceOverride: seg.voiceOverride,
+          targetText: seg.targetText || '',
+        })),
+      },
+    };
+
+    try {
+      const response = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || 'Failed to start translation job');
+      }
+
+      const job = await response.json();
+      this.translationJobId = job.id;
+      this.state.translationModal.status = job.status || 'running';
+      this.state.translationModal.message = job.message || 'Translating transcript...';
+      this.state.translationModal.progress = typeof job.progress === 'number' ? job.progress : 0;
+      this.notify();
+
+      if (job.status === 'succeeded') {
+        const transSegs = (job.result && job.result.segments) || job.segments || [];
+        this.completeTranslation(transSegs);
+        return;
+      }
+
+      if (job.status === 'failed') {
+        this.handleTranslationError(job.error || job.message || 'Translation failed');
+        return;
+      }
+
+      if (this.translationPollTimer) {
+        clearInterval(this.translationPollTimer);
+      }
+      this.translationPollTimer = setInterval(() => this.pollTranslationJob(job.id), 500);
+    } catch (err) {
+      this.handleTranslationError(err.message || String(err));
+    }
+  }
+
+  async pollTranslationJob(jobId) {
+    if (!this.state.translationModal.active || this.translationJobId !== jobId) {
+      if (this.translationPollTimer) {
+        clearInterval(this.translationPollTimer);
+        this.translationPollTimer = null;
+      }
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/jobs/${jobId}`);
+      if (!response.ok) throw new Error(await response.text());
+      const job = await response.json();
+      if (this.translationJobId !== jobId) return;
+
+      this.state.translationModal.status = job.status;
+      this.state.translationModal.message = job.message || 'Translating transcript...';
+      if (typeof job.progress === 'number') {
+        this.state.translationModal.progress = job.progress;
+      }
+
+      if (job.status === 'succeeded') {
+        if (this.translationPollTimer) {
+          clearInterval(this.translationPollTimer);
+          this.translationPollTimer = null;
+        }
+        const transSegs = (job.result && job.result.segments) || job.segments || [];
+        this.completeTranslation(transSegs);
+      } else if (job.status === 'failed' || job.status === 'cancelled') {
+        if (this.translationPollTimer) {
+          clearInterval(this.translationPollTimer);
+          this.translationPollTimer = null;
+        }
+        if (job.status === 'cancelled') {
+          this.state.translationModal.active = false;
+          this.state.translationModal.status = 'cancelled';
+          this.notify();
+        } else {
+          this.handleTranslationError(job.error || job.message || 'Translation failed');
+        }
+      } else {
+        this.notify();
+      }
+    } catch (err) {
+      console.warn('Translation poll error:', err);
+    }
+  }
+
+  async cancelTranslation() {
+    const jobId = this.translationJobId;
+    if (this.translationPollTimer) {
+      clearInterval(this.translationPollTimer);
+      this.translationPollTimer = null;
+    }
+    this.translationJobId = null;
+    this.state.translationModal.active = false;
+    this.state.translationModal.status = 'cancelled';
+    this.notify();
+
+    if (jobId) {
+      try {
+        await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+      } catch (_) {}
+    }
+  }
+
+  completeTranslation(translatedSegments) {
+    if (this.translationPollTimer) {
+      clearInterval(this.translationPollTimer);
+      this.translationPollTimer = null;
+    }
+    this.translationJobId = null;
+
+    if (Array.isArray(translatedSegments) && translatedSegments.length > 0) {
+      this.state.segments = (this.state.segments || []).map((seg, index) => {
+        const match = translatedSegments.find(ts => String(ts.id) === String(seg.id)) || translatedSegments[index];
+        const newTargetText = match
+          ? (match.targetText !== undefined && match.targetText !== null ? match.targetText : (match.text !== undefined && match.text !== null ? match.text : seg.targetText))
+          : (seg.targetText || '');
+        const dur = Math.max(0.1, (seg.endSec || 0) - (seg.startSec || 0));
+        const cps = Number((String(newTargetText).trim().length / dur).toFixed(1));
+        const cpsStatus = cps <= 14.5 ? 'Optimal' : cps <= 18.0 ? 'Good' : 'Fast';
+        return {
+          ...seg,
+          targetText: newTargetText,
+          targetCps: cps,
+          cps,
+          cpsStatus,
+        };
+      });
+    }
+
+    this.state.translationModal.active = false;
+    this.state.translationModal.status = 'succeeded';
+    this.syncSpeakerVoices();
+    this.setStep(3);
+  }
+
+  handleTranslationError(errorMessage) {
+    if (this.translationPollTimer) {
+      clearInterval(this.translationPollTimer);
+      this.translationPollTimer = null;
+    }
+    this.translationJobId = null;
+    this.state.translationModal.active = false;
+    this.state.translationModal.status = 'failed';
+    this.state.translationError = errorMessage || 'Translation failed';
+    this.notify();
+  }
+
+  dismissTranslationError() {
+    this.state.translationError = null;
+    this.notify();
+  }
+
   formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -1549,4 +1813,6 @@ class WorkflowStore {
 }
 
 export const store = new WorkflowStore();
-window.dubDubStore = store;
+if (typeof window !== 'undefined') {
+  window.dubDubStore = store;
+}

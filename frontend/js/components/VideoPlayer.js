@@ -16,8 +16,8 @@ export function renderVideoPlayer(state, options = {}) {
 
   const currentSegment = state.segments.find(s => String(s.id) === String(state.activeSegmentId)) || state.segments[0] || {};
   const audioChan = state.playback.audioChannel;
-  const renderedVideo = state.backend.outputs.find(output => /\.(mp4|mkv|webm)$/i.test(output.name));
-  const previewUrl = renderedVideo?.url || state.project.previewUrl;
+  const renderedVideo = (state.backend?.outputs || []).find(output => /\.(mp4|mkv|webm)$/i.test(output.name));
+  const previewUrl = renderedVideo?.url || state.project?.previewUrl || '';
 
   const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'

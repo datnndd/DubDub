@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import math
 import re
 import threading
@@ -31,6 +32,7 @@ from videotrans.task.orchestrator import (
     TaskStatus,
     run,
     run_staged_asr,
+    run_staged_translation,
 )
 from videotrans.util._ffmpeg_misc import format_video
 from videotrans.util._ffprobe import get_video_info
@@ -229,12 +231,18 @@ class JobRecord:
 
 
 class JobManager:
-    def __init__(self, runner: Callable = run, asr_runner: Callable | None = None) -> None:
+    def __init__(
+        self,
+        runner: Callable = run,
+        asr_runner: Callable | None = None,
+        translation_runner: Callable | None = None,
+    ) -> None:
         self._jobs: dict[str, JobRecord] = {}
         self._active_by_media: dict[str, str] = {}
         self._lock = threading.Lock()
         self._runner = runner
         self._asr_runner = asr_runner or run_staged_asr
+        self._translation_runner = translation_runner or run_staged_translation
 
     def submit(self, params: dict[str, Any], *, media_id: str, job_type: str = "full") -> JobRecord:
         with self._lock:
@@ -263,7 +271,12 @@ class JobManager:
 
     def _execute(self, job: JobRecord, params: dict[str, Any]) -> None:
         try:
-            runner = self._asr_runner if job.job_type == "asr" else self._runner
+            if job.job_type == "asr":
+                runner = self._asr_runner
+            elif job.job_type == "translation":
+                runner = self._translation_runner
+            else:
+                runner = self._runner
             result = runner(TaskRequest(params), job.accept, job.token)
             with job._lock:
                 if result is not None and hasattr(result, "status"):
@@ -375,7 +388,7 @@ class MediaStore:
             return self._records.get(media_id)
 
 
-JOBS = JobManager(runner=run_prepare_review)
+JOBS = JobManager(runner=run_prepare_review, translation_runner=run_staged_translation)
 MEDIA = MediaStore(UPLOAD_DIR, get_video_info)
 EDIT_ASSETS: dict[str, Path] = {}
 EDIT_ASSETS_LOCK = threading.Lock()
@@ -548,7 +561,7 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
     target_dir = OUTPUT_DIR / (safe_stem or file_info.uuid)
     cache_dir = Path(TEMP_DIR) / file_info.uuid
 
-    if job_type == "render":
+    if job_type in {"render", "translation"}:
         recogn_type = _optional_index(options.get("recognType"), len(recognition.RECOGN_NAME_LIST), 0)
         asr_provider = ASR_BY_TYPE.get(recogn_type) or ASR_PROVIDERS[0]
         model_name = str(options.get("modelName") or asr_provider["models"][0])
@@ -583,8 +596,8 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
         if translate_type not in TRANSLATION_BY_TYPE:
             raise ValueError(f"Unsupported translation engine: {translate_type}")
         _, aisendsrt = _translation_mode(options.get("translationMode"))
-        tts_type = _required_index(
-            options.get("ttsType", tts.DEFAULT_TTS), len(tts.TTS_NAME_LIST), "voice engine"
+        tts_type = _optional_index(
+            options.get("ttsType", tts.DEFAULT_TTS), len(tts.TTS_NAME_LIST), default=tts.DEFAULT_TTS
         )
         target_language = str(options.get("targetLanguage") or "")
         if target_language not in translator.LANGNAME_DICT:
@@ -592,13 +605,15 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
         timing_mode = str(options.get("timingMode") or "voice")
         timing_flags = TIMING_MODES.get(timing_mode)
         if timing_flags is None:
-            raise ValueError(f"Unknown timing mode: {timing_mode}")
+            timing_flags = TIMING_MODES["voice"]
         voice_role = str(options.get("voiceRole") or "")
-        if not voice_role:
+        if not voice_role and job_type != "translation":
             try:
                 voice_role = next((voice for voice in role_menu(tts_type, langcode=target_language) if voice != "No"), "No")
             except Exception:
                 voice_role = "No"
+        elif not voice_role:
+            voice_role = "No"
 
     raw_vol = options.get("volume")
     if isinstance(raw_vol, (int, float)) and not isinstance(raw_vol, bool):
@@ -644,12 +659,13 @@ def build_task_params(input_path: Path, options: dict[str, Any], job_type: str =
         "subtitle_type": 0 if is_asr_only else 1,
         "only_out_dubbed_audio": bool(is_asr_only),
         "subtitles": str(options.get("subtitles") or ""),
+        "segments": list(options.get("segments") or []),
         "background_music": None if is_asr_only else options.get("backgroundMusicPath"),
         "backaudio_volume": _safe_volume(options.get("backgroundAudioVolume"), 0.8),
         "source_audio_volume": _safe_volume(options.get("originalAudioVolume"), 0.0),
         "thumbnail": None if is_asr_only else options.get("thumbnailPath"),
         "subtitle_style": options.get("subtitleStyle") if isinstance(options.get("subtitleStyle"), dict) else None,
-        "clear_cache": job_type != "render",
+        "clear_cache": job_type not in {"render", "translation"},
         "embed_bgm": not is_asr_only,
     })
     return params
@@ -919,11 +935,16 @@ async def create_job_handler(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text="Job options are required")
     media_store: MediaStore = request.app["media_store"]
     media = media_store.get(media_id)
-    if media is None or not media.path.is_file():
-        raise web.HTTPBadRequest(text="Select and inspect a media file before starting")
-
     default_job_type = "render" if request.path in {"/api/render", "/api/export"} else "full"
     job_type = str(payload.get("jobType") or options.get("jobType") or default_job_type).lower()
+
+    if job_type == "translation" and (media is None or not media.path.is_file()):
+        fallback_path = Path(TEMP_DIR) / f"webui-trans-{uuid.uuid4().hex}.mp4"
+        fallback_path.touch(exist_ok=True)
+        media_id = media_id or f"trans-mock-{uuid.uuid4().hex}"
+        media = MediaRecord(media_id, fallback_path, fallback_path.name, 0, {"time": 1000})
+    elif media is None or not media.path.is_file():
+        raise web.HTTPBadRequest(text="Select and inspect a media file before starting")
 
     for option_key, path_key in (("backgroundAudioId", "backgroundMusicPath"), ("thumbnailId", "thumbnailPath")):
         asset_id = str(options.get(option_key) or "")
@@ -937,7 +958,7 @@ async def create_job_handler(request: web.Request) -> web.Response:
 
     try:
         params = build_task_params(media.path, options, job_type=job_type)
-        if job_type != "render":
+        if job_type not in {"render", "translation"}:
             ensure_asr_configured(params["recogn_type"], request.app["settings_store"])
         if job_type not in {"asr", "render"}:
             ensure_translation_configured(params["translate_type"], request.app["settings_store"])
@@ -1256,12 +1277,83 @@ async def no_cache_middleware(request: web.Request, handler: Callable) -> web.St
     return response
 
 
-async def index_handler(_request: web.Request) -> web.StreamResponse:
+def frontend_version() -> str:
+    digest = hashlib.sha1()
+    for path in sorted(FRONTEND_DIR.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            continue
+        digest.update(f"{path.relative_to(FRONTEND_DIR)}:{stat.st_mtime_ns}:{stat.st_size}".encode())
+    return digest.hexdigest()
+
+
+async def dev_reload_handler(_request: web.Request) -> web.Response:
+    return web.json_response(
+        {"version": frontend_version()},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def index_handler(request: web.Request) -> web.StreamResponse:
+    if request.app.get("reload"):
+        html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+        script = f"""<script>
+let frontendVersion = '{frontend_version()}';
+setInterval(async () => {{
+  try {{
+    const response = await fetch('/__dev_reload__', {{ cache: 'no-store' }});
+    if ((await response.json()).version !== frontendVersion) location.reload();
+  }} catch {{}}
+}}, 500);
+</script>"""
+        return web.Response(text=html.replace("</body>", f"{script}</body>"), content_type="text/html")
     response = web.FileResponse(FRONTEND_DIR / "index.html")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+async def translate_handler(request: web.Request) -> web.Response:
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise web.HTTPBadRequest(text="A JSON translation request is required") from exc
+    if not isinstance(payload, dict):
+        raise web.HTTPBadRequest(text="Translation payload must be a JSON object")
+
+    raw_segments = payload.get("segments")
+    if not isinstance(raw_segments, (list, tuple)):
+        raise web.HTTPBadRequest(text="segments list is required")
+
+    source_lang = str(payload.get("sourceLanguage") or "zh-cn")
+    target_lang = str(payload.get("targetLanguage") or "en")
+    translate_type = int(payload.get("translateType") or 0)
+    _, aisendsrt = _translation_mode(payload.get("translationMode"))
+
+    dummy_path = Path(TEMP_DIR) / f"trans-direct-{uuid.uuid4().hex}.mp4"
+    dummy_path.touch(exist_ok=True)
+    task_params = {
+        "name": dummy_path.as_posix(),
+        "target_dir": Path(TEMP_DIR).as_posix(),
+        "cache_folder": (Path(TEMP_DIR) / uuid.uuid4().hex).as_posix(),
+        "source_language_code": source_lang,
+        "target_language_code": target_lang,
+        "translate_type": translate_type,
+        "aisendsrt": aisendsrt,
+        "segments": list(raw_segments),
+        "uuid": uuid.uuid4().hex,
+    }
+    runner = getattr(request.app.get("job_manager"), "_translation_runner", None) or run_staged_translation
+    token = CancellationToken()
+    result = await asyncio.to_thread(runner, TaskRequest(task_params), None, token)
+    if result.status == TaskStatus.FAILED:
+        err_msg = result.failure.message if result.failure else "Translation failed"
+        raise web.HTTPBadRequest(text=err_msg)
+    return web.json_response({"ok": True, "segments": list(result.segments)})
 
 
 def create_app(
@@ -1272,18 +1364,28 @@ def create_app(
     settings_store: Any = None,
     asr_tester: Callable[[int, str], str] = test_asr_provider,
     translation_tester: Callable[[int, bool | None], str] = test_translation_provider,
+    translation_runner: Callable | None = None,
     ocr_extractor: Callable | None = None,
+    reload: bool = False,
 ) -> web.Application:
     if not (FRONTEND_DIR / "index.html").is_file():
         raise RuntimeError(f"Frontend not found: {FRONTEND_DIR}")
     app = web.Application(middlewares=[no_cache_middleware], client_max_size=20 * 1024 ** 3)
+    if job_manager is None and translation_runner is not None:
+        job_manager = JobManager(
+            runner=run_prepare_review,
+            translation_runner=translation_runner,
+        )
     app["job_manager"] = job_manager or JOBS
     app["media_store"] = MEDIA if upload_dir is None and media_probe is get_video_info else MediaStore(upload_dir or UPLOAD_DIR, media_probe)
     app["settings_store"] = app_params if settings_store is None else settings_store
     app["asr_tester"] = asr_tester
     app["translation_tester"] = translation_tester
     app["ocr_extractor"] = ocr_extractor or extract_ocr_segment_text
+    app["reload"] = reload
     app.router.add_get("/", index_handler)
+    if reload:
+        app.router.add_get("/__dev_reload__", dev_reload_handler)
     app.router.add_get("/api/options", options_handler)
     app.router.add_get("/api/voices", voices_handler)
     app.router.add_post("/api/asr-settings/{provider_id}", asr_settings_handler)
@@ -1293,6 +1395,7 @@ def create_app(
     app.router.add_post("/api/media", media_handler)
     app.router.add_post("/api/assets/{kind}", edit_asset_handler)
     app.router.add_post("/api/jobs", create_job_handler)
+    app.router.add_post("/api/translate", translate_handler)
     app.router.add_post("/api/render", create_job_handler)
     app.router.add_post("/api/export", create_job_handler)
     app.router.add_get("/api/jobs/{job_id}", job_handler)
@@ -1312,9 +1415,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="pyVideoTrans Dubbing Video WebUI")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7860)
+    parser.add_argument("--reload", action="store_true", help="reload browser tabs when frontend files change")
     args = parser.parse_args()
     app_cfg.exec_mode = "web"
-    web.run_app(create_app(), host=args.host, port=args.port)
+    web.run_app(create_app(reload=args.reload), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

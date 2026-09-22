@@ -58,6 +58,47 @@ def test_frontend_static_and_html_have_no_cache_headers():
     asyncio.run(scenario())
 
 
+def test_frontend_reload_mode_reports_changes_and_injects_browser_refresh(tmp_path, monkeypatch):
+    frontend = tmp_path / "frontend"
+    (frontend / "js").mkdir(parents=True)
+    (frontend / "css").mkdir()
+    (frontend / "assets").mkdir()
+    (frontend / "index.html").write_text("<html><body></body></html>", encoding="utf-8")
+    script = frontend / "js" / "app.js"
+    script.write_text("const version = 1;", encoding="utf-8")
+    monkeypatch.setattr(webui, "FRONTEND_DIR", frontend)
+
+    app = webui.create_app(upload_dir=tmp_path / "uploads", reload=True)
+
+    async def scenario():
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            html = await (await client.get("/")).text()
+            assert "/__dev_reload__" in html
+            assert "location.reload()" in html
+
+            before = await (await client.get("/__dev_reload__")).json()
+            script.write_text("const version = 2;", encoding="utf-8")
+            after = await (await client.get("/__dev_reload__")).json()
+            assert after["version"] != before["version"]
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_main_accepts_reload_flag(monkeypatch):
+    captured = {}
+    monkeypatch.setattr("sys.argv", ["webui.py", "--reload", "--port", "8765"])
+    monkeypatch.setattr(webui.web, "run_app", lambda app, **kwargs: captured.update(app=app, **kwargs))
+
+    webui.main()
+
+    assert captured["port"] == 8765
+    assert captured["app"]["reload"] is True
+
+
 def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch):
     source = tmp_path / "sample video.mp4"
     source.write_bytes(b"video")
@@ -734,6 +775,9 @@ def test_prepare_diagnostics_is_visible_at_tablet_and_desktop_widths():
     assert 'col-span-12 md:col-span-7' in prepare_source
     assert 'col-span-12 md:col-span-5' in prepare_source
     assert "backend.error" in prepare_source
+    assert "Speaker analysis runs during the processing workflow" not in prepare_source
+    assert "Preview Audio Stems" not in prepare_source
+    assert "Replace Video" not in prepare_source
 
 
 def test_prepare_frontend_defaults_and_provider_specific_models_are_connected():

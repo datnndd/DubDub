@@ -12,7 +12,10 @@ class SignalHub(QObject):
     # 信号: new_message(uuid: str, json_string: object)
     new_message = Signal(str, object)
     def __init__(self, parent=None):
-        super().__init__(parent)
+        try:
+            super().__init__(parent)
+        except TypeError:
+            super().__init__()
         self._initialized = True
 
     @classmethod

@@ -31,9 +31,9 @@ export function renderTranslationConfig(state, options = {}) {
   ).join('');
 
   const translationModes = opt.translationModes || [];
-  const translationSettingsProvider = (opt.translationProviders || []).find(
-    item => item.id === backend.translationSettingsProviderId
-  );
+  const translationSettingsProvider = backend.translationSettingsProviderId
+    ? (opt.translationProviders || []).find(item => item.id && item.id === backend.translationSettingsProviderId)
+    : null;
 
   return `
     <div class="${containerClass} bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
@@ -123,7 +123,7 @@ export function renderTranslationConfig(state, options = {}) {
                 <label for="translation-model" class="text-[9px] font-bold text-stone-500 uppercase tracking-wider block mb-1">Model</label>
                 <input id="translation-model" list="translation-model-options" value="${escapeHtml(translationSettingsProvider.model)}" ${backend.translationSettingsSaving || backend.translationTesting ? 'disabled' : ''} placeholder="Enter a model name" class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-[#8D4B00]" />
                 <datalist id="translation-model-options">
-                  ${translationSettingsProvider.models.map(model => `<option value="${escapeHtml(model)}"></option>`).join('')}
+                  ${(translationSettingsProvider.models || []).map(model => `<option value="${escapeHtml(model)}"></option>`).join('')}
                 </datalist>
               </div>
               ${backend.translationSettingsError ? `<p class="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] text-red-700">${escapeHtml(backend.translationSettingsError)}</p>` : ''}

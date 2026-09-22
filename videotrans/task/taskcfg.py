@@ -40,6 +40,16 @@ class SignMsg:
     type:str="logs"
     uuid:str=""
     text:str=""
+    duration:Optional[float]=None
+
+    def __init__(self, type:str="logs", uuid:str="", text:str="", duration:Optional[float]=None, **kwargs):
+        self.type = type
+        self.uuid = uuid
+        self.text = text
+        self.duration = duration
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
     def __getitem__(self, key):
         return getattr(self, key)
 
@@ -155,6 +165,7 @@ class TaskCfgSTS(TaskCfgBase):
     ######## 字幕翻译相关
     translate_type: int = None  # 字幕翻译渠道
     aisendsrt: Optional[bool] = None  # None follows the global setting; bool selects the existing text/SRT prompt flow
+    segments: Optional[Union[list, tuple]] = None  # 待翻译或已识别的字幕片段列表
 
 
 # 视频翻译所有

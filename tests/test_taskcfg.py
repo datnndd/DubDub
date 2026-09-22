@@ -112,6 +112,16 @@ class TestSignMsg:
         assert msg.get("text") == "hi"
         assert msg.get("missing", "default") == "default"
 
+    def test_duration_and_extra_kwargs(self):
+        msg = SignMsg(type="asr_timing", text="ASR completed", duration=2.45, extra_field="ok")
+        assert msg.type == "asr_timing"
+        assert msg.text == "ASR completed"
+        assert msg.duration == 2.45
+        assert msg["duration"] == 2.45
+        assert msg.get("duration") == 2.45
+        assert msg.extra_field == "ok"
+        assert msg.get("extra_field") == "ok"
+
 
 class TestSrtItem:
     def test_default_initialization(self):
@@ -224,8 +234,8 @@ class TestTaskCfgSTT:
         assert cfg.remove_noise is False
         assert cfg.enable_diariz is False
         assert cfg.nums_diariz == 0
-        assert cfg.fix_punc is False
-        assert cfg.rephrase == 2
+        assert cfg.fix_punc == 0
+        assert cfg.rephrase == 0
 
     def test_stt_specific_fields(self):
         cfg = TaskCfgSTT(
