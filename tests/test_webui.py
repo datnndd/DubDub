@@ -558,7 +558,7 @@ def test_asr_connection_tester_uses_production_recognition_with_selected_model(t
     assert calls[0]["recogn_type"] == webui.recognition.Deepgram
     assert calls[0]["model_name"] == "nova-3"
     assert calls[0]["detect_language"] == "zh-cn"
-    assert calls[0]["audio_file"].endswith("videotrans/styles/no-remove.wav")
+    assert calls[0]["audio_file"].endswith("videotrans/assets/no-remove.wav")
     assert not Path(calls[0]["cache_folder"]).exists()
 
 

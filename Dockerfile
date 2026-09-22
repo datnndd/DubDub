@@ -20,8 +20,6 @@ ARG USE_CUDA
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-ENV GRADIO_SERVER_NAME="0.0.0.0"
-ENV GRADIO_SERVER_PORT=7860
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV FONTCONFIG_PATH=/etc/fonts
@@ -31,7 +29,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fontconfig fonts-noto-cjk fonts-liberation fonts-dejavu wget \
     xz-utils git libglib2.0-0 libgl1 libsm6 libxext6 libxrender-dev \
-    libxkbcommon-x11-0 libdbus-1-3 libsndfile1 python3-dev rubberband-cli libsndfile1-dev \
+    libsndfile1 python3-dev rubberband-cli libsndfile1-dev \
     && wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
     && tar -Jxf ffmpeg-release-amd64-static.tar.xz \
     && cp ffmpeg-*-static/ffmpeg /usr/local/bin/ \
@@ -56,4 +54,4 @@ RUN rm -rf /root/.cache/uv /tmp/*
 
 EXPOSE 7860
 
-CMD ["python", "webui.py"]
+CMD ["python", "webui.py", "--host", "0.0.0.0", "--port", "7860"]

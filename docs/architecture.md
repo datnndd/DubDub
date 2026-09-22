@@ -376,7 +376,7 @@ params: AppParams = AppParams()    # 从 params.json 加载
 
 ## 六、GlobalProcessManager——子进程池管理
 
-`videotrans/process/signelobj.py`（167 行）实现了一个类级别单例的 `GlobalProcessManager`：
+`videotrans/process/process_manager.py`（保留 `signelobj.py` 别名兼容，167 行）实现了一个类级别单例的 `GlobalProcessManager`：
 
 ```
 GlobalProcessManager (类级别单例)
@@ -658,6 +658,8 @@ Worker.run()
 
 ## 十一、软件启动与 UI 实现
 
+> **架构变更说明（2026-09）**：根据 [ADR 0002](decisions/0002-web-only-runtime.md)，历史版本的 PySide6 桌面 GUI 及 `sp.py` 已全面退役，当前软件通过 `webui.py`（基于 aiohttp 的 WebUI）和 `cli.py`（命令行界面）运行。以下内容保留作为历史架构参考。
+
 ### 11.1 启动流程
 
 `sp.py` 是唯一入口（221 行），启动过程如下：
@@ -783,7 +785,7 @@ VideoTransError (基类)
 
 ```
 /
-├── sp.py                       # ★ 主程序入口（221 行）
+├── webui.py                    # ★ WebUI 服务入口
 ├── cli.py                      # ★ CLI 命令行入口
 ├── models/                     # 存放本地 AI 模型文件（ONNX 等）
 ├── logs/                       # 日志文件目录（YYYYMMDD.log）
@@ -815,99 +817,84 @@ VideoTransError (基类)
     │   ├── _base.py            # ★ BaseTask 基类（8 阶段空方法 + 5 标志位 + 共享工具方法）（167 行）
     │   ├── taskcfg.py          # ★ TaskCfgBase/VTT/STT/TTS/STS + InputFile + SignMsg + SrtItem（261 行）
     │   ├── trans_create.py     # ★ TransCreate 完整实现（~1678 行，视频翻译核心）
+    │   ├── orchestrator.py     # ★ 工作流编排器与事件系统（TaskRequest, TaskEvent, run）
+    │   ├── trans_create.py     # ★ 任务执行主体 TransCreate
+    │   ├── taskcfg.py          # 任务配置数据结构（TaskCfgSTT, TaskCfgTTS, TaskCfgSTS, TaskCfgVTT）
     │   ├── speech2text.py      # ★ SpeechToText（批量语音转字幕）
     │   ├── dubbing.py          # ★ DubbingSrt（批量字幕配音）
     │   ├── translate_srt.py    # ★ TranslateSrt（批量翻译 SRT 字幕）
-    │   ├── job.py              # ★ 9 种 BaseWorker 子类 + start_thread() 入口（245 行）
-    │   ├── only_one.py         # ★ 单视频交互式 Worker(QThread) + uito 信号（148 行）
-    │   ├── mult_video.py       # ★ 多视频批量提交 MultVideo(QThread)（54 行）
-    │   ├── _rate.py            # SpeedRate / TtsSpeedRate 音画对齐引擎（877 行）
-    │   ├── separate_worker.py  # SeparateWorker 独立人声分离 QThread
-    │   ├── simple_runnable_qt.py # QRunnable 线程池工具
-    │   ├── child_win_sign.py   # 子窗口信号处理
-    │   └── update_ffmpeg.py    # ffmpeg 更新管理
+    │   ├── _stage_*.py         # 分阶段执行器（prepare, recogn, diariz, trans, dubb, align, assemble）
+    │   └── _rate.py            # SpeedRate / TtsSpeedRate 音画对齐引擎
     │
     ├── recognition/            # 语音识别 (ASR) 模块（22 个渠道）
     │   ├── __init__.py         # ★ 渠道常量 ID、_ID_NAME_DICT、run()、is_allow_lang()、is_input_api()
-    │   ├── _base.py            # ★ BaseRecogn（VAD 分割、CJK 处理、字幕合并，400 行）
+    │   ├── _base.py            # ★ BaseRecogn（VAD 分割、CJK 处理、字幕合并）
     │   └── _*.py               # 22 个渠道实现（_whisper, _whisperx, _whispernet, _qwenasrlocal, _qwen3asr, _funasr 等）
     │
     ├── translator/             # 字幕翻译模块（24 个渠道）
-    │   ├── __init__.py         # ★ 渠道常量、_ID_NAME_DICT、LANG_CODE、run()、is_allow_translate()（860 行）
-    │   ├── _base.py            # ★ BaseTrans（MD5 缓存、逐行/全文翻译调度，176 行）
+    │   ├── __init__.py         # ★ 渠道常量、_ID_NAME_DICT、LANG_CODE、run()、is_allow_translate()
+    │   ├── _base.py            # ★ BaseTrans（MD5 缓存、逐行/全文翻译调度）
     │   └── _*.py               # 24 个渠道实现（_google, _chatgpt, _deepseek, _gemini, _deepl, _baidu 等）
     │
     ├── tts/                    # 文本转语音 (TTS) 模块（**34** 个渠道）
-    │   ├── __init__.py         # ★ 渠道常量 ID、_ID_NAME_DICT、SUPPORT_CLONE、CHANGE_BY_LANGUAGE、run()（192 行）
-    │   ├── _base.py            # ★ BaseTTS（异步/多线程并发调度，304 行）
+    │   ├── __init__.py         # ★ 渠道常量 ID、_ID_NAME_DICT、SUPPORT_CLONE、CHANGE_BY_LANGUAGE、run()
+    │   ├── _base.py            # ★ BaseTTS（异步/多线程并发调度）
     │   └── _*.py               # 34 个渠道实现（_edgetts, _openaitts, _azuretts, _gptsovits, _cosyvoice 等）
+    │
+    ├── ocr/                    # 视频硬字幕识别 (OCR) 模块
+    │   ├── __init__.py         # PADDLE_OCR 等常量与 run() 统一调度入口
+    │   ├── _scanner.py         # 视频时间轴关键帧扫描与字幕行提取
+    │   ├── _paddle.py          # PaddleOCR 引擎封装与预测器
+    │   └── _frame_source.py    # FFmpeg 抽帧与图像处理
     │
     ├── process/                # 独立子进程实现
     │   ├── __init__.py         # 子进程函数导出
-    │   ├── signelobj.py        # ★ GlobalProcessManager（CPU/GPU 双进程池，167 行）
+    │   ├── process_manager.py  # ★ GlobalProcessManager（CPU/GPU 双进程池，保留 signelobj.py 别名兼容）
     │   ├── prepare_audio.py    # 人声分离、降噪、标点恢复、说话人分离（4 种后端）
     │   ├── stt_fun.py          # ASR 子进程入口（openai_whisper, faster_whisper, paraformer, funasr_mlt, qwen3asr_fun 等）
     │   ├── tts_fun.py          # TTS 子进程入口（qwen3tts_fun）
     │   └── vad.py              # VAD 语音活动检测（Silero VAD）
     │
-    ├── mainwin/                # 主窗口界面与业务逻辑
-    │   ├── main_win.py         # ★ MainWindow(QMainWindow) 初始化、信号绑定、线程启动（528 行）
-    │   ├── _actions.py         # ★ WinAction 核心控制器（检查、启动、状态更新，798 行）
-    │   └── _actions_base.py    # ★ WinActionBase 基类（代理、模式切换、CUDA、文件选择，590 行）
+    ├── core/                   # 核心持久化与任务/进程服务（ADR 0002）
+    │   ├── db.py               # SQLite WAL 连接池与 schema 管理
+    │   ├── project_store.py    # 项目元数据与多阶段状态存储
+    │   ├── job_store.py        # 异步任务持久化与 SSE 事件日志回放
+    │   ├── job_manager.py      # 后台任务生命周期、线程池与事件分发（JobManager, JobRecord）
+    │   ├── media_store.py      # 上传媒体探测与元数据记录（MediaStore, MediaRecord）
+    │   ├── proc_registry.py    # 子进程注册与跨平台可靠 kill
+    │   └── content_hash.py     # 媒体内容哈希与断点续做校验
     │
-    ├── component/              # UI 通用组件
-    │   ├── progressbar.py      # 可点击进度条
-    │   ├── set_form.py         # 通用设置表单 / 关于页面
-    │   ├── onlyone_set_recogn.py    # 单视频模式：原始字幕编辑对话框
-    │   ├── onlyone_set_role.py      # 单视频模式：说话人角色分配对话框
-    │   ├── onlyone_set_editdubb.py  # 单视频模式：配音结果编辑对话框
-    │   ├── clip_video.py       # 视频裁剪组件
-    │   ├── realtime_stt.py     # 实时语音识别窗口
-    │   ├── textmatching.py     # 文本比对窗口
-    │   ├── set_proxy.py        # 代理设置弹窗
-    │   ├── set_ass.py          # ASS 字幕样式设置
-    │   ├── set_cpp.py          # Whisper.cpp 路径设置
-    │   ├── set_xxl.py          # Faster-Whisper-XXL 路径设置
-    │   ├── set_subtitles_length.py # 字幕长度设置
-    │   ├── set_threads.py      # 线程数设置
-    │   └── controlobj.py       # 控件对象管理
+    ├── api/                    # WebUI 模块化 REST & SSE API（aiohttp）
+    │   ├── app.py              # Application factory（create_app）、静态资源与中间件
+    │   ├── catalog.py          # 渠道目录、默认配置与多语言别名
+    │   ├── task_params.py      # 前端请求参数转换为任务配置
+    │   ├── provider_helpers.py # 渠道配置校验与连接测试辅助
+    │   ├── ocr_helpers.py      # OCR ROI 标准化与片段识别提取
+    │   └── routes/             # 路由分组模块
+    │       ├── projects.py     # /api/projects/* 项目管理
+    │       ├── jobs.py         # /api/jobs/* 任务调度与 SSE 流
+    │       ├── media.py        # /api/media, /api/assets/* 媒体上传与素材管理
+    │       ├── settings.py     # /api/options, /api/voices, /api/*-settings 渠道配置
+    │       └── stages.py       # /api/translate, /api/ocr/extract, /api/segments/split 分步处理
     │
-    ├── ui/                     # PySide6 UI 定义文件（~75 个.py 文件）
-    │   ├── en.py               # ★ 主窗口 UI 布局定义
-    │   ├── chatgpt.py, deepseek.py, gemini.py, ...    # 各渠道设置对话框布局
-    │   ├── videoandaudio.py, separate.py, peiyin.py, ... # 功能窗口布局
-    │   └── dark/               # 暗色主题资源（darkstyle_rc.py, palette.py）
+    ├── assets/                 # 静态媒体资源
+    │   ├── no-remove.mp4       # 防清理占位视频与硬件编码器探测样本
+    │   └── no-remove.wav       # 语音识别渠道连接测试基准音频
     │
-    ├── winform/                # 各渠道设置窗口懒加载管理（~65 个模块）
-    │   ├── __init__.py         # ★ get_win() 懒加载入口 + _module_map（91 行）
-    │   ├── chatgpt.py, azure.py, baidu.py, ...  # ~50 个渠道设置窗口（openwin()）
-    │   └── fn_*.py             # ~10 个独立功能窗口（批量语音转字幕、批量为字幕配音、批量翻译srt字幕等）
-    │
-    ├── styles/                 # UI 样式与媒体资源
-    │   ├── style.qss           # Qt 样式表
-    │   ├── logo.png            # 启动画面 logo
-    │   ├── icon.ico            # 应用图标
-    │   ├── simhei.ttf          # 黑体中文字体
-    │   ├── preview.png         # 预览图
-    │   ├── no-remove.mp4       # 防清理的占位视频
-    │   └── no-remove.wav       # 防清理的占位音频
-    │
-    ├── util/                   # 通用工具函数（18 个文件）
-    │   ├── tools.py            # ★ 核心工具函数（ffmpeg 封装、字幕解析/格式化、文件操作、系统通知、模型下载）
+    ├── util/                   # 通用工具函数
+    │   ├── tools.py            # ★ 核心工具函数（ffmpeg 封装、字幕解析/格式化、文件操作、模型下载）
+    │   ├── network.py          # 网络连接、代理管理与 OpenAI/HF 适配
+    │   ├── prompts.py          # 提示词加载与术语表注入
+    │   ├── segment_ops.py      # 字幕片段拆分与合并算法
     │   ├── gpus.py             # GPU 检测与分配（get_cudaX 获取可用 GPU 索引）
-    │   ├── checkgpu.py         # GPU 检测线程（AiLoaderThread）
-    │   ├── ListenVoice.py      # 声音试听功能（ListenVioce QThread）
     │   ├── req_fac.py          # HuggingFace 自定义 session 工厂
     │   ├── cn_tn.py            # 中文文本规范化
     │   ├── en_tn.py            # 英文文本规范化
     │   ├── help_down.py        # 下载工具函数
     │   ├── help_ffmpeg.py      # ffmpeg 视频编解码器检测
-    │   ├── help_misc.py        # 杂项工具
+    │   ├── help_misc.py        # 杂项工具（保留纯函数与兼容导出）
     │   ├── help_role.py        # 配音角色工具
-    │   ├── help_srt.py         # 字幕文件工具
-    │   ├── helper_supertonic.py # Supertonic TTS 辅助
-    │   ├── TestSrtTrans.py     # 翻译测试工具
-    │   └── TestSTT.py          # STT 测试工具
+    │   └── help_srt.py         # 字幕文件工具
     │
     ├── language/               # 界面多语言 JSON 文件
     │   ├── en.json

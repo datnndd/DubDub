@@ -1,4 +1,4 @@
-﻿> Sponsors: **[Recall.ai](https://www.recall.ai/product/meeting-transcription-api?utm_source=github&utm_medium=sponsorship&utm_campaign=jianchang512-pyvideotrans) - Meeting Transcription API**
+> Sponsors: **[Recall.ai](https://www.recall.ai/product/meeting-transcription-api?utm_source=github&utm_medium=sponsorship&utm_campaign=jianchang512-pyvideotrans) - Meeting Transcription API**
 >
 > If you’re looking for a transcription API for meetings, consider checking out **[Recall.ai](https://www.recall.ai/product/meeting-transcription-api?utm_source=github&utm_medium=sponsorship&utm_campaign=jianchang512-pyvideotrans)** , an API that works with Zoom, Google Meet, Microsoft Teams, and more
 
@@ -96,14 +96,11 @@ cd pyvideotrans
 uv sync
 ```
 
-> 默认不安装 `whisper.net` 本地渠道，若需要全部安装请执行 `uv sync --all-extras`
-> - 单独安装 `whisper.net`：`uv sync --extra dotnet`
-
 ### 4. 启动软件
 
-**启动 GUI 界面**:
+**启动 WebUI 界面**:
 ```bash
-uv run sp.py
+uv run webui.py
 ```
 
 **使用 CLI 命令行**:
@@ -123,12 +120,6 @@ uv run cli.py --task tts --name "./subs.srt" --voice_role "zh-CN-YunyangNeural"
 ```
 
 > [CLI 详细参数说明](cli.md)
-
-**启动 WebUI** (适合远程访问或局域网部署):
-```bash
-uv sync --extra webui
-uv run webui.py
-```
 
 
 **Docker 部署** (容器化部署):

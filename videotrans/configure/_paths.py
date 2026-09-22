@@ -62,7 +62,6 @@ def _set_env():
     os.environ["PYTHONWARNINGS"]="ignore"
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
     os.environ['PYTHONUTF8'] = '1'
-    os.environ['QT_API'] = 'pyside6'
     os.environ['SOFT_NAME'] = 'pyvideotrans'
     os.environ['MODELSCOPE_CACHE'] = ROOT_DIR + "/models"
     os.environ['HF_HOME'] = ROOT_DIR + "/models"

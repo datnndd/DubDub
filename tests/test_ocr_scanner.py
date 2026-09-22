@@ -1,4 +1,4 @@
-﻿import os
+import os
 import tempfile
 
 import numpy as np
@@ -114,8 +114,17 @@ def test_scanner_resume_matches_uninterrupted(tmp_path):
         assert ref, seg.text
         assert abs(seg.start_ms - ref[0].start_ms) <= 250
         assert abs(seg.end_ms - ref[0].end_ms) <= 250
+
+
 def test_scanner_empty_result_returns_no_segments():
     provider = FakeProvider({})
     scanner = OcrScanner(provider, _config())
     segs = scanner.scan(_frame_stream([]), duration_ms=5000)
     assert segs == []
+
+
+def test_crop_roi_none_on_empty_area():
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+    # zero-size ROI -> None
+    assert crop_roi(frame, (0.0, 0.0, 0.0, 0.0)) is None
+    assert crop_roi(None, (0.0, 0.0, 0.0, 0.0)) is None

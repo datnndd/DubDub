@@ -211,7 +211,7 @@ class BaseCon:
         _st = time.time()
         from .excepts import VideoTransError,SttTimeoutError
         from concurrent.futures.process import BrokenProcessPool
-        from videotrans.process.signelobj import GlobalProcessManager
+        from videotrans.process.process_manager import GlobalProcessManager
         kwargs = kwargs or {}
         self.signal(text=f'[{title}] starting...')
         logger.debug(f'[新进程任务 开始:{title=}]')

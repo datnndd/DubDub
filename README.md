@@ -1,4 +1,4 @@
-﻿> Sponsors: **[Recall.ai](https://www.recall.ai/product/meeting-transcription-api?utm_source=github&utm_medium=sponsorship&utm_campaign=jianchang512-pyvideotrans) - Meeting Transcription API**
+> Sponsors: **[Recall.ai](https://www.recall.ai/product/meeting-transcription-api?utm_source=github&utm_medium=sponsorship&utm_campaign=jianchang512-pyvideotrans) - Meeting Transcription API**
 >
 > If you’re looking for a transcription API for meetings, consider checking out **[Recall.ai](https://www.recall.ai/product/meeting-transcription-api?utm_source=github&utm_medium=sponsorship&utm_campaign=jianchang512-pyvideotrans)** , an API that works with Zoom, Google Meet, Microsoft Teams, and more
 
@@ -97,16 +97,11 @@ cd pyvideotrans
 uv sync
 ```
 
-> By default, `whisper.net` and `WebUI` are not installed locally.
-> - To install all optional channels: `uv sync --all-extras`
-> - To install whisper.net: `uv sync --extra dotnet` 
-> - To install WebUI: `uv sync --extra webui` 
-
 ### 4. Launch Software
 
-**GUI**:
+**WebUI**:
 ```bash
-uv run sp.py
+uv run webui.py
 ```
 
 **CLI**:
@@ -125,12 +120,6 @@ uv run cli.py --task tts --name "./subs.srt" --voice_role "zh-CN-YunyangNeural"
 ```
 
 > [CLI documentation with all parameters](docs/cli.md)
-
-**WebUI** (for remote/internal network access):
-```bash
-uv sync --extra webui
-uv run webui.py
-```
 
 
 **Docker** (containerized deployment):
