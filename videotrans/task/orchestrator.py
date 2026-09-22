@@ -106,8 +106,18 @@ class TaskRequest:
         values["target_dir"] = output.as_posix()
 
         cache = Path(values.get("cache_folder") or Path(TEMP_DIR) / file_info.uuid).expanduser().resolve()
-        cache_root = Path(TEMP_DIR).resolve()
-        if cache != cache_root and cache_root not in cache.parents:
+        cache_roots = [Path(TEMP_DIR).resolve()]
+        try:
+            from videotrans.configure import config as _cfg
+            if hasattr(_cfg, "TEMP_DIR") and _cfg.TEMP_DIR:
+                cache_roots.append(Path(_cfg.TEMP_DIR).resolve())
+            from videotrans.configure._paths import TEMP_ROOT
+            if TEMP_ROOT:
+                cache_roots.append(Path(TEMP_ROOT).resolve())
+        except Exception:
+            pass
+
+        if not any(cache == root or root in cache.parents for root in cache_roots):
             raise ValueError("Cache directory must be inside the application temp directory")
         values["cache_folder"] = cache.as_posix()
         return values
@@ -289,6 +299,163 @@ def run_staged_asr(
 ) -> TaskResult:
     """Execute audio extraction, speech recognition (ASR), and speaker diarization."""
     return run(request, event_sink, cancellation_token, stage_limit="asr")
+
+
+def run_staged_translation(
+    request: TaskRequest,
+    event_sink: EventSink | None = None,
+    cancellation_token: CancellationToken | None = None,
+) -> TaskResult:
+    """Execute LLM / machine translation of transcript segments with 1:1 matching."""
+    from videotrans import translator
+    from videotrans.util.help_srt import ms_to_time_string
+    from videotrans.util.segment_ops import calculate_cps
+
+    emit = event_sink or (lambda _event: None)
+    token = cancellation_token or CancellationToken()
+    stage = "trans"
+    job_id = ""
+    output_dir = Path(".")
+    terminal_emitted = False
+
+    def send(kind: EventKind, message: str = "", *, progress=None, details=None) -> None:
+        nonlocal terminal_emitted
+        if kind in {EventKind.SUCCEEDED, EventKind.FAILED, EventKind.CANCELLED}:
+            if terminal_emitted:
+                return
+            terminal_emitted = True
+        emit(TaskEvent(job_id, kind, stage, message, progress, details or {}))
+
+    try:
+        values = request.normalize()
+        job_id = str(values.get("uuid") or "trans-job")
+        target_dir = values.get("target_dir")
+        output_dir = Path(str(target_dir)) if target_dir else Path(".")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        send(EventKind.QUEUED, "Queued for translation")
+        if token.is_cancelled():
+            send(EventKind.CANCELLED, "Task cancelled before execution")
+            return TaskResult(job_id, TaskStatus.CANCELLED, output_dir)
+
+        send(EventKind.RUNNING, "Starting translation")
+        send(EventKind.STAGE_STARTED, "Translating segments")
+
+        raw_segments = list(values.get("segments") or request.params.get("segments") or [])
+        source_code = str(values.get("source_language_code") or values.get("source_language") or "zh-cn")
+        target_code = str(values.get("target_language_code") or values.get("target_language") or "en")
+        translate_type = int(values.get("translate_type", 0) or 0)
+        aisendsrt = values.get("aisendsrt")
+
+        # Bypass when source and target languages are identical
+        if source_code.lower() == target_code.lower():
+            updated_segments = []
+            for seg in raw_segments:
+                seg_copy = dict(seg)
+                if not seg_copy.get("targetText"):
+                    seg_copy["targetText"] = seg_copy.get("sourceText") or seg_copy.get("text") or ""
+                dur = max(0.1, float(seg_copy.get("endSec", 0.0) or 0.0) - float(seg_copy.get("startSec", 0.0) or 0.0))
+                cps, cps_status = calculate_cps(seg_copy["targetText"], dur)
+                seg_copy["targetCps"] = cps
+                seg_copy["cps"] = cps
+                seg_copy["cpsStatus"] = cps_status
+                updated_segments.append(seg_copy)
+
+            send(EventKind.STAGE_COMPLETED, "Translation bypassed (same language)")
+            send(EventKind.PROGRESS, "Complete", progress=100.0)
+            send(EventKind.SUCCEEDED, "Translation complete", details={"segments": updated_segments})
+            return TaskResult(job_id, TaskStatus.SUCCEEDED, output_dir, segments=tuple(updated_segments))
+
+        if not raw_segments:
+            send(EventKind.STAGE_COMPLETED, "No segments to translate")
+            send(EventKind.PROGRESS, "Complete", progress=100.0)
+            send(EventKind.SUCCEEDED, "Translation complete", details={"segments": []})
+            return TaskResult(job_id, TaskStatus.SUCCEEDED, output_dir, segments=())
+
+        # Construct SrtItem-compatible structures for translator.run
+        text_list = []
+        for idx, seg in enumerate(raw_segments, 1):
+            src_text = str(seg.get("sourceText") if seg.get("sourceText") is not None else (seg.get("text") or "")).strip()
+            start_sec = float(seg.get("startSec", 0.0) or 0.0)
+            end_sec = float(seg.get("endSec", 0.0) or 0.0)
+            start_ms = int(round(start_sec * 1000))
+            end_ms = int(round(end_sec * 1000))
+            start_str = ms_to_time_string(ms=start_ms)
+            end_str = ms_to_time_string(ms=end_ms)
+            text_list.append({
+                "line": idx,
+                "time": f"{start_str} --> {end_str}",
+                "text": src_text,
+                "start_time": start_ms,
+                "end_time": end_ms,
+                "startraw": start_str,
+                "endraw": end_str,
+            })
+
+        if token.is_cancelled():
+            send(EventKind.CANCELLED, "Task cancelled")
+            return TaskResult(job_id, TaskStatus.CANCELLED, output_dir)
+
+        send(EventKind.PROGRESS, "Translating segments with selected provider...", progress=35.0)
+
+        translated_items = translator.run(
+            translate_type=translate_type,
+            text_list=text_list,
+            source_code=source_code,
+            target_code=target_code,
+            aisendsrt=aisendsrt,
+            uuid=job_id,
+        )
+
+        if token.is_cancelled():
+            send(EventKind.CANCELLED, "Task cancelled")
+            return TaskResult(job_id, TaskStatus.CANCELLED, output_dir)
+
+        # 1:1 segment matching preserving all segment metadata
+        updated_segments = []
+        for idx, seg in enumerate(raw_segments):
+            seg_copy = dict(seg)
+            translated_text = ""
+            if translated_items and idx < len(translated_items):
+                item = translated_items[idx]
+                if isinstance(item, dict):
+                    translated_text = str(item.get("text") or "").strip()
+                elif hasattr(item, "text"):
+                    translated_text = str(getattr(item, "text", "") or "").strip()
+                elif isinstance(item, str):
+                    translated_text = item.strip()
+
+            if translated_text:
+                seg_copy["targetText"] = translated_text
+            elif not seg_copy.get("targetText"):
+                seg_copy["targetText"] = seg_copy.get("sourceText") or seg_copy.get("text") or ""
+
+            dur = max(0.1, float(seg_copy.get("endSec", 0.0) or 0.0) - float(seg_copy.get("startSec", 0.0) or 0.0))
+            target_cps, target_cps_status = calculate_cps(seg_copy["targetText"], dur)
+            seg_copy["targetCps"] = target_cps
+            seg_copy["cps"] = target_cps
+            seg_copy["cpsStatus"] = target_cps_status
+            updated_segments.append(seg_copy)
+
+        send(EventKind.PROGRESS, "Translation complete", progress=100.0)
+        send(EventKind.STAGE_COMPLETED, "Translation stage finished")
+        send(EventKind.SUCCEEDED, "Translation succeeded", details={"segments": updated_segments})
+        return TaskResult(job_id, TaskStatus.SUCCEEDED, output_dir, segments=tuple(updated_segments))
+
+    except Exception as exc:
+        cause = "".join(traceback.format_exception(exc))
+        logger.exception("Translation task %s failed during %s", job_id, stage, exc_info=True)
+        failure = TaskFailure(
+            code="trans_failed",
+            stage=stage,
+            message=get_msg_from_except(exc) or str(exc),
+            cause=cause,
+        )
+        try:
+            send(EventKind.FAILED, failure.message, details={"code": failure.code})
+        except Exception:
+            pass
+        return TaskResult(job_id, TaskStatus.FAILED, output_dir, failure=failure)
 
 
 def extract_transcript_segments(task: object) -> list[dict[str, Any]]:

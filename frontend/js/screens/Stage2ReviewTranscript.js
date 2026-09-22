@@ -32,7 +32,24 @@ export function renderStage2ReviewTranscript(state) {
   };
 
   return `
-    <div class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden">
+    <div class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden relative">
+      ${state.translationError ? `
+        <!-- Translation Error Banner -->
+        <div data-translation-error class="w-full px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-center justify-between shadow-2xs flex-shrink-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="material-symbols-outlined text-red-600 text-base flex-shrink-0">error</span>
+            <span class="font-semibold truncate">${escapeHtml(state.translationError)}</span>
+          </div>
+          <button 
+            type="button"
+            data-action="dismiss-translation-error"
+            onclick="window.dubDubStore.dismissTranslationError()"
+            class="px-2 py-0.5 rounded bg-red-100 hover:bg-red-200 text-red-800 text-[10px] font-bold border border-red-300 transition-colors flex-shrink-0 cursor-pointer">
+            Dismiss
+          </button>
+        </div>
+      ` : ''}
+
       <!-- UPPER DECK: Video Screen (Left) + Translation Config (Right) -->
       <section class="flex-1 min-h-0 w-full grid grid-cols-12 gap-2.5 overflow-hidden">
         <!-- LEFT: SYNCHRONIZED VIDEO PLAYER (7-8 cols) -->
@@ -177,6 +194,67 @@ export function renderStage2ReviewTranscript(state) {
           }).join('')}
         </div>
       </section>
+
+      <!-- Full-Screen Translation Loading Modal Overlay -->
+      ${renderTranslationModal(state, escapeHtml)}
     </div>
   `;
 }
+
+function renderTranslationModal(state, escapeHtml) {
+  if (!state.translationModal || !state.translationModal.active) return '';
+  const modal = state.translationModal;
+  const opt = state.backend && state.backend.options;
+  const selectedProvider = (opt && opt.translationProviders && opt.translationProviders.find(
+    item => item.translateType === Number(state.backend?.config?.translateType)
+  )) || (opt && opt.translationProviders && opt.translationProviders[0]) || { label: 'LLM Translation', model: '' };
+  const providerLabel = selectedProvider.label || 'Translation';
+  const targetLangName = state.languages?.target?.name || (state.languages?.target?.code || '').toUpperCase() || 'Target';
+  const progressPct = Math.min(100, Math.max(0, Math.round(Number(modal.progress) || 0)));
+
+  return `
+    <!-- Full-Screen Translation Loading Modal -->
+    <div data-translation-modal class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-white w-full max-w-md rounded-2xl border border-stone-200 shadow-2xl overflow-hidden flex flex-col p-6 items-center text-center">
+        <!-- Animated Spinner -->
+        <div class="w-16 h-16 rounded-full bg-amber-50 border-2 border-amber-200 flex items-center justify-center mb-4 text-[#8D4B00]">
+          <span data-translation-spinner class="material-symbols-outlined text-3xl animate-spin">progress_activity</span>
+        </div>
+
+        <!-- Title & Subtitle -->
+        <h3 class="text-base font-bold text-stone-900 mb-1">Translating Transcript</h3>
+        <p class="text-xs text-stone-500 mb-3">Translating dialogue segments into <span class="font-bold text-stone-700">${escapeHtml(targetLangName)}</span></p>
+
+        <!-- Provider / Model Badge -->
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-100 border border-stone-200 text-stone-700 text-[11px] font-mono font-medium mb-4">
+          <span class="material-symbols-outlined text-xs text-[#8D4B00]">psychology</span>
+          <span>${escapeHtml(providerLabel)}</span>
+          ${selectedProvider.model ? `<span class="text-stone-400">•</span><span class="text-stone-600">${escapeHtml(selectedProvider.model)}</span>` : ''}
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="w-full bg-stone-100 rounded-full h-2 mb-2 overflow-hidden border border-stone-200">
+          <div class="bg-[#8D4B00] h-full transition-all duration-300 rounded-full" style="width: ${progressPct}%"></div>
+        </div>
+
+        <!-- Progress Feedback -->
+        <div data-translation-progress class="flex items-center justify-between w-full text-[11px] text-stone-500 font-medium mb-5 px-0.5">
+          <span class="truncate max-w-[260px]">${escapeHtml(modal.message || 'Translating segments…')}</span>
+          <span class="font-mono font-bold text-stone-700 ml-2">${progressPct}%</span>
+        </div>
+
+        <!-- Cancel Action Button -->
+        <button 
+          type="button"
+          data-action="cancel-translation"
+          data-translation-cancel
+          onclick="window.dubDubStore.cancelTranslation()"
+          class="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 active:bg-stone-300 text-stone-700 font-semibold text-xs border border-stone-200 transition-colors flex items-center gap-1.5 cursor-pointer">
+          <span class="material-symbols-outlined text-sm text-stone-500">close</span>
+          <span>Cancel Translation</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+

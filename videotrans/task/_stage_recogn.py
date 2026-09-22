@@ -58,7 +58,8 @@ class RecognMixin:
             return
 
         if not vail_file(self.cfg.source_wav):
-            raise SpeechToTextError(tr("Failed to separate audio, please check the log or retry"))
+            raise SpeechToTextError(tr("Failed to separate audio, please check the log or retry"))
+
         if self.cfg.remove_noise:
             _remove_noise_wav = f"{self.cfg.cache_folder}/remove_noise.wav"
             if vail_file(_remove_noise_wav):
@@ -95,7 +96,8 @@ class RecognMixin:
             is_cuda=self.cfg.is_cuda,
             subtitle_type=self.cfg.subtitle_type,
             max_speakers=self.max_speakers,
-            llm_post=self.cfg.rephrase==1
+            llm_post=self.cfg.rephrase==1,
+            event_sink=self.event_sink,
         )
         if self._exit(): return
         if not raw_subtitles:
@@ -208,7 +210,8 @@ class RecognMixin:
                 detect_language=detect_language,
                 cache_folder=self.cfg.cache_folder,
                 is_cuda=self.cfg.is_cuda,
-                recogn2pass=True
+                recogn2pass=True,
+                event_sink=self.event_sink,
             )
             if self._exit(): return
             if not raw_subtitles:

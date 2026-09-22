@@ -93,6 +93,15 @@ export function renderStatusFooter(state) {
         actionTooltip = 'Initiate audio extraction, speech recognition, and speaker diarization';
       }
     }
+  } else if (step === 2) {
+    actionText = 'Proceed to Voice & Dubbing';
+    action = 'window.dubDubStore.proceedToVoiceDubbing()';
+    actionIcon = 'arrow_forward';
+    if (state.translationModal && state.translationModal.active) {
+      actionDisabled = true;
+      actionTooltip = 'Translation in progress…';
+      actionIcon = 'progress_activity';
+    }
   }
 
   return `
@@ -138,12 +147,13 @@ export function renderStatusFooter(state) {
         ` : `
           <button 
             data-action="next-step"
+            ${step === 2 ? 'data-action-proceed="proceed-to-voice"' : ''}
             ${actionDisabled ? 'disabled' : ''}
             title="${escapeHtml(actionTooltip)}"
             class="px-4 py-1.5 rounded-lg bg-[#8D4B00] hover:bg-[#743d00] disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 active:scale-98"
             onclick="${action}">
             <span>${actionText}</span>
-            <span class="material-symbols-outlined text-sm">${actionIcon}</span>
+            <span class="material-symbols-outlined text-sm ${actionDisabled && state.translationModal && state.translationModal.active ? 'animate-spin' : ''}">${actionIcon}</span>
           </button>
         `}
       </div>

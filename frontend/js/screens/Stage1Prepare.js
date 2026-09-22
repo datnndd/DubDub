@@ -171,28 +171,6 @@ export function renderStage1Prepare(state) {
               </div>
             </div>
 
-            <!-- Speaker Diarization Preview Chip -->
-            <div class="p-2 rounded-lg bg-amber-50/60 border border-amber-200/90 flex items-center gap-2">
-              <div class="w-6 h-6 rounded-full bg-amber-500/20 text-[#8D4B00] flex items-center justify-center flex-shrink-0">
-                <span class="material-symbols-outlined text-sm">record_voice_over</span>
-              </div>
-              <div class="min-w-0">
-                <div class="text-[11px] font-bold text-stone-900 leading-none">${p.hasAudio ? 'Audio stream detected' : 'No audio stream detected'}</div>
-                <div class="text-[10px] text-stone-600 truncate mt-0.5">Speaker analysis runs during the processing workflow.</div>
-              </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="flex items-center gap-2 pt-1 border-t border-stone-200">
-              <button ${['analyzing', 'submitting', 'queued', 'running'].includes(backend.status) ? 'disabled' : ''} onclick="window.dubDubStore.chooseMedia()" class="flex-1 py-1.5 px-2 rounded-lg bg-stone-100 hover:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed text-stone-700 text-xs font-semibold border border-stone-200 transition-colors flex items-center justify-center gap-1">
-                <span class="material-symbols-outlined text-sm text-stone-500">upload_file</span>
-                <span>Replace Video</span>
-              </button>
-              <button disabled title="Audio stem preview is not connected yet" class="flex-1 py-1.5 px-2 rounded-lg bg-stone-50 text-stone-400 text-xs font-bold border border-stone-200 flex items-center justify-center gap-1 cursor-not-allowed">
-                <span class="material-symbols-outlined text-sm">headphones</span>
-                <span>Preview Audio Stems</span>
-              </button>
-            </div>
           </div>
         </div>
       </section>
