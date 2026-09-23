@@ -21,8 +21,8 @@ export interface SubtitleStyleSettings {
 
 export interface EditVideoState {
   audioMix: AudioMixSettings;
-  backgroundAudio: { file: File | null; name: string; url: string } | null;
-  thumbnail: { file: File | null; name: string; url: string } | null;
+  backgroundAudio: { id: string; file: File | null; name: string; url: string } | null;
+  thumbnail: { id: string; file: File | null; name: string; url: string } | null;
   exporting: boolean;
   error: string | null;
   activeTab: 'audio' | 'subtitles' | 'assets';

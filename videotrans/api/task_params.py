@@ -158,11 +158,17 @@ def build_task_params(
 
     segments = options.get("segments") if isinstance(options.get("segments"), list) else []
     speaker_voice_map = options.get("speakerVoiceMap") if isinstance(options.get("speakerVoiceMap"), dict) else {}
+    segment_voice_overrides = options.get("segmentVoiceOverrides") if isinstance(options.get("segmentVoiceOverrides"), dict) else {}
     line_roles = {}
     for index, segment in enumerate(segments, 1):
         if not isinstance(segment, dict):
             continue
-        voice = segment.get("voiceOverride") or speaker_voice_map.get(segment.get("speakerId"))
+        voice = (
+            segment.get("voiceOverride")
+            or segment_voice_overrides.get(str(segment.get("id")))
+            or segment_voice_overrides.get(segment.get("id"))
+            or speaker_voice_map.get(segment.get("speakerId"))
+        )
         if voice:
             line_roles[str(index)] = str(voice)
 

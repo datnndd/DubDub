@@ -15,6 +15,7 @@ from videotrans.core.db import init_db
 from videotrans.core.job_store import sweep_orphans_on_startup
 from videotrans.core.job_manager import JobManager, JOBS, run_prepare_review
 from videotrans.core.media_store import MediaStore, MEDIA
+from videotrans.core.edit_asset_store import EditAssetStore, EDIT_ASSET_STORE
 from videotrans.util._ffprobe import get_video_info
 from videotrans.api.catalog import (
     UPLOAD_DIR,
@@ -97,6 +98,7 @@ def create_app(
     translation_tester: Callable[[int, bool | None], str] = test_translation_provider,
     translation_runner: Callable | None = None,
     ocr_extractor: Callable | None = None,
+    edit_asset_store: EditAssetStore | None = None,
     reload: bool = False,
 ) -> web.Application:
     init_db()
@@ -116,6 +118,7 @@ def create_app(
     app["asr_tester"] = asr_tester
     app["translation_tester"] = translation_tester
     app["ocr_extractor"] = ocr_extractor or extract_ocr_segment_text
+    app["edit_asset_store"] = edit_asset_store or EDIT_ASSET_STORE
     app["reload"] = reload
 
     # Static and root routes

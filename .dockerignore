@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+frontend/node_modules
+frontend/dist
+logs
+models
+output
+tmp
+*.db
+*.db-wal
+*.db-shm

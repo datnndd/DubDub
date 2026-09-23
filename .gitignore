@@ -46,6 +46,7 @@ chatterbox
 !f5-tts/nverguo.wav
 !f5-tts/cosy.wav
 dist
+frontend/node_modules/
 source
 build
 __pycache__

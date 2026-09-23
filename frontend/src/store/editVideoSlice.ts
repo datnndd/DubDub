@@ -5,6 +5,26 @@ import { requestRender } from '../api/stages';
 
 const DEFAULT_AUDIO_MIX: AudioMixSettings = { original: 0, dubbed: 100, background: 35 };
 
+export function buildRenderRequest(state: any) {
+  return {
+    mediaId: state.backend.mediaId,
+    projectId: state.activeProjectId,
+    jobType: 'render',
+    options: {
+      ...state.backend.config,
+      audioMix: state.editVideo.audioMix,
+      originalAudioVolume: state.editVideo.audioMix.original / 100,
+      backgroundAudioVolume: state.editVideo.audioMix.background / 100,
+      subtitleStyle: state.subtitleStyles,
+      segments: state.segments,
+      speakerVoiceMap: state.speakerVoiceMap,
+      segmentVoiceOverrides: state.segmentVoiceOverrides,
+      backgroundAudioId: state.editVideo.backgroundAudio?.id,
+      thumbnailId: state.editVideo.thumbnail?.id,
+    },
+  };
+}
+
 export interface EditVideoSlice {
   subtitleStyles: SubtitleStyleSettings;
   editVideo: EditVideoState;
@@ -104,7 +124,7 @@ export const createEditVideoSlice: StateCreator<any, [], [], EditVideoSlice> = (
       set((state: any) => ({
         editVideo: {
           ...state.editVideo,
-          backgroundAudio: { file, name: resp.name, url },
+          backgroundAudio: { id: resp.id, file, name: resp.name, url },
         },
       }));
       get().triggerAutosave();
@@ -135,7 +155,7 @@ export const createEditVideoSlice: StateCreator<any, [], [], EditVideoSlice> = (
       set((state: any) => ({
         editVideo: {
           ...state.editVideo,
-          thumbnail: { file, name: resp.name, url },
+          thumbnail: { id: resp.id, file, name: resp.name, url },
         },
       }));
       get().triggerAutosave();
@@ -187,18 +207,11 @@ export const createEditVideoSlice: StateCreator<any, [], [], EditVideoSlice> = (
     }));
 
     try {
-      const payload = {
-        mediaId,
-        projectId: state.activeProjectId,
-        jobType: 'render',
-        audioMix: state.editVideo.audioMix,
-        subtitleStyles: state.subtitleStyles,
-        segments: state.segments,
-        speakerVoiceMap: state.speakerVoiceMap,
-      };
+      const payload = buildRenderRequest(state);
       const res = await requestRender(payload);
-      if (res.jobId) {
-        state.subscribeToJob?.(res.jobId);
+      const jobId = res.id || res.jobId;
+      if (jobId) {
+        state.subscribeToJob?.(jobId);
       }
     } catch (err: any) {
       set((s: any) => ({

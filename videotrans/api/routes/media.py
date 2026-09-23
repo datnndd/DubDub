@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import threading
 import uuid
 from pathlib import Path
 from urllib.parse import unquote
@@ -9,9 +8,11 @@ from urllib.parse import unquote
 from aiohttp import web
 
 from videotrans.configure.contants import AUDIO_EXITS, VIDEO_EXTS
+from videotrans.core.edit_asset_store import EDIT_ASSET_STORE
 
-EDIT_ASSETS: dict[str, Path] = {}
-EDIT_ASSETS_LOCK = threading.Lock()
+# Compatibility aliases for legacy tests; request handling uses the injected service.
+EDIT_ASSETS = EDIT_ASSET_STORE.items
+EDIT_ASSETS_LOCK = EDIT_ASSET_STORE.lock
 
 
 async def media_handler(request: web.Request) -> web.Response:
@@ -91,8 +92,7 @@ async def edit_asset_handler(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text="An asset file is required")
 
     asset_id = uuid.uuid4().hex
-    with EDIT_ASSETS_LOCK:
-        EDIT_ASSETS[asset_id] = saved
+    request.app["edit_asset_store"].put(asset_id, saved)
     return web.json_response({"id": asset_id, "name": filename}, status=201)
 
 
