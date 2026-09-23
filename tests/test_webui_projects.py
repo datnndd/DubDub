@@ -2,7 +2,8 @@
 import asyncio
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
-from tests import webui_support as webui
+
+from videotrans.api.app import create_app
 from videotrans.core.db import init_db, set_db_path, get_db_path
 from videotrans.core.project_store import create_project, get_project
 from videotrans.core.job_store import create_job, append_event, mark_done
@@ -20,7 +21,7 @@ def temp_db(tmp_path):
 
 @pytest.mark.asyncio
 async def test_projects_crud_endpoints():
-    app = webui.create_app()
+    app = create_app()
     client = TestClient(TestServer(app))
     await client.start_server()
     try:
@@ -84,7 +85,7 @@ async def test_projects_crud_endpoints():
 
 @pytest.mark.asyncio
 async def test_job_sse_stream_replay():
-    app = webui.create_app()
+    app = create_app()
     client = TestClient(TestServer(app))
     await client.start_server()
     try:
@@ -110,7 +111,7 @@ async def test_job_sse_stream_replay():
 
 @pytest.mark.asyncio
 async def test_list_jobs_endpoint():
-    app = webui.create_app()
+    app = create_app()
     client = TestClient(TestServer(app))
     await client.start_server()
     try:

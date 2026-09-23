@@ -31,6 +31,16 @@ export interface TranscriptSlice {
   closeTranslationModal: () => void;
 }
 
+export function buildTranslationRequest(state: any) {
+  return {
+    segments: state.segments,
+    sourceLanguage: state.languages.source.code,
+    targetLanguage: state.languages.target.code,
+    translateType: state.backend.config.translateType,
+    translationMode: state.backend.config.translationMode,
+  };
+}
+
 export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> = (set, get) => ({
   segments: DEFAULT_SEGMENTS,
   activeSegmentId: 1,
@@ -202,11 +212,6 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
   },
 
   runBatchTranslation: async () => {
-    const segments = get().segments;
-    const sourceLanguage = get().languages.source.code;
-    const targetLanguage = get().languages.target.code;
-    const translateType = get().backend.config.translateType;
-
     set({
       translationModal: {
         active: true,
@@ -218,12 +223,7 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
     });
 
     try {
-      const resp = await requestTranslate({
-        segments,
-        sourceLanguage,
-        targetLanguage,
-        translateType,
-      });
+      const resp = await requestTranslate(buildTranslationRequest(get()));
 
       if (resp.ok && resp.segments) {
         const segMap = new Map<number, string>();

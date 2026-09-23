@@ -31,7 +31,9 @@ import subprocess
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-from tests import webui_support as webui
+from videotrans.api.app import create_app
+from videotrans.util.help_role import role_menu
+
 from videotrans import tts
 
 
@@ -70,7 +72,7 @@ def test_voices_out_of_bounds_and_overflow_indices(tmp_path, mock_tts_catalogs):
     - Strict boundary index (4, since catalog length is 4: indices 0..3)
     - Floats, NaN, Infinity, non-numeric strings
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -117,7 +119,7 @@ def test_voices_boundary_and_malicious_language_codes(tmp_path, mock_tts_catalog
     - Long string (2,000 characters)
     - Unsupported language names
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -161,7 +163,7 @@ def test_voices_excessive_query_string_length(tmp_path):
     Verify server behavior when query string exceeds HTTP line limits (e.g. 10KB language string).
     aiohttp must reject with 400 Bad Request without crashing the process.
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -189,7 +191,7 @@ def test_voices_provider_name_aliases_and_casing(tmp_path, mock_tts_catalogs):
     - Dash, no-dash variants
     - Unknown/invalid aliases falling back safely
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -252,7 +254,7 @@ def test_voices_high_concurrency_stress(tmp_path, mock_tts_catalogs):
     mixing various providers, aliases, boundary language codes, and out-of-bounds indices.
     Verifies no race conditions, deadlocks, or degraded responses.
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -301,9 +303,9 @@ def test_voices_role_menu_exception_and_empty_edge_cases(tmp_path, monkeypatch):
     - role_menu returns [] -> endpoint returns {"voices": ["No"]}
     - role_menu raises unhandled RuntimeError, KeyError, MemoryError -> endpoint returns {"voices": ["No"]}
     """
-    app = webui.create_app(
+    app = create_app(
         upload_dir=tmp_path / "uploads",
-        role_provider=lambda *args, **kwargs: webui.role_menu(*args, **kwargs),
+        role_provider=lambda *args, **kwargs: role_menu(*args, **kwargs),
     )
 
     async def scenario():
@@ -346,352 +348,3 @@ def test_voices_role_menu_exception_and_empty_edge_cases(tmp_path, monkeypatch):
 # ============================================================================
 # 2. Subtitle Synchronization Boundary Timecode Testing (Headless Node.js DOM)
 # ============================================================================
-
-def test_subtitle_sync_boundary_timecodes_headless_node():
-    """
-    Empirically execute syncPreviewPlayback in Node.js v22 with simulated DOM
-    under boundary timecodes:
-    - Negative times (-5.0, -0.001)
-    - Inter-segment gaps (timestamps between segments)
-    - Exact boundary matching (startSec, endSec, epsilon transitions)
-    - Timecode 0.0 before first segment starts
-    - Timecode beyond last segment (999.0)
-    - Subtitle text fallback when targetText is missing
-    - XSS injection safety (.textContent escaping)
-    """
-    node_exe = shutil.which("node")
-    if not node_exe:
-        pytest.skip("Node.js is not installed on this environment")
-
-    test_script = """
-    const elements = {
-        '[data-canvas-subtitle]': { textContent: '' },
-        '[data-canvas-speaker-badge]': { textContent: '', style: { display: '' } },
-        '[data-preview-timeline]': { value: '0' },
-        '[data-scrubber-marker]': { style: { left: '0%' } },
-        '[data-scrubber-progress]': { style: { width: '0%' } },
-        '[data-preview-action-icon]': { textContent: 'play_arrow' },
-    };
-
-    const cardElements = [
-        {
-            attrs: { 'data-segment-card': '1' },
-            classes: new Set(['border-stone-200', 'bg-white']),
-            getAttribute(name) { return this.attrs[name]; },
-            classList: {
-                add(...cls) { cls.forEach(c => elements[`card-1`]?.classes.add(c)); },
-                remove(...cls) { cls.forEach(c => elements[`card-1`]?.classes.delete(c)); }
-            }
-        },
-        {
-            attrs: { 'data-segment-card': '2' },
-            classes: new Set(['border-stone-200', 'bg-white']),
-            getAttribute(name) { return this.attrs[name]; },
-            classList: {
-                add(...cls) { cls.forEach(c => elements[`card-2`]?.classes.add(c)); },
-                remove(...cls) { cls.forEach(c => elements[`card-2`]?.classes.delete(c)); }
-            }
-        }
-    ];
-    elements['card-1'] = cardElements[0];
-    elements['card-2'] = cardElements[1];
-
-    globalThis.window = globalThis;
-    globalThis.document = {
-        querySelector(selector) {
-            return elements[selector] || null;
-        },
-        querySelectorAll(selector) {
-            if (selector === '[data-segment-card]') return cardElements;
-            return [];
-        }
-    };
-
-    const { store } = await import('./frontend/js/state.js');
-
-    // Setup project with 2 segments separated by a 0.5s gap:
-    // Segment 1: [1.0, 5.0] (Speaker 1, Lead)
-    // Gap: (5.0, 5.5)
-    // Segment 2: [5.5, 9.0] (Speaker 2, Guest)
-    store.state.project.durationSec = 10.0;
-    store.state.segments = [
-        {
-            id: 1,
-            speakerId: 'spk_1',
-            speakerName: 'Alex Carter',
-            startSec: 1.0,
-            endSec: 5.0,
-            sourceText: 'Welcome everyone.',
-            targetText: 'Chào mừng mọi người.',
-        },
-        {
-            id: 2,
-            speakerId: 'spk_2',
-            speakerName: 'Elena Rostova',
-            startSec: 5.5,
-            endSec: 9.0,
-            sourceText: 'Thank you Alex.',
-            targetText: '<script>alert("xss")</script>',
-        }
-    ];
-
-    function runSync(time) {
-        const media = {
-            currentTime: time,
-            duration: 10.0,
-            paused: false
-        };
-        store.syncPreviewPlayback(media);
-        return {
-            subtitle: elements['[data-canvas-subtitle]'].textContent,
-            badge: elements['[data-canvas-speaker-badge]'].textContent,
-            badgeDisplay: elements['[data-canvas-speaker-badge]'].style.display,
-            activeSegId: store.state.activeSegmentId,
-        };
-    }
-
-    // -------------------------------------------------------------
-    // Test 1: Pre-transcript time (0.0s) before Segment 1 starts at 1.0s
-    // Expected: Subtitle empty, badge hidden
-    // -------------------------------------------------------------
-    let r = runSync(0.0);
-    if (r.subtitle !== '' || r.badgeDisplay !== 'none') {
-        console.error('FAIL: Pre-transcript at 0.0s should have empty subtitle, got:', r);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 2: Negative time (-1.5s)
-    // Expected: Subtitle empty, badge hidden, no crash
-    // -------------------------------------------------------------
-    r = runSync(-1.5);
-    if (r.subtitle !== '' || r.badgeDisplay !== 'none') {
-        console.error('FAIL: Negative time -1.5s should have empty subtitle, got:', r);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 3: Exact boundary startSec (1.0s) of Segment 1
-    // Expected: Segment 1 active, subtitle = "Chào mừng mọi người.", badge = "Alex Carter"
-    // -------------------------------------------------------------
-    r = runSync(1.0);
-    if (r.subtitle !== 'Chào mừng mọi người.' || r.badge !== 'Alex Carter' || r.badgeDisplay !== 'inline-flex') {
-        console.error('FAIL: Exact startSec 1.0s should activate Segment 1, got:', r);
-        process.exit(1);
-    }
-    if (store.state.activeSegmentId !== 1) {
-        console.error('FAIL: activeSegmentId should be 1, got:', store.state.activeSegmentId);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 4: Mid-segment (3.0s) of Segment 1
-    // Expected: Segment 1 active
-    // -------------------------------------------------------------
-    r = runSync(3.0);
-    if (r.subtitle !== 'Chào mừng mọi người.' || r.activeSegId !== 1) {
-        console.error('FAIL: Mid-segment 3.0s should be Segment 1, got:', r);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 5: Exact boundary endSec (5.0s) of Segment 1
-    // Expected: Segment 1 still active at s.endSec (startSec <= t && t <= endSec)
-    // -------------------------------------------------------------
-    r = runSync(5.0);
-    if (r.subtitle !== 'Chào mừng mọi người.' || r.activeSegId !== 1) {
-        console.error('FAIL: Exact endSec 5.0s should still include Segment 1, got:', r);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 6: Inter-segment gap (5.25s) between Seg 1 (ends 5.0) and Seg 2 (starts 5.5)
-    // Expected: Subtitle cleared, badge hidden
-    // -------------------------------------------------------------
-    r = runSync(5.25);
-    if (r.subtitle !== '' || r.badgeDisplay !== 'none') {
-        console.error('FAIL: Inter-segment gap 5.25s should clear subtitle, got:', r);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 7: Exact boundary startSec (5.5s) of Segment 2 (with script string)
-    // Expected: Segment 2 active, textContent safely contains script string without execution
-    // -------------------------------------------------------------
-    r = runSync(5.5);
-    if (r.subtitle !== '<script>alert("xss")</script>' || r.badge !== 'Elena Rostova' || r.badgeDisplay !== 'inline-flex') {
-        console.error('FAIL: Exact startSec 5.5s should activate Segment 2, got:', r);
-        process.exit(1);
-    }
-    if (store.state.activeSegmentId !== 2) {
-        console.error('FAIL: activeSegmentId should be 2, got:', store.state.activeSegmentId);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 8: Exact boundary endSec (9.0s) of Segment 2
-    // Expected: Segment 2 active
-    // -------------------------------------------------------------
-    r = runSync(9.0);
-    if (r.subtitle !== '<script>alert("xss")</script>' || r.activeSegId !== 2) {
-        console.error('FAIL: Exact endSec 9.0s should include Segment 2, got:', r);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 9: Epsilon past endSec (9.001s)
-    // Expected: Subtitle cleared, badge hidden
-    // -------------------------------------------------------------
-    r = runSync(9.001);
-    if (r.subtitle !== '' || r.badgeDisplay !== 'none') {
-        console.error('FAIL: 9.001s past endSec should clear subtitle, got:', r);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 10: Far beyond duration (999.0s)
-    // Expected: Subtitle cleared, scrubber clamped at 100%
-    // -------------------------------------------------------------
-    r = runSync(999.0);
-    if (r.subtitle !== '' || r.badgeDisplay !== 'none') {
-        console.error('FAIL: Far past duration 999.0s should clear subtitle, got:', r);
-        process.exit(1);
-    }
-    if (elements['[data-scrubber-progress]'].style.width !== '100%') {
-        console.error('FAIL: Scrubber progress should be 100%, got:', elements['[data-scrubber-progress]'].style.width);
-        process.exit(1);
-    }
-
-    // -------------------------------------------------------------
-    // Test 11: Text fallback when targetText is empty/null
-    // Expected: Falls back to sourceText
-    // -------------------------------------------------------------
-    store.state.segments[0].targetText = null;
-    r = runSync(2.0);
-    if (r.subtitle !== 'Welcome everyone.') {
-        console.error('FAIL: Missing targetText should fall back to sourceText, got:', r.subtitle);
-        process.exit(1);
-    }
-
-    console.log("ALL_SUBTITLE_SYNC_BOUNDARY_TESTS_PASSED");
-    """
-
-    res = subprocess.run([node_exe, "--input-type=module", "-e", test_script], capture_output=True, text=True)
-    assert res.returncode == 0, f"Node boundary sync test failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
-    assert "ALL_SUBTITLE_SYNC_BOUNDARY_TESTS_PASSED" in res.stdout
-
-
-def test_subtitle_sync_contiguous_zero_gap_boundary_transitions():
-    """
-    Test contiguous segments with zero gap:
-    Segment 1: [0.0, 3.0]
-    Segment 2: [3.0, 6.0]
-    Verify that at exact boundary 3.0s, Array.find resolves Segment 1 cleanly,
-    and at 3.001s it seamlessly switches to Segment 2 without intermediate flickering or crashes.
-    """
-    node_exe = shutil.which("node")
-    if not node_exe:
-        pytest.skip("Node.js is not installed on this environment")
-
-    test_script = """
-    const elements = {
-        '[data-canvas-subtitle]': { textContent: '' },
-        '[data-canvas-speaker-badge]': { textContent: '', style: { display: '' } },
-        '[data-preview-timeline]': { value: '0' },
-        '[data-scrubber-marker]': { style: { left: '0%' } },
-        '[data-scrubber-progress]': { style: { width: '0%' } },
-        '[data-preview-action-icon]': { textContent: 'play_arrow' },
-    };
-
-    globalThis.window = globalThis;
-    globalThis.document = {
-        querySelector(selector) { return elements[selector] || null; },
-        querySelectorAll() { return []; }
-    };
-
-    const { store } = await import('./frontend/js/state.js');
-
-    store.state.project.durationSec = 6.0;
-    store.state.segments = [
-        { id: 1, speakerId: 'spk_1', speakerName: 'Speaker A', startSec: 0.0, endSec: 3.0, targetText: 'Part 1' },
-        { id: 2, speakerId: 'spk_2', speakerName: 'Speaker B', startSec: 3.0, endSec: 6.0, targetText: 'Part 2' },
-    ];
-
-    function runSync(time) {
-        store.syncPreviewPlayback({ currentTime: time, duration: 6.0, paused: false });
-        return {
-            sub: elements['[data-canvas-subtitle]'].textContent,
-            badge: elements['[data-canvas-speaker-badge]'].textContent,
-            activeId: store.state.activeSegmentId
-        };
-    }
-
-    // At 2.999s -> Segment 1
-    let r1 = runSync(2.999);
-    if (r1.sub !== 'Part 1' || r1.activeId !== 1) {
-        console.error('FAIL at 2.999s:', r1);
-        process.exit(1);
-    }
-
-    // At exactly 3.000s -> Segment 1 (first match satisfying s.startSec <= 3.0 <= s.endSec)
-    let r2 = runSync(3.000);
-    if (r2.sub !== 'Part 1' || r2.activeId !== 1) {
-        console.error('FAIL at 3.000s:', r2);
-        process.exit(1);
-    }
-
-    // At 3.001s -> Segment 2
-    let r3 = runSync(3.001);
-    if (r3.sub !== 'Part 2' || r3.activeId !== 2) {
-        console.error('FAIL at 3.001s:', r3);
-        process.exit(1);
-    }
-
-    console.log("CONTIGUOUS_ZERO_GAP_PASSED");
-    """
-
-    res = subprocess.run([node_exe, "--input-type=module", "-e", test_script], capture_output=True, text=True)
-    assert res.returncode == 0, f"Node contiguous sync failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
-    assert "CONTIGUOUS_ZERO_GAP_PASSED" in res.stdout
-
-
-def test_subtitle_sync_empty_segments_and_non_finite_time():
-    """
-    Stress test syncPreviewPlayback resilience when:
-    - store.state.segments is completely empty []
-    - media.currentTime is NaN, Infinity, undefined, null, or string
-    - DOM elements for subtitle/badge are not mounted (returns null)
-    """
-    node_exe = shutil.which("node")
-    if not node_exe:
-        pytest.skip("Node.js is not installed on this environment")
-
-    test_script = """
-    globalThis.window = globalThis;
-    globalThis.document = {
-        querySelector() { return null; },
-        querySelectorAll() { return []; }
-    };
-
-    const { store } = await import('./frontend/js/state.js');
-
-    // Case 1: Empty segments array
-    store.state.segments = [];
-    store.syncPreviewPlayback({ currentTime: 5.0, duration: 10.0, paused: false });
-
-    // Case 2: Non-finite currentTime values
-    const nonFiniteValues = [NaN, Infinity, -Infinity, undefined, null, 'string_time'];
-    for (const val of nonFiniteValues) {
-        store.syncPreviewPlayback({ currentTime: val, duration: 10.0, paused: false });
-        if (store.state.playback.currentTime !== 0) {
-            console.error(`FAIL: Non-finite time ${val} should default to 0, got:`, store.state.playback.currentTime);
-            process.exit(1);
-        }
-    }
-
-    console.log("EMPTY_AND_NON_FINITE_RESILIENCE_PASSED");
-    """
-
-    res = subprocess.run([node_exe, "--input-type=module", "-e", test_script], capture_output=True, text=True)
-    assert res.returncode == 0, f"Node empty/non-finite sync failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
-    assert "EMPTY_AND_NON_FINITE_RESILIENCE_PASSED" in res.stdout

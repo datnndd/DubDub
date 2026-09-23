@@ -15,25 +15,6 @@ from videotrans.task.orchestrator import (
 from videotrans.core.job_manager import JobManager, JobRecord
 
 
-def test_frontend_files_contain_timing_markers():
-    stage1 = Path("frontend/js/screens/Stage1Prepare.js").read_text(encoding="utf-8")
-    assert "renderAsrProgressCard" in stage1
-    assert "data-asr-progress" in stage1
-    assert "elapsedSeconds" in stage1
-
-    stage2 = Path("frontend/js/screens/Stage2ReviewTranscript.js").read_text(encoding="utf-8")
-    assert "asrDuration" in stage2
-    assert "ASR: ${state.backend.asrDuration}s" in stage2
-
-    footer = Path("frontend/js/components/StatusFooter.js").read_text(encoding="utf-8")
-    assert "backend.asrDuration" in footer
-    assert "backend.elapsedSeconds" in footer
-
-    app_js = Path("frontend/js/app.js").read_text(encoding="utf-8")
-    assert "renderAsrProgressCard" in app_js
-    assert "data-asr-progress" in app_js
-
-
 def test_task_result_has_asr_duration():
     res = TaskResult(
         job_id="test-123",

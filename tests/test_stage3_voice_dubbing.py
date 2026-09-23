@@ -43,7 +43,8 @@ import subprocess
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-from tests import webui_support as webui
+from videotrans.api.app import create_app
+
 from videotrans import tts
 
 
@@ -150,7 +151,7 @@ def multi_speaker_sample_segments():
 
 def test_voices_endpoint_elevenlabs_provider_0(tmp_path, mock_tts_catalogs):
     """Verify ElevenLabs (provider 0) returns status 200 and mocked voice list."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -170,7 +171,7 @@ def test_voices_endpoint_elevenlabs_provider_0(tmp_path, mock_tts_catalogs):
 
 def test_voices_endpoint_omnivoice_provider_1(tmp_path, mock_tts_catalogs):
     """Verify OmniVoice (provider 1) returns status 200 and mocked voice list."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -190,7 +191,7 @@ def test_voices_endpoint_omnivoice_provider_1(tmp_path, mock_tts_catalogs):
 
 def test_voices_endpoint_vieneu_provider_2(tmp_path, mock_tts_catalogs):
     """Verify VieNeu-TTS (provider 2) returns status 200 and mocked voice list."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -210,7 +211,7 @@ def test_voices_endpoint_vieneu_provider_2(tmp_path, mock_tts_catalogs):
 
 def test_voices_endpoint_gemini_provider_3(tmp_path, mock_tts_catalogs):
     """Verify Gemini TTS (provider 3) returns status 200 and mocked voice list."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -230,7 +231,7 @@ def test_voices_endpoint_gemini_provider_3(tmp_path, mock_tts_catalogs):
 
 def test_voices_endpoint_param_aliases_provider_and_target_language(tmp_path, mock_tts_catalogs):
     """Verify parameter aliases: `provider` maps to `ttsType` and `target_language` maps to `language`."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -257,7 +258,7 @@ def test_voices_endpoint_param_aliases_provider_and_target_language(tmp_path, mo
 
 def test_voices_endpoint_string_provider_aliases(tmp_path, mock_tts_catalogs):
     """Verify named string provider aliases (e.g. 'elevenlabs', 'vieneu-tts', 'gemini')."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -282,7 +283,7 @@ def test_voices_endpoint_string_provider_aliases(tmp_path, mock_tts_catalogs):
 
 def test_voices_endpoint_missing_parameters_uses_default(tmp_path, mock_tts_catalogs):
     """Verify querying without params defaults gracefully without 4xx/500 errors."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -302,7 +303,7 @@ def test_voices_endpoint_missing_parameters_uses_default(tmp_path, mock_tts_cata
 
 def test_voices_endpoint_invalid_and_out_of_bounds_params(tmp_path):
     """Verify non-numeric or out-of-bounds params return 200 with safe voice list."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -337,7 +338,7 @@ def test_voices_endpoint_exception_resilience(tmp_path, monkeypatch):
         raise RuntimeError("Remote TTS engine unavailable")
 
     monkeypatch.setattr(webui, "role_menu", crash_role_menu)
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -355,7 +356,7 @@ def test_voices_endpoint_exception_resilience(tmp_path, monkeypatch):
 
 def test_api_options_contains_tts_defaults_and_providers(tmp_path):
     """Verify /api/options supplies the voice providers list including the 4 contiguous engines."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -568,250 +569,15 @@ def test_speaker_voice_map_persists_across_step_transitions():
 # Section 3: Frontend Component Contracts & DOM Invariants
 # ============================================================================
 
-def test_stage3_teleprompter_timestamp_format_mm_ss_mmm():
-    """Stage3 teleprompter script renders timestamps using formatted MM:SS.mmm format."""
-    stage3_path = Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage3VoiceDubbing.js"
-    source = stage3_path.read_text(encoding="utf-8")
-
-    assert "formatTime" in source or "startTime" in source
-    assert "startSec" in source and "endSec" in source
-
-
-def test_stage3_teleprompter_speaker_badge_rendering():
-    """Teleprompter items render the speaker badge displaying speakerName and code/color."""
-    stage3_path = Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage3VoiceDubbing.js"
-    source = stage3_path.read_text(encoding="utf-8")
-
-    assert "speakerName" in source
-    assert "speakerCode" in source
-    assert "speakerColor" in source or "colorClass" in source
-
-
-def test_stage3_teleprompter_inline_textarea_contract():
-    """Teleprompter contains editable textarea with data-segment-input attribute and targetText binding."""
-    stage3_path = Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage3VoiceDubbing.js"
-    source = stage3_path.read_text(encoding="utf-8")
-
-    assert "data-segment-input" in source
-    assert "targetText" in source
-    assert "updateSegmentTargetText" in source
-
-
-def test_stage3_teleprompter_selected_voice_dropdown_and_default_indicator():
-    """Voice selector dropdown renders in each block, marking the speaker's assigned voice with '(Default)'."""
-    stage3_path = Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage3VoiceDubbing.js"
-    source = stage3_path.read_text(encoding="utf-8")
-
-    assert "data-segment-voice-select" in source
-    assert "(Default)" in source
-    assert "setSegmentVoiceOverride" in source
-
-
-def test_stage3_teleprompter_voice_override_and_reset_button():
-    """Teleprompter renders reset button with data-action='reset-segment-voice' when an override exists."""
-    stage3_path = Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage3VoiceDubbing.js"
-    source = stage3_path.read_text(encoding="utf-8")
-
-    assert "data-action=\"reset-segment-voice\"" in source
-    assert "clearSegmentVoiceOverride" in source
-
-
-def test_stage3_teleprompter_video_seek_and_play_trigger():
-    """Clicking a teleprompter card or audition button triggers seekAndPlay with data-action='seek-segment'."""
-    stage3_path = Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage3VoiceDubbing.js"
-    source = stage3_path.read_text(encoding="utf-8")
-
-    assert "data-action=\"seek-segment\"" in source
-    assert "seekAndPlay" in source
-
-
-def test_stage3_console_provider_and_speaker_matrix_controls():
-    """Upper console renders TTS provider select and dynamic speaker matrix selectors."""
-    stage3_path = Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage3VoiceDubbing.js"
-    source = stage3_path.read_text(encoding="utf-8")
-
-    assert "data-action=\"select-tts-provider\"" in source
-    assert "data-speaker-voice-select" in source
-    assert "updateSpeakerVoice" in source
-    assert "updateBackendConfig" in source
-
 
 # ============================================================================
 # Section 4: Video Player Subtitle Overlay & Canvas Sync
 # ============================================================================
 
-def test_video_player_contains_canvas_subtitle_and_badge_attributes():
-    """VideoPlayer.js contains data-canvas-subtitle and data-canvas-speaker-badge queryable attributes."""
-    player_path = Path(webui.FRONTEND_DIR) / "js" / "components" / "VideoPlayer.js"
-    source = player_path.read_text(encoding="utf-8")
-
-    assert "data-canvas-subtitle" in source
-    assert "data-canvas-speaker-badge" in source
-
-
-def test_sync_preview_playback_updates_canvas_subtitle_dom():
-    """state.js syncPreviewPlayback queries canvas subtitle/badge and updates text dynamically."""
-    state_path = Path(webui.FRONTEND_DIR) / "js" / "state.js"
-    source = state_path.read_text(encoding="utf-8")
-
-    assert "syncPreviewPlayback" in source
-    assert "data-canvas-subtitle" in source
-    assert "data-canvas-speaker-badge" in source
-    assert "targetText" in source
-
 
 # ============================================================================
 # Section 5: Headless Node.js Execution & Multi-Speaker Workflow Scenario
 # ============================================================================
-
-def test_headless_node_stage3_screen_render():
-    """Execute Stage3VoiceDubbing.js in Node.js v22 and assert generated DOM contains Stage 3 invariants."""
-    node_exe = shutil.which("node")
-    if not node_exe:
-        pytest.skip("Node.js is not installed on this environment")
-
-    test_script = """
-    globalThis.window = globalThis;
-    globalThis.document = {
-        querySelector: () => null,
-        querySelectorAll: () => []
-    };
-
-    const { renderStage3VoiceDubbing } = await import('./frontend/js/screens/Stage3VoiceDubbing.js');
-    const { store } = await import('./frontend/js/state.js');
-
-    const state = store.getState();
-    state.currentStep = 3;
-    state.backend.options.voices = [[0, "ElevenLabs"], [1, "OmniVoice"], [2, "VieNeu-TTS"], [3, "Gemini TTS"]];
-    state.backend.options.voiceRoles = ["Rachel", "Domi", "Bella", "Antoni"];
-    state.backend.config.ttsType = 0;
-    state.backend.config.voiceRole = "Rachel";
-    state.speakerVoiceMap = { "spk_1": "Rachel", "spk_2": "Domi" };
-
-    // Set segment 3 to have an explicit override
-    if (state.segments[2]) {
-        state.segments[2].voiceOverride = "Bella";
-    }
-
-    const html = renderStage3VoiceDubbing(state);
-
-    if (!html || typeof html !== 'string') {
-        console.error("Render produced non-string output");
-        process.exit(1);
-    }
-
-    // Required Contract Verifications
-    const checks = [
-        ['select-tts-provider', html.includes('data-action="select-tts-provider"')],
-        ['speaker-matrix-select', html.includes('data-speaker-voice-select="spk_1"')],
-        ['segment-input-textarea', html.includes('data-segment-input="stage3-1"')],
-        ['segment-voice-select', html.includes('data-segment-voice-select="1"')],
-        ['default-indicator', html.includes('(Default)')],
-        ['reset-segment-voice', html.includes('data-action="reset-segment-voice"')],
-        ['seek-segment-action', html.includes('data-action="seek-segment"')],
-        ['target-text-rendered', html.includes('targetText') || html.includes('AI DUB')],
-    ];
-
-    for (const [name, passed] of checks) {
-        if (!passed) {
-            console.error(`Check failed: ${name}`);
-            process.exit(1);
-        }
-    }
-
-    console.log("ALL_NODE_CHECKS_PASSED");
-    """
-
-    res = subprocess.run([node_exe, "--input-type=module", "-e", test_script], capture_output=True, text=True)
-    assert res.returncode == 0, f"Node script failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
-    assert "ALL_NODE_CHECKS_PASSED" in res.stdout
-
-
-def test_headless_node_multi_speaker_store_state_and_override_workflow():
-    """Verify live state mutations via WorkflowStore in Node: distinct speakers, override propagation, and reset."""
-    node_exe = shutil.which("node")
-    if not node_exe:
-        pytest.skip("Node.js is not installed on this environment")
-
-    test_script = """
-    globalThis.window = globalThis;
-    globalThis.document = {
-        querySelector: () => null,
-        querySelectorAll: () => []
-    };
-
-    const { store } = await import('./frontend/js/state.js');
-
-    // 1. Initial State Setup with 2 Speakers
-    store.state.segments = [
-        { id: 101, speakerId: "spk_1", speakerName: "Speaker One", startSec: 0, endSec: 2, targetText: "Text 1", voiceOverride: null },
-        { id: 102, speakerId: "spk_2", speakerName: "Speaker Two", startSec: 2, endSec: 4, targetText: "Text 2", voiceOverride: null },
-        { id: 103, speakerId: "spk_1", speakerName: "Speaker One", startSec: 4, endSec: 6, targetText: "Text 3", voiceOverride: null },
-    ];
-    store.state.backend.options.voiceRoles = ["Voice-Alpha", "Voice-Beta", "Voice-Gamma"];
-
-    // 2. Distinct Speakers Detection
-    const speakers = store.getDistinctSpeakers();
-    if (speakers.length !== 2) {
-        console.error("Expected 2 distinct speakers, got", speakers.length);
-        process.exit(1);
-    }
-
-    // 3. Assign Voices to Speakers
-    store.updateSpeakerVoice("spk_1", "Voice-Alpha");
-    store.updateSpeakerVoice("spk_2", "Voice-Beta");
-
-    if (store.getResolvedVoice(store.state.segments[0]) !== "Voice-Alpha") {
-        console.error("Seg 101 did not resolve to Voice-Alpha");
-        process.exit(1);
-    }
-    if (store.getResolvedVoice(store.state.segments[1]) !== "Voice-Beta") {
-        console.error("Seg 102 did not resolve to Voice-Beta");
-        process.exit(1);
-    }
-    if (store.getResolvedVoice(store.state.segments[2]) !== "Voice-Alpha") {
-        console.error("Seg 103 did not resolve to Voice-Alpha");
-        process.exit(1);
-    }
-
-    // 4. Set Override on Seg 103
-    store.setSegmentVoiceOverride(103, "Voice-Gamma");
-    if (store.getResolvedVoice(store.state.segments[2]) !== "Voice-Gamma") {
-        console.error("Seg 103 override failed");
-        process.exit(1);
-    }
-
-    // 5. Change Global spk_1 Voice
-    store.updateSpeakerVoice("spk_1", "Voice-Updated");
-    if (store.getResolvedVoice(store.state.segments[0]) !== "Voice-Updated") {
-        console.error("Seg 101 did not update to Voice-Updated");
-        process.exit(1);
-    }
-    if (store.getResolvedVoice(store.state.segments[2]) !== "Voice-Gamma") {
-        console.error("Seg 103 override was erroneously overwritten");
-        process.exit(1);
-    }
-
-    // 6. Reset Override on Seg 103
-    store.clearSegmentVoiceOverride(103);
-    if (store.getResolvedVoice(store.state.segments[2]) !== "Voice-Updated") {
-        console.error("Seg 103 reset did not restore global voice");
-        process.exit(1);
-    }
-
-    // 7. Update Target Text
-    store.updateSegmentTargetText(101, "Updated Translation");
-    if (store.state.segments[0].targetText !== "Updated Translation") {
-        console.error("Target text update failed");
-        process.exit(1);
-    }
-
-    console.log("STATE_MUTATIONS_WORKFLOW_VERIFIED");
-    """
-
-    res = subprocess.run([node_exe, "--input-type=module", "-e", test_script], capture_output=True, text=True)
-    assert res.returncode == 0, f"Node state mutation script failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
-    assert "STATE_MUTATIONS_WORKFLOW_VERIFIED" in res.stdout
 
 
 def test_e2e_multi_speaker_dubbing_scenario(tmp_path, mock_tts_catalogs):
@@ -825,7 +591,7 @@ def test_e2e_multi_speaker_dubbing_scenario(tmp_path, mock_tts_catalogs):
     6. Editing target text and verifying persistence
     7. Seeking playback to active segment
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))

@@ -10,7 +10,11 @@ from aiohttp import FormData
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-from tests import webui_support as webui
+from videotrans import recognition
+from videotrans.api.app import create_app
+from videotrans.api.ocr_helpers import extract_ocr_segment_text
+from videotrans.api.task_params import build_task_params
+from videotrans.core.job_manager import JobManager
 from videotrans.task import orchestrator
 from videotrans.task.orchestrator import (
     CancellationToken,
@@ -371,9 +375,9 @@ def test_job_submission_supports_asr_job_type(tmp_path, monkeypatch):
         sink(TaskEvent("task", EventKind.STAGE_STARTED, "recogn", message="Transcribing speech"))
         return TaskResult("task", TaskStatus.SUCCEEDED, tmp_path, (), segments=sample_segments)
 
-    manager = webui.JobManager(asr_runner=fake_asr_runner)
+    manager = JobManager(asr_runner=fake_asr_runner)
     monkeypatch.setattr(webui, "getset_gpu", lambda: None)
-    app = webui.create_app(job_manager=manager, upload_dir=tmp_path / "uploads", media_probe=fake_probe)
+    app = create_app(job_manager=manager, upload_dir=tmp_path / "uploads", media_probe=fake_probe)
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -392,7 +396,7 @@ def test_job_submission_supports_asr_job_type(tmp_path, monkeypatch):
                 "jobType": "asr",
                 "options": {
                     "sourceLanguage": "en",
-                    "recognType": webui.recognition.FASTER_WHISPER,
+                    "recognType": recognition.FASTER_WHISPER,
                     "modelName": "large-v3",
                     "speakerDiarization": False,
                 },
@@ -435,7 +439,7 @@ def test_job_submission_supports_asr_job_type(tmp_path, monkeypatch):
 
 
 def test_api_segments_split(tmp_path):
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -515,7 +519,7 @@ def test_api_ocr_extract_endpoint(tmp_path):
             "streams_audio": 1,
         }
 
-    app = webui.create_app(
+    app = create_app(
         upload_dir=tmp_path / "uploads",
         media_probe=fake_probe,
         ocr_extractor=fake_ocr_extractor,
@@ -600,7 +604,7 @@ def test_extract_ocr_segment_text_functional(tmp_path, monkeypatch):
             {"text": "Extracted line of subtitle", "confidence": 0.92, "box": (10, 10, 80, 30)}
         ]
 
-    result = webui.extract_ocr_segment_text(
+    result = extract_ocr_segment_text(
         str(test_video),
         start_sec=1.0,
         end_sec=3.0,
@@ -639,7 +643,7 @@ def test_extract_ocr_segment_text_with_ocr_result_object(tmp_path):
             timestamp_ms=1000,
         )
 
-    result = webui.extract_ocr_segment_text(
+    result = extract_ocr_segment_text(
         str(test_video),
         start_sec=1.0,
         end_sec=2.0,
@@ -666,7 +670,7 @@ def test_ocr_extract_handler_forwards_language(tmp_path):
     def fake_probe(_path):
         return {"time": 5000, "width": 1920, "height": 1080, "video_fps": 30}
 
-    app = webui.create_app(
+    app = create_app(
         upload_dir=tmp_path / "uploads",
         media_probe=fake_probe,
         ocr_extractor=fake_ocr_extractor,
@@ -714,10 +718,10 @@ def test_asr_job_params_skip_video_render_preparation(tmp_path, monkeypatch):
     monkeypatch.setattr(webui, "TEMP_DIR", str(temp_dir))
     monkeypatch.setattr(webui, "OUTPUT_DIR", output_dir)
 
-    params = webui.build_task_params(source, {
+    params = build_task_params(source, {
         "sourceLanguage": "en",
         "targetLanguage": "vi",
-        "recognType": webui.recognition.Deepgram,
+        "recognType": recognition.Deepgram,
         "modelName": "nova-3",
         "timingMode": "video",
         "voiceRole": "should-not-run-in-prepare",
@@ -732,56 +736,6 @@ def test_asr_job_params_skip_video_render_preparation(tmp_path, monkeypatch):
     assert params["embed_bgm"] is False
     assert params["background_music"] is None
     assert params["thumbnail"] is None
-
-
-def test_asr_polling_updates_status_without_remounting_video():
-    app_source = (Path(webui.FRONTEND_DIR) / "js" / "app.js").read_text(encoding="utf-8")
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-    footer_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "StatusFooter.js").read_text(encoding="utf-8")
-
-    assert "renderStatusOnly" in app_source
-    assert "scope === 'status'" in app_source
-    assert "notify(scope = 'full')" in state_source
-    assert "this.notify('status')" in state_source
-    assert "data-status-footer" in footer_source
-
-
-def test_frontend_has_start_dub_button_and_tooltip():
-    footer_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "StatusFooter.js").read_text(encoding="utf-8")
-    assert "Start Dub" in footer_source
-    assert "data-action=\"start-dub\"" in footer_source
-    assert "window.dubDubStore.startDub()" in footer_source
-    assert "Select media to begin transcription" in footer_source or "disabled" in footer_source
-
-
-def test_frontend_has_transcript_review_and_ocr_crop():
-    stage2_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage2ReviewTranscript.js").read_text(encoding="utf-8")
-    player_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "VideoPlayer.js").read_text(encoding="utf-8")
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-
-    # Dialog card features
-    assert "updateSegmentText" in stage2_source
-    assert "splitSegment" in stage2_source
-    assert "Split Segment" in stage2_source
-    assert "Replace with OCR" in stage2_source
-    assert "Speaker 1" in stage2_source
-
-    # Active segment dynamic binding (not hardcoded to segment 2)
-    assert "activeSeg" in stage2_source
-    assert "activeSegmentId" in player_source
-    assert "speakerDiarization" in stage2_source
-
-    # Interactive OCR crop overlay
-    assert "data-crop-box" in player_source
-    assert "Bottom Subtitles" in player_source
-    assert "Confirm &amp; Replace" in player_source or "Confirm & Replace" in player_source
-
-    # State methods
-    assert "startDub" in state_source
-    assert "splitSegment" in state_source
-    assert "updateSegmentText" in state_source
-    assert "openOcrCrop" in state_source
-    assert "confirmOcrCrop" in state_source
 
 
 def test_split_segment_period_punctuation_and_cjk():
@@ -828,7 +782,7 @@ def test_format_and_parse_infinite_and_overflow_timestamps():
 
 def test_api_segments_split_with_custom_next_id(tmp_path):
     """Ensure POST /api/segments/split honors nextId in payload."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -859,25 +813,4 @@ def test_api_segments_split_with_custom_next_id(tmp_path):
             await client.close()
 
     asyncio.run(scenario())
-
-
-def test_frontend_interactive_crop_and_state_hardening():
-    """Verify interactive crop overlay markup, drag/resize handlers, and double-submit hardening."""
-    player_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "VideoPlayer.js").read_text(encoding="utf-8")
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-    stage2_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage2ReviewTranscript.js").read_text(encoding="utf-8")
-    app_source = (Path(webui.FRONTEND_DIR) / "js" / "app.js").read_text(encoding="utf-8")
-
-    # Crop overlay and interactive handles
-    assert "data-crop-overlay" in player_source
-    assert "initRoiDrag" in player_source
-    assert "initRoiDrag" in state_source
-
-    # Live CPS badge and focus preservation
-    assert "data-cps-badge" in stage2_source
-    assert "data-segment-input" in app_source
-    assert "setSelectionRange" in app_source
-
-    # Double-submit protection in startDub
-    assert "'submitting'" in state_source
 

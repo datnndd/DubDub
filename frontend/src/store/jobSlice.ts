@@ -20,6 +20,24 @@ export interface JobSlice {
   clearJob: () => void;
 }
 
+export function buildPrepareJobRequest(state: any) {
+  return {
+    mediaId: state.backend.mediaId,
+    projectId: state.activeProjectId,
+    jobType: 'asr',
+    options: {
+      ...state.backend.config,
+      projectId: state.activeProjectId,
+      sourceLanguage: state.languages.source.code,
+      targetLanguage: state.languages.target.code,
+      timingMode: state.languages.timingMode,
+      removeNoise: state.engines.removeNoise,
+      speakerDiarization: state.engines.speakerDiarization,
+      speakerCount: state.engines.speakerCount,
+    },
+  };
+}
+
 export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) => ({
   activeJob: null,
   jobProgress: null,
@@ -64,21 +82,7 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
       elapsedSeconds: 0,
     });
 
-    const body = {
-      mediaId,
-      projectId: get().activeProjectId,
-      jobType: 'asr',
-      options: {
-        ...backend.config,
-        projectId: get().activeProjectId,
-        sourceLanguage: get().languages.source.code,
-        targetLanguage: get().languages.target.code,
-        timingMode: get().languages.timingMode,
-        removeNoise: get().engines.removeNoise,
-        speakerDiarization: get().engines.speakerDiarization,
-        speakerCount: get().engines.speakerCount,
-      },
-    };
+    const body = buildPrepareJobRequest(get());
 
     try {
       const res = await startJob(body);

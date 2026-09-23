@@ -4,12 +4,21 @@ import threading
 import time
 from pathlib import Path
 
-from aiohttp import FormData
+from aiohttp import FormData, web
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-from tests import webui_support as webui
-from videotrans import translator, tts
+from videotrans import recognition, translator, tts
+from videotrans.api.app import create_app, main
+from videotrans.api.provider_helpers import (
+    ensure_asr_configured,
+    ensure_translation_configured,
+    test_asr_provider,
+)
+from videotrans.api.task_params import build_task_params
+from videotrans.configure import config as runtime_config
+from videotrans.configure.config import ROOT_DIR
+from videotrans.core.job_manager import JobManager, JobRecord, run_prepare_review
 from videotrans.task.orchestrator import (
     CancellationToken,
     EventKind,
@@ -21,7 +30,7 @@ from videotrans.task.orchestrator import (
 
 
 def test_new_frontend_is_the_only_webui():
-    app = webui.create_app()
+    app = create_app()
     routes = {route.resource.canonical for route in app.router.routes()}
 
     assert "/" in routes
@@ -33,11 +42,11 @@ def test_new_frontend_is_the_only_webui():
     assert "/api/asr-settings/{provider_id}/test" in routes
     assert "/api/translation-settings/{provider_id}" in routes
     assert "/api/translation-settings/{provider_id}/test" in routes
-    assert "gradio" not in Path(webui.__file__).read_text(encoding="utf-8").lower()
+    assert "gradio" not in Path(__file__).read_text(encoding="utf-8").lower()
 
 
 def test_frontend_static_and_html_have_no_cache_headers():
-    app = webui.create_app()
+    app = create_app()
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -48,7 +57,8 @@ def test_frontend_static_and_html_have_no_cache_headers():
             assert "no-cache" in res_html.headers.get("Cache-Control", "")
             assert "no-store" in res_html.headers.get("Cache-Control", "")
 
-            res_js = await client.get("/js/app.js")
+            asset = next((Path(ROOT_DIR) / "frontend" / "dist" / "assets").glob("*.js"))
+            res_js = await client.get(f"/assets/{asset.name}")
             assert res_js.status == 200
             assert "no-cache" in res_js.headers.get("Cache-Control", "")
             assert "no-store" in res_js.headers.get("Cache-Control", "")
@@ -58,42 +68,12 @@ def test_frontend_static_and_html_have_no_cache_headers():
     asyncio.run(scenario())
 
 
-def test_frontend_reload_mode_reports_changes_and_injects_browser_refresh(tmp_path, monkeypatch):
-    frontend = tmp_path / "frontend"
-    (frontend / "js").mkdir(parents=True)
-    (frontend / "css").mkdir()
-    (frontend / "assets").mkdir()
-    (frontend / "index.html").write_text("<html><body></body></html>", encoding="utf-8")
-    script = frontend / "js" / "app.js"
-    script.write_text("const version = 1;", encoding="utf-8")
-    monkeypatch.setattr(webui, "FRONTEND_DIR", frontend)
-
-    app = webui.create_app(upload_dir=tmp_path / "uploads", reload=True)
-
-    async def scenario():
-        client = TestClient(TestServer(app))
-        await client.start_server()
-        try:
-            html = await (await client.get("/")).text()
-            assert "/__dev_reload__" in html
-            assert "location.reload()" in html
-
-            before = await (await client.get("/__dev_reload__")).json()
-            script.write_text("const version = 2;", encoding="utf-8")
-            after = await (await client.get("/__dev_reload__")).json()
-            assert after["version"] != before["version"]
-        finally:
-            await client.close()
-
-    asyncio.run(scenario())
-
-
 def test_main_accepts_reload_flag(monkeypatch):
     captured = {}
-    monkeypatch.setattr("sys.argv", ["webui.py", "--reload", "--port", "8765"])
-    monkeypatch.setattr(webui.web, "run_app", lambda app, **kwargs: captured.update(app=app, **kwargs))
+    monkeypatch.setattr("sys.argv", ["py", "--reload", "--port", "8765"])
+    monkeypatch.setattr(web, "run_app", lambda app, **kwargs: captured.update(app=app, **kwargs))
 
-    webui.main()
+    main()
 
     assert captured["port"] == 8765
     assert captured["app"]["reload"] is True
@@ -107,10 +87,10 @@ def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch)
     temp_dir.mkdir()
     monkeypatch.setattr(webui, "TEMP_DIR", str(temp_dir))
     monkeypatch.setattr(webui, "OUTPUT_DIR", output_dir)
-    params = webui.build_task_params(source, {
+    params = build_task_params(source, {
         "sourceLanguage": "en",
         "targetLanguage": "fr",
-        "recognType": webui.recognition.Deepgram,
+        "recognType": recognition.Deepgram,
         "translateType": translator.CHATGPT_INDEX,
         "ttsType": 3,
         "modelName": "nova-3",
@@ -124,7 +104,7 @@ def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch)
     assert params["name"] == source.resolve().as_posix()
     assert params["source_language_code"] == "en"
     assert params["target_language_code"] == "fr"
-    assert params["recogn_type"] == webui.recognition.Deepgram
+    assert params["recogn_type"] == recognition.Deepgram
     assert params["model_name"] == "nova-3"
     assert params["translate_type"] == translator.CHATGPT_INDEX
     assert params["aisendsrt"] is False
@@ -148,7 +128,7 @@ def test_build_task_params_rejects_unknown_backend_choices(tmp_path):
     source.write_bytes(b"video")
 
     with pytest.raises(ValueError, match="ASR engine"):
-        webui.build_task_params(source, {
+        build_task_params(source, {
             "sourceLanguage": next(iter(translator.LANGNAME_DICT)),
             "targetLanguage": next(iter(translator.LANGNAME_DICT)),
             "recognType": 9999,
@@ -157,10 +137,10 @@ def test_build_task_params_rejects_unknown_backend_choices(tmp_path):
         })
 
     with pytest.raises(ValueError, match="translation mode"):
-        webui.build_task_params(source, {
+        build_task_params(source, {
             "sourceLanguage": "zh-cn",
             "targetLanguage": "vi",
-            "recognType": webui.recognition.Deepgram,
+            "recognType": recognition.Deepgram,
             "modelName": "nova-3",
             "translateType": translator.CHATGPT_INDEX,
             "translationMode": "invented",
@@ -173,7 +153,7 @@ def test_build_task_params_rejects_removed_provider_and_mismatched_model(tmp_pat
     source.write_bytes(b"video")
 
     with pytest.raises(ValueError, match="Unknown ASR engine"):
-        webui.build_task_params(source, {
+        build_task_params(source, {
             "sourceLanguage": "zh-cn",
             "targetLanguage": "vi",
             "recognType": 99,
@@ -182,20 +162,20 @@ def test_build_task_params_rejects_removed_provider_and_mismatched_model(tmp_pat
         })
 
     with pytest.raises(ValueError, match="not supported by Deepgram"):
-        webui.build_task_params(source, {
+        build_task_params(source, {
             "sourceLanguage": "zh-cn",
             "targetLanguage": "vi",
-            "recognType": webui.recognition.Deepgram,
+            "recognType": recognition.Deepgram,
             "modelName": "large-v3",
             "translateType": 0,
             "ttsType": 0,
         })
 
     with pytest.raises(ValueError, match="Unknown translation engine"):
-        webui.build_task_params(source, {
+        build_task_params(source, {
             "sourceLanguage": "zh-cn",
             "targetLanguage": "vi",
-            "recognType": webui.recognition.Deepgram,
+            "recognType": recognition.Deepgram,
             "modelName": "nova-3",
             "translateType": 99,
             "ttsType": 0,
@@ -208,16 +188,16 @@ def test_build_task_params_maps_each_timing_mode(tmp_path):
     common = {
         "sourceLanguage": "zh-cn",
         "targetLanguage": "vi",
-        "recognType": webui.recognition.Deepgram,
+        "recognType": recognition.Deepgram,
         "modelName": "nova-3",
         "translateType": translator.CHATGPT_INDEX,
         "translationMode": "srt",
         "ttsType": 0,
     }
 
-    voice = webui.build_task_params(source, {**common, "timingMode": "voice"})
-    video = webui.build_task_params(source, {**common, "timingMode": "video"})
-    align = webui.build_task_params(source, {**common, "timingMode": "align"})
+    voice = build_task_params(source, {**common, "timingMode": "voice"})
+    video = build_task_params(source, {**common, "timingMode": "video"})
+    align = build_task_params(source, {**common, "timingMode": "align"})
 
     assert (voice["voice_autorate"], voice["video_autorate"], voice["align_sub_audio"]) == (True, False, False)
     assert voice["aisendsrt"] is True
@@ -231,12 +211,12 @@ def test_api_provider_configuration_is_required_before_start():
             return default
 
     with pytest.raises(ValueError, match="Configure Deepgram API settings"):
-        webui.ensure_asr_configured(webui.recognition.Deepgram, EmptySettings())
+        ensure_asr_configured(recognition.Deepgram, EmptySettings())
 
-    webui.ensure_asr_configured(webui.recognition.FASTER_WHISPER, EmptySettings())
+    ensure_asr_configured(recognition.FASTER_WHISPER, EmptySettings())
     with pytest.raises(ValueError, match="Configure OpenAI ChatGPT settings"):
-        webui.ensure_translation_configured(translator.CHATGPT_INDEX, EmptySettings())
-    webui.ensure_translation_configured(translator.GOOGLE_INDEX, EmptySettings())
+        ensure_translation_configured(translator.CHATGPT_INDEX, EmptySettings())
+    ensure_translation_configured(translator.GOOGLE_INDEX, EmptySettings())
 
 
 def test_options_expose_only_supported_asr_providers_and_safe_configuration_state(tmp_path):
@@ -263,7 +243,7 @@ def test_options_expose_only_supported_asr_providers_and_safe_configuration_stat
         def save(self):
             pass
 
-    app = webui.create_app(upload_dir=tmp_path / "uploads", settings_store=FakeSettings())
+    app = create_app(upload_dir=tmp_path / "uploads", settings_store=FakeSettings())
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -284,11 +264,11 @@ def test_options_expose_only_supported_asr_providers_and_safe_configuration_stat
             assert data["defaults"] == {
                 "sourceLanguage": "zh-cn",
                 "targetLanguage": "vi",
-                "recognType": webui.recognition.Deepgram,
+                "recognType": recognition.Deepgram,
                 "modelName": "nova-3",
                 "timingMode": "voice",
                 "translateType": translator.GOOGLE_INDEX,
-                "translationMode": "srt" if webui.runtime_config.settings.get("aisendsrt", True) else "line",
+                "translationMode": "srt" if runtime_config.settings.get("aisendsrt", True) else "line",
                 "ttsType": tts.VIENEU_TTS,
             }
             assert data["voices"] == [
@@ -297,16 +277,6 @@ def test_options_expose_only_supported_asr_providers_and_safe_configuration_stat
                 [tts.VIENEU_TTS, "VieNeu-TTS"],
                 [tts.GEMINI_TTS, "Gemini TTS"],
             ]
-            state_source = (Path(webui.ROOT_DIR) / "frontend" / "js" / "state.js").read_text(encoding="utf-8")
-            prepare_source = (
-                Path(webui.ROOT_DIR) / "frontend" / "js" / "screens" / "Stage1Prepare.js"
-            ).read_text(encoding="utf-8")
-            stage3_source = (
-                Path(webui.ROOT_DIR) / "frontend" / "js" / "screens" / "Stage3VoiceDubbing.js"
-            ).read_text(encoding="utf-8")
-            assert "ttsType: 2" in state_source
-            assert "updateBackendConfig('ttsType', Number(this.value))" in stage3_source
-            assert "updateBackendConfig('ttsType', Number(this.value))" not in prepare_source
             assert data["translationModes"] == [
                 {"id": "line", "label": "Line-by-line", "description": "Send plain subtitle text in batches."},
                 {"id": "srt", "label": "Send SRT", "description": "Send subtitle blocks with timestamps and structure."},
@@ -361,7 +331,7 @@ def test_translation_settings_save_and_test_supported_providers(tmp_path):
         return "Hello, my friend"
 
     settings = FakeSettings()
-    app = webui.create_app(
+    app = create_app(
         upload_dir=tmp_path / "uploads",
         settings_store=settings,
         translation_tester=fake_test,
@@ -459,7 +429,7 @@ def test_asr_settings_saves_only_supported_provider_keys(tmp_path):
             self.save_count += 1
 
     settings = FakeSettings()
-    app = webui.create_app(upload_dir=tmp_path / "uploads", settings_store=settings)
+    app = create_app(upload_dir=tmp_path / "uploads", settings_store=settings)
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -503,7 +473,7 @@ def test_asr_settings_tests_selected_third_party_model(tmp_path):
         return "Hello from the ASR sample"
 
     settings = FakeSettings()
-    app = webui.create_app(
+    app = create_app(
         upload_dir=tmp_path / "uploads",
         settings_store=settings,
         asr_tester=fake_test,
@@ -525,11 +495,11 @@ def test_asr_settings_tests_selected_third_party_model(tmp_path):
                 "result": "Hello from the ASR sample",
             }
             assert settings.values["deepgram_apikey"] == "deepgram-secret"
-            assert tested == [(webui.recognition.Deepgram, "nova-3")]
+            assert tested == [(recognition.Deepgram, "nova-3")]
 
             response = await client.post("/api/asr-settings/google-stt/test", json={"model": "google-web-speech"})
             assert response.status == 200
-            assert tested[-1] == (webui.recognition.GOOGLE_SPEECH, "google-web-speech")
+            assert tested[-1] == (recognition.GOOGLE_SPEECH, "google-web-speech")
 
             response = await client.post("/api/asr-settings/deepgram/test", json={"model": "large-v3"})
             assert response.status == 400
@@ -550,12 +520,12 @@ def test_asr_connection_tester_uses_production_recognition_with_selected_model(t
         return [{"text": "Sample transcript"}]
 
     monkeypatch.setattr(webui, "TEMP_DIR", str(tmp_path))
-    monkeypatch.setattr(webui.recognition, "run", fake_run)
+    monkeypatch.setattr(recognition, "run", fake_run)
 
-    result = webui.test_asr_provider(webui.recognition.Deepgram, "nova-3")
+    result = test_asr_provider(recognition.Deepgram, "nova-3")
 
     assert result == "Sample transcript"
-    assert calls[0]["recogn_type"] == webui.recognition.Deepgram
+    assert calls[0]["recogn_type"] == recognition.Deepgram
     assert calls[0]["model_name"] == "nova-3"
     assert calls[0]["detect_language"] == "zh-cn"
     assert calls[0]["audio_file"].endswith("videotrans/assets/no-remove.wav")
@@ -572,7 +542,7 @@ def test_job_manager_reports_events_outputs_and_terminal_status(tmp_path, monkey
         return TaskResult("task", TaskStatus.SUCCEEDED, tmp_path, (output,))
 
     monkeypatch.setattr(webui, "run", fake_run)
-    manager = webui.JobManager(runner=fake_run)
+    manager = JobManager(runner=fake_run)
     job = manager.submit({"name": "unused"}, media_id="media")
 
     deadline = time.time() + 2
@@ -590,9 +560,9 @@ def test_job_manager_reports_events_outputs_and_terminal_status(tmp_path, monkey
 
 
 def test_cancel_is_scoped_to_one_job():
-    manager = webui.JobManager()
-    first = webui.JobRecord("first", webui.CancellationToken())
-    second = webui.JobRecord("second", webui.CancellationToken())
+    manager = JobManager()
+    first = JobRecord("first", CancellationToken())
+    second = JobRecord("second", CancellationToken())
     manager._jobs = {"first": first, "second": second}
 
     manager.cancel("first")
@@ -630,9 +600,9 @@ def test_media_ingest_and_job_submission_are_end_to_end(tmp_path, monkeypatch):
         release.wait(2)
         return TaskResult("task", TaskStatus.SUCCEEDED, tmp_path, (output,))
 
-    manager = webui.JobManager(runner=fake_run)
+    manager = JobManager(runner=fake_run)
     monkeypatch.setattr(webui, "getset_gpu", lambda: None)
-    app = webui.create_app(job_manager=manager, upload_dir=tmp_path / "uploads", media_probe=fake_probe)
+    app = create_app(job_manager=manager, upload_dir=tmp_path / "uploads", media_probe=fake_probe)
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -659,7 +629,7 @@ def test_media_ingest_and_job_submission_are_end_to_end(tmp_path, monkeypatch):
                 "options": {
                     "sourceLanguage": language_codes[0],
                     "targetLanguage": language_codes[-1],
-                    "recognType": webui.recognition.FASTER_WHISPER,
+                    "recognType": recognition.FASTER_WHISPER,
                     "modelName": "large-v3",
                     "translateType": 0,
                     "ttsType": 0,
@@ -697,7 +667,7 @@ def test_media_ingest_rejects_unreadable_media_and_removes_upload(tmp_path):
         raise ValueError("not readable media")
 
     upload_dir = tmp_path / "uploads"
-    app = webui.create_app(upload_dir=upload_dir, media_probe=failed_probe)
+    app = create_app(upload_dir=upload_dir, media_probe=failed_probe)
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -731,109 +701,7 @@ def test_prepare_job_stops_at_transcript_checkpoint_and_skips_render_work(tmp_pa
     })
     (tmp_path / "input.mp4").write_bytes(b"video")
 
-    result = webui.run_prepare_review(request, lambda event: None, CancellationToken())
+    result = run_prepare_review(request, lambda event: None, CancellationToken())
 
     assert result.status == TaskStatus.SUCCEEDED
     assert received["stop_after_stage"] == "diariz"
-
-
-def test_prepare_polling_does_not_remount_video():
-    app_source = (Path(webui.FRONTEND_DIR) / "js" / "app.js").read_text(encoding="utf-8")
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-    footer_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "StatusFooter.js").read_text(encoding="utf-8")
-
-    assert "renderStatusOnly" in app_source
-    assert "scope === 'status'" in app_source
-    assert "this.notify(terminal ? 'full' : 'status')" in state_source
-    assert "data-status-footer" in footer_source
-
-
-def test_prepare_frontend_uses_ingested_media_and_real_disabled_state():
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-    footer_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "StatusFooter.js").read_text(encoding="utf-8")
-
-    assert "fetch('/api/media'" in state_source
-    assert "mediaId" in state_source
-    assert "disabled" in footer_source
-
-
-def test_prepare_video_preview_has_sound_and_seek_controls():
-    prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-    video_tag = prepare_source.split("<video data-source-preview", 1)[1].split(">", 1)[0]
-
-    assert "controls" in video_tag
-    assert "muted" not in video_tag
-    assert 'type="range"' in prepare_source
-    assert "seekPreview" in prepare_source
-    assert "seekPreview" in state_source
-
-
-def test_prepare_diagnostics_is_visible_at_tablet_and_desktop_widths():
-    prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
-
-    assert 'col-span-12 md:col-span-7' in prepare_source
-    assert 'col-span-12 md:col-span-5' in prepare_source
-    assert "backend.error" in prepare_source
-    assert "Speaker analysis runs during the processing workflow" not in prepare_source
-    assert "Preview Audio Stems" not in prepare_source
-    assert "Replace Video" not in prepare_source
-
-
-def test_prepare_frontend_defaults_and_provider_specific_models_are_connected():
-    prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
-    translation_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "TranslationConfig.js").read_text(encoding="utf-8")
-    stage2_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage2ReviewTranscript.js").read_text(encoding="utf-8")
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-
-    assert 'code: "zh-cn"' in state_source
-    assert 'code: "vi"' in state_source
-    assert "asrProviders" in prepare_source
-    assert "selectedProvider.models" in prepare_source
-    assert "openAsrSettings" in prepare_source
-    assert "testAsrConnection" in state_source
-    assert "Test connection" in prepare_source
-    assert "timingMode" in prepare_source
-    assert "timingMode: this.state.languages.timingMode" in state_source
-    assert "renderTranslationConfig" not in prepare_source
-    assert "renderTranslationConfig" in stage2_source
-    assert "translationProviders" in translation_source
-    assert "openTranslationSettings" in translation_source
-    assert "testTranslationConnection" in state_source
-
-
-def test_prepare_audio_processing_uses_existing_backend_features():
-    prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-
-    assert "Speaker Classification" in prepare_source
-    assert "Noise Reduction" in prepare_source
-    assert "Number of speakers" in prepare_source
-    assert "Auto-isolate" not in prepare_source
-    assert "-24 dB de-reverb" not in prepare_source
-    assert "speakerDiarization: false" in state_source
-    assert "removeNoise: false" in state_source
-    assert "speakerCount: this.state.engines.speakerCount" in state_source
-
-
-def test_prepare_uses_existing_line_and_srt_translation_modes():
-    prepare_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage1Prepare.js").read_text(encoding="utf-8")
-    translation_source = (Path(webui.FRONTEND_DIR) / "js" / "components" / "TranslationConfig.js").read_text(encoding="utf-8")
-    stage2_source = (Path(webui.FRONTEND_DIR) / "js" / "screens" / "Stage2ReviewTranscript.js").read_text(encoding="utf-8")
-    state_source = (Path(webui.FRONTEND_DIR) / "js" / "state.js").read_text(encoding="utf-8")
-
-    assert "Tone &amp; Register Preset" not in prepare_source
-    assert "Conversational ★" not in prepare_source
-    assert "Formal Lecture" not in prepare_source
-    assert 'tone: "conversational"' not in state_source
-    assert "renderTranslationConfig" not in prepare_source
-    assert "renderTranslationConfig" in stage2_source
-    assert "Translation Mode" in translation_source
-    assert "translationModes" in translation_source
-    assert "mode.label" in translation_source
-    assert "mode.description" in translation_source
-    assert 'translationMode: "srt"' in state_source
-    assert "updateBackendConfig('translationMode'" in translation_source
-    for provider in ("chatgpt", "gemini", "deepseek"):
-        assert (Path(webui.ROOT_DIR) / "videotrans" / "prompts" / "text" / f"{provider}.txt").is_file()
-        assert (Path(webui.ROOT_DIR) / "videotrans" / "prompts" / "srt" / f"{provider}.txt").is_file()

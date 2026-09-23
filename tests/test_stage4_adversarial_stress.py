@@ -14,8 +14,12 @@ from aiohttp import web, FormData
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-from tests import webui_support as webui
+from videotrans.api.app import create_app
+from videotrans.api.catalog import UPLOAD_DIR
+from videotrans.api.routes.media import EDIT_ASSETS, EDIT_ASSETS_LOCK
+from videotrans.api.task_params import build_task_params
 from videotrans.configure.contants import AUDIO_EXITS, VIDEO_EXTS
+from videotrans.core.media_store import MediaRecord
 from videotrans.task.taskcfg import InputFile
 
 
@@ -26,12 +30,12 @@ from videotrans.task.taskcfg import InputFile
 @pytest.fixture(autouse=True)
 def isolate_edit_assets():
     """Ensure in-memory EDIT_ASSETS table is isolated between tests."""
-    with webui.EDIT_ASSETS_LOCK:
-        snapshot = dict(webui.EDIT_ASSETS)
+    with EDIT_ASSETS_LOCK:
+        snapshot = dict(EDIT_ASSETS)
     yield
-    with webui.EDIT_ASSETS_LOCK:
-        webui.EDIT_ASSETS.clear()
-        webui.EDIT_ASSETS.update(snapshot)
+    with EDIT_ASSETS_LOCK:
+        EDIT_ASSETS.clear()
+        EDIT_ASSETS.update(snapshot)
 
 
 @pytest.fixture
@@ -47,14 +51,12 @@ def mock_video_source(tmp_path, monkeypatch):
         ext="mp4",
         uuid="stage4-test-uuid",
     )
-    monkeypatch.setattr(webui, "format_video", lambda _path: input_file)
-    monkeypatch.setattr(webui, "role_menu", lambda *_args, **_kwargs: ["Voice A"])
     return {"file": source_file, "input_info": input_file}
 
 
 def create_mock_media_record(app, media_id: str, media_path: Path):
     """Helper to inject a MediaRecord into the app's media store without running ffprobe."""
-    record = webui.MediaRecord(media_id, media_path, media_path.name, media_path.stat().st_size, {
+    record = MediaRecord(media_id, media_path, media_path.name, media_path.stat().st_size, {
         "time": 60000, "width": 1920, "height": 1080, "video_streams": 1, "streams_audio": 1
     })
     with app["media_store"]._lock:
@@ -73,7 +75,7 @@ MALICIOUS_EXTENSIONS = [
 @pytest.mark.parametrize("bad_ext", MALICIOUS_EXTENSIONS)
 def test_asset_upload_rejects_malicious_extensions(tmp_path, bad_ext):
     """POST /api/assets/{kind} must reject dangerous and malicious file extensions with HTTP 400."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -113,10 +115,10 @@ PATH_TRAVERSAL_FILENAMES = [
 def test_asset_upload_path_traversal_sanitization(tmp_path, traversal_name):
     """
     POST /api/assets/thumbnail strips directory traversal vectors.
-    Note: File is saved in webui.UPLOAD_DIR, confirming that path traversal attempts
+    Note: File is saved in UPLOAD_DIR, confirming that path traversal attempts
     do not escape the server's upload directory.
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -128,8 +130,8 @@ def test_asset_upload_path_traversal_sanitization(tmp_path, traversal_name):
             assert res.status == 201
             data = await res.json()
             asset_id = data["id"]
-            with webui.EDIT_ASSETS_LOCK:
-                saved_path = webui.EDIT_ASSETS[asset_id]
+            with EDIT_ASSETS_LOCK:
+                saved_path = EDIT_ASSETS[asset_id]
                 # Path traversal MUST NOT escape upload dir
                 assert saved_path.parent.resolve() == app["media_store"].upload_dir.resolve()
                 assert ".." not in saved_path.name
@@ -152,7 +154,7 @@ UNICODE_SPECIAL_FILENAMES = [
 @pytest.mark.parametrize("unicode_name", UNICODE_SPECIAL_FILENAMES)
 def test_asset_upload_unicode_and_special_character_filenames(tmp_path, unicode_name):
     """POST /api/assets/background-audio preserves valid Unicode and special chars safely."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -164,8 +166,8 @@ def test_asset_upload_unicode_and_special_character_filenames(tmp_path, unicode_
             assert res.status == 201
             data = await res.json()
             assert "id" in data
-            with webui.EDIT_ASSETS_LOCK:
-                saved_path = webui.EDIT_ASSETS[data["id"]]
+            with EDIT_ASSETS_LOCK:
+                saved_path = EDIT_ASSETS[data["id"]]
                 assert saved_path.is_file()
                 assert saved_path.parent.resolve() == app["media_store"].upload_dir.resolve()
         finally:
@@ -178,7 +180,7 @@ def test_asset_upload_empty_file_edge_case_behavior(tmp_path):
     """
     Stress test: empty (0 bytes) file uploads are safely rejected with HTTP 400.
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -202,7 +204,7 @@ def test_asset_upload_empty_file_edge_case_behavior(tmp_path):
 
 def test_asset_upload_missing_or_corrupt_headers(tmp_path):
     """POST /api/assets/background-audio with missing or corrupted headers."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -259,7 +261,7 @@ def test_build_task_params_volume_normalization(mock_video_source, raw_input, ex
         **BASE_RENDER_OPTIONS,
         "volume": raw_input,
     }
-    params = webui.build_task_params(source, options, job_type="render")
+    params = build_task_params(source, options, job_type="render")
     assert params["volume"] == expected_norm
 
 
@@ -278,7 +280,7 @@ def test_build_task_params_volume_boundary_clamping_math(mock_video_source, orig
         "originalAudioVolume": orig_in,
         "backgroundAudioVolume": bgm_in,
     }
-    params = webui.build_task_params(source, options, job_type="render")
+    params = build_task_params(source, options, job_type="render")
     assert math.isclose(params["source_audio_volume"], expected_orig, abs_tol=1e-5)
     assert math.isclose(params["backaudio_volume"], expected_bgm, abs_tol=1e-5)
 
@@ -292,14 +294,14 @@ def test_build_task_params_type_error_on_none_volumes(mock_video_source):
         **BASE_RENDER_OPTIONS,
         "originalAudioVolume": None,
     }
-    params1 = webui.build_task_params(source, options_orig_none, job_type="render")
+    params1 = build_task_params(source, options_orig_none, job_type="render")
     assert params1["source_audio_volume"] == 0.0
 
     options_bgm_none = {
         **BASE_RENDER_OPTIONS,
         "backgroundAudioVolume": None,
     }
-    params2 = webui.build_task_params(source, options_bgm_none, job_type="render")
+    params2 = build_task_params(source, options_bgm_none, job_type="render")
     assert params2["backaudio_volume"] == 0.8
 
 
@@ -312,7 +314,7 @@ def test_build_task_params_overflow_on_infinite_volume(mock_video_source):
         **BASE_RENDER_OPTIONS,
         "volume": float("inf"),
     }
-    params = webui.build_task_params(source, options_inf, job_type="render")
+    params = build_task_params(source, options_inf, job_type="render")
     assert params["volume"] in {"+0%", "+100%", "inf"}
 
 
@@ -322,7 +324,7 @@ def test_build_task_params_overflow_on_infinite_volume(mock_video_source):
 
 def test_create_render_job_rejects_non_existent_asset_id(tmp_path, mock_video_source):
     """Submitting render job with non-existent asset ID returns HTTP 400."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
     media = create_mock_media_record(app, "m-s4-test-1", mock_video_source["file"])
 
     async def scenario():
@@ -349,7 +351,7 @@ def test_create_render_job_rejects_non_existent_asset_id(tmp_path, mock_video_so
 
 def test_create_render_job_rejects_expired_deleted_asset_file(tmp_path, mock_video_source):
     """Submitting render job with asset ID whose file was deleted from disk returns HTTP 400."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
     media = create_mock_media_record(app, "m-s4-test-2", mock_video_source["file"])
 
     async def scenario():
@@ -359,8 +361,8 @@ def test_create_render_job_rejects_expired_deleted_asset_file(tmp_path, mock_vid
             deleted_file = tmp_path / "deleted_track.mp3"
             deleted_file.write_bytes(b"audio")
             asset_id = "expired-uuid-999"
-            with webui.EDIT_ASSETS_LOCK:
-                webui.EDIT_ASSETS[asset_id] = deleted_file
+            with EDIT_ASSETS_LOCK:
+                EDIT_ASSETS[asset_id] = deleted_file
             # Delete file from disk to simulate expiration
             deleted_file.unlink()
 
@@ -384,7 +386,7 @@ def test_create_render_job_rejects_expired_deleted_asset_file(tmp_path, mock_vid
 
 def test_create_render_job_missing_options_or_media_id(tmp_path, mock_video_source):
     """POST /api/render and /api/export reject payloads with missing options or invalid mediaId."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -417,7 +419,7 @@ def test_create_render_job_missing_options_or_media_id(tmp_path, mock_video_sour
 
 def test_render_job_route_aliases_default_to_render_type(tmp_path, mock_video_source):
     """POST /api/render and POST /api/export default jobType to 'render'."""
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
     media1 = create_mock_media_record(app, "m-s4-render-1", mock_video_source["file"])
     media2 = create_mock_media_record(app, "m-s4-export-2", mock_video_source["file"])
 
@@ -460,7 +462,7 @@ def test_render_job_requires_asr_engine_unnecessarily(tmp_path, mock_video_sourc
     Verified: When submitting /api/render without recognType in options,
     render job succeeds (HTTP 202) because render does not execute ASR.
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads")
     media = create_mock_media_record(app, "m-s4-test-4", mock_video_source["file"])
 
     async def scenario():
