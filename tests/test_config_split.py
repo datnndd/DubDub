@@ -66,14 +66,6 @@ class TestTrFunction:
         assert isinstance(result, str)
 
 
-class TestPushQueue:
-    """Verify push_queue is accessible."""
-
-    def test_push_queue_exists(self):
-        from videotrans.configure.config import push_queue
-        assert callable(push_queue)
-
-
 class TestAppCfgClass:
     """Verify AppCfg dataclass works."""
 
@@ -136,11 +128,7 @@ class TestInitRun:
 
 
 class TestAccessibleFunctions:
-    """Verify internal functions are accessible through config module."""
-
-    def test_push_queue_accessible(self):
-        from videotrans.configure.config import push_queue
-        assert callable(push_queue)
+    """Verify supported helpers are accessible through config module."""
 
     def test_update_logging_level_accessible(self):
         from videotrans.configure.config import update_logging_level

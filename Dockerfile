@@ -8,6 +8,13 @@
 # 定义全局 ARG 变量
 ARG USE_CUDA=false
 
+FROM oven/bun:1 AS frontend-build
+WORKDIR /frontend
+COPY frontend/package.json frontend/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY frontend/ ./
+RUN bun run build
+
 # 巧妙地将阶段命名为 base-false 和 base-true
 FROM python:3.10-slim AS base-false
 FROM nvidia/cuda:12.8.0-cudnn-runtime-ubuntu22.04 AS base-true
@@ -37,7 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf ffmpeg-* \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN git clone -b dev https://github.com/jianchang512/pyvideotrans.git .
+COPY . .
+COPY --from=frontend-build /frontend/dist /app/frontend/dist
 
 # 修复丢失了变量的 if 语句，正确引用 "${USE_CUDA}"
 RUN if [ "${USE_CUDA}" = "true" ]; then \

@@ -20,7 +20,6 @@ from videotrans.core.job_store import (
 )
 from videotrans.core.project_store import update_project
 from videotrans.util.gpus import getset_gpu
-from videotrans.api.routes.media import EDIT_ASSETS, EDIT_ASSETS_LOCK
 from videotrans.api.task_params import build_task_params
 from videotrans.api.provider_helpers import ensure_asr_configured, ensure_translation_configured
 
@@ -62,8 +61,7 @@ async def create_job_handler(request: web.Request) -> web.Response:
         asset_id = str(options.get(option_key) or "")
         if not asset_id:
             continue
-        with EDIT_ASSETS_LOCK:
-            asset_path = EDIT_ASSETS.get(asset_id)
+        asset_path = request.app["edit_asset_store"].get(asset_id)
         if asset_path is None or not asset_path.is_file():
             raise web.HTTPBadRequest(text=f"Unknown or expired {option_key}")
         options[path_key] = asset_path.resolve().as_posix()

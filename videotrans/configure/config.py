@@ -10,7 +10,6 @@ from videotrans.configure._i18n import _get_langjson_list, _get_transobj, _init_
 from videotrans.configure._app_cfg import AppCfg
 from videotrans.configure._app_settings import AppSettings
 from videotrans.configure._app_params import AppParams, set_settings_ref
-from videotrans.configure._helpers import push_queue, set_app_cfg_ref, set_logger_ref  # noqa: F401
 
 
 
@@ -29,9 +28,6 @@ Path(HOME_DIR).mkdir(parents=True, exist_ok=True)
 FFMPEG_BIN = settings.get("ffmpeg_cmd") or "ffmpeg"
 
 defaulelang, _transobj = _init_language(settings)
-
-set_app_cfg_ref(app_cfg)
-set_logger_ref(logger)
 
 _proxy = settings.proxy or os.environ.get('HTTPS_PROXY', '')
 if _proxy:

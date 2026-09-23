@@ -36,7 +36,7 @@ export async function requestSplitSegment(payload: {
   });
 }
 
-export async function requestRender(payload: any): Promise<{ ok: boolean; jobId: string }> {
+export async function requestRender(payload: any): Promise<{ id?: string; jobId?: string }> {
   return apiRequest('/api/render', {
     method: 'POST',
     body: JSON.stringify(payload),
