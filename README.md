@@ -11,9 +11,9 @@ A powerful, full-stack video translation, speech recognition, subtitle editing, 
   2. **Review Transcript**: Video player with interactive OCR bounding boxes, slide diff inspector, speaker diarization, confidence scores, and segment editor.
   3. **Voice & Dubbing**: Multi-channel voice synthesis, pace & warmth adjustments, audio stem toggles (Original vs. Dub), locked terminology glossary, and teleprompter.
   4. **Timeline & Export**: Multi-track timeline (Video, Vocals, AI Dub, BGM, Subtitles), BGM ducking, subtitle styling, inpainting overlay, and video export.
-- **🎙️ Speech Recognition (ASR)**: Faster-Whisper (Local), WhisperX, OpenAI Whisper, Deepgram, Alibaba Qwen, Azure, and more.
-- **🌐 LLM Translation**: DeepSeek, OpenAI ChatGPT, Anthropic Claude, Google Gemini, Ollama (Local), etc.
-- **🗣️ Speech Synthesis (TTS)**: Edge-TTS (Free), OpenAI, Azure, CosyVoice, F5-TTS, ChatTTS, and more.
+- **🎙️ Speech Recognition (ASR)**: Whisper Large-v3, Deepgram, Gemini STT, Google STT, ElevenLabs, Qwen-ASR.
+- **🌐 LLM / Machine Translation**: Google Translate, OpenAI ChatGPT, Google Gemini, DeepSeek.
+- **🗣️ Speech Synthesis (TTS)**: VieNeu-TTS, OmniVoice (Built-in), Gemini TTS, ElevenLabs.
 - **⚡ Persistence & Background Tasks**: SQLite WAL database with job queuing, SSE streaming updates, and persistent project state across sessions.
 
 ---
