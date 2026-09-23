@@ -56,12 +56,9 @@ Automated verification covering:
 
 import asyncio
 import io
-import json
 import math
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import uuid
 
 import aiohttp
@@ -70,6 +67,7 @@ from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
 from videotrans.api.app import create_app
+from videotrans.api import task_params as task_params_module
 from videotrans.api.catalog import ASR_PROVIDERS, TRANSLATION_PROVIDERS
 from videotrans.api.routes.media import EDIT_ASSETS, EDIT_ASSETS_LOCK
 from videotrans.api.task_params import build_task_params
@@ -138,7 +136,7 @@ def mock_video_source(tmp_path, monkeypatch):
         ext="mp4",
         uuid="stage4-test-uuid",
     )
-    monkeypatch.setattr(webui, "format_video", lambda _path: input_file)
+    monkeypatch.setattr(task_params_module, "format_video", lambda _path: input_file)
     return {"file": source_file, "input_info": input_file}
 
 
@@ -439,18 +437,17 @@ def test_create_render_job_rejects_missing_asset_id(tmp_path, mock_video_source)
 def test_create_render_job_bypasses_translation_config_check(tmp_path, mock_video_source, dummy_job_runner, monkeypatch):
     """Render jobs bypass ensure_translation_configured since translation is already completed."""
     manager = JobManager(runner=dummy_job_runner)
-    app = create_app(upload_dir=tmp_path / "uploads", job_manager=manager)
     media_path = mock_video_source["file"]
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("ensure_translation_configured was unexpectedly called during render job")
+
+    app = create_app(upload_dir=tmp_path / "uploads", job_manager=manager, translation_validator=fail_if_called)
     record = MediaRecord("m-bypass-trans", media_path, "test.mp4", media_path.stat().st_size, {
         "time": 20000, "width": 1920, "height": 1080, "video_streams": 1, "streams_audio": 1
     })
     with app["media_store"]._lock:
         app["media_store"]._records[record.id] = record
-
-    def fail_if_called(*_args, **_kwargs):
-        raise AssertionError("ensure_translation_configured was unexpectedly called during render job")
-
-    monkeypatch.setattr(webui, "ensure_translation_configured", fail_if_called)
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -532,7 +529,7 @@ def test_render_params_reuse_edited_srt_and_mix_settings(tmp_path, monkeypatch):
     """Baseline test: build_task_params maps mix settings, paths, and bypasses cache when job_type='render'."""
     source = tmp_path / "source.mp4"
     source.write_bytes(b"video")
-    monkeypatch.setattr(webui, "format_video", lambda _path: InputFile(
+    monkeypatch.setattr(task_params_module, "format_video", lambda _path: InputFile(
         name=source.as_posix(), dirname=tmp_path.as_posix(), basename="source.mp4",
         noextname="source", ext="mp4", uuid="stage4-test"
     ))
@@ -579,7 +576,7 @@ def test_build_task_params_volume_boundary_clamping(tmp_path, monkeypatch, input
     """build_task_params clamps source_audio_volume and backaudio_volume strictly between 0.0 and 1.5."""
     source = tmp_path / "vol_test.mp4"
     source.write_bytes(b"vid")
-    monkeypatch.setattr(webui, "format_video", lambda _path: InputFile(
+    monkeypatch.setattr(task_params_module, "format_video", lambda _path: InputFile(
         name=source.as_posix(), dirname=tmp_path.as_posix(), basename="vol.mp4",
         noextname="vol", ext="mp4", uuid="uuid-clamp"
     ))
@@ -758,7 +755,7 @@ def test_adversarial_corrupted_or_extreme_srt_timing(tmp_path, monkeypatch):
     """Adversarial stress: Multiline text, non-ASCII Unicode (Vietnamese, Chinese, Emojis), and special XML characters."""
     source = tmp_path / "extreme.mp4"
     source.write_bytes(b"vid")
-    monkeypatch.setattr(webui, "format_video", lambda _path: InputFile(
+    monkeypatch.setattr(task_params_module, "format_video", lambda _path: InputFile(
         name=source.as_posix(), dirname=tmp_path.as_posix(), basename="extreme.mp4",
         noextname="extreme", ext="mp4", uuid="uuid-extreme"
     ))
@@ -786,7 +783,7 @@ def test_adversarial_invalid_audio_mix_inputs(tmp_path, monkeypatch):
     """Adversarial stress: Non-numeric, NaN, None, and huge numbers in volume inputs default safely without exceptions."""
     source = tmp_path / "mix_bad.mp4"
     source.write_bytes(b"vid")
-    monkeypatch.setattr(webui, "format_video", lambda _path: InputFile(
+    monkeypatch.setattr(task_params_module, "format_video", lambda _path: InputFile(
         name=source.as_posix(), dirname=tmp_path.as_posix(), basename="bad.mp4",
         noextname="bad", ext="mp4", uuid="uuid-bad"
     ))

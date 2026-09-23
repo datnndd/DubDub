@@ -34,3 +34,9 @@ def test_webui_is_a_thin_launcher():
     assert '__all__ = ["create_app", "main"]' in source
     assert "videotrans.core" not in source
     assert "videotrans.api.catalog" not in source
+
+
+def test_legacy_frontend_and_test_adapter_are_removed():
+    assert not Path("frontend/js").exists()
+    assert not Path("frontend/css").exists()
+    assert not Path("tests/webui_support.py").exists()

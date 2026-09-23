@@ -155,9 +155,11 @@ async def test_translation_settings_handler(request: web.Request) -> web.Respons
 
 
 async def voices_handler(request: web.Request) -> web.Response:
-    raw_provider = request.query.get("ttsType")
-    if raw_provider is None:
-        raw_provider = request.query.get("provider")
+    raw_provider = (
+        request.query.get("ttsType")
+        or request.query.get("tts_type")
+        or request.query.get("provider")
+    )
 
     tts_type = 0
     if raw_provider is not None:
@@ -174,12 +176,69 @@ async def voices_handler(request: web.Request) -> web.Response:
         or ""
     )
     try:
-        voices = request.app["role_provider"](tts_type, langcode=language) or ["No"]
-        if not voices:
-            voices = ["No"]
+        raw_voices = request.app["role_provider"](tts_type, langcode=language)
+        if raw_voices is None or (isinstance(raw_voices, (list, tuple)) and len(raw_voices) == 0):
+            return web.json_response({"voices": ["No"]})
+        voices = raw_voices
     except Exception:
-        voices = ["No"]
-    return web.json_response({"voices": voices})
+        return web.json_response({"voices": ["No"]})
+
+    from videotrans.core import voice_store
+    items: list[dict[str, Any]] = []
+    try:
+        custom_voices = voice_store.list_voices(provider=tts_type, active_only=True)
+        custom_by_name = {v["name"].casefold(): v for v in custom_voices}
+    except Exception:
+        custom_voices = []
+        custom_by_name = {}
+
+    for v in voices:
+        v_str = str(v)
+        c_name = v_str[8:] if v_str.startswith("Custom: ") else v_str
+        matched_custom = custom_by_name.get(c_name.casefold())
+        if matched_custom:
+            items.append({
+                "id": matched_custom["id"],
+                "name": matched_custom["name"],
+                "provider": tts_type,
+                "kind": "clone",
+                "sampleUrl": f"/api/custom-voices/{matched_custom['id']}/audio",
+            })
+        elif v_str.lower() == "clone":
+            items.append({
+                "id": "clone",
+                "name": "Clone Voice",
+                "provider": tts_type,
+                "kind": "clone",
+            })
+        elif v_str == "No":
+            items.append({
+                "id": "No",
+                "name": "No Dubbing (Mute/Retain)",
+                "provider": tts_type,
+                "kind": "preset",
+            })
+        else:
+            items.append({
+                "id": v_str,
+                "name": v_str,
+                "provider": tts_type,
+                "kind": "preset",
+            })
+
+    existing_item_ids = {it["id"] for it in items}
+    for cv in custom_voices:
+        if cv["id"] not in existing_item_ids:
+            items.append({
+                "id": cv["id"],
+                "name": cv["name"],
+                "provider": tts_type,
+                "kind": "clone",
+                "sampleUrl": f"/api/custom-voices/{cv['id']}/audio",
+            })
+            existing_item_ids.add(cv["id"])
+
+    return web.json_response({"voices": voices, "items": items})
 
 
 def register_routes(app: web.Application) -> None:

@@ -48,10 +48,13 @@ user assets while removing desktop-only compatibility and generated files.
 
 ### Phase 2: retire the legacy frontend
 
-- [ ] Add React behavior tests for all four stages and API request contracts.
-- [ ] Remove `frontend/js`, `frontend/css`, fallback serving, and legacy tests
+- [x] Add React behavior tests for all four stages and API request contracts.
+- [x] Remove `frontend/js`, `frontend/css`, fallback serving, and legacy tests
   only after equivalent React proof exists.
 - [x] Make CI and Docker build the React production bundle from the lockfile.
+
+Phase 2 implementation and automated validation are complete. The configured
+browser workflow smoke test remains outstanding before the phase can be closed.
 
 ### Phase 3: documentation and dependency closure
 

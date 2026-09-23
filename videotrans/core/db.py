@@ -64,6 +64,27 @@ CREATE TABLE IF NOT EXISTS job_events (
     FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_job_events_job_seq ON job_events(job_id, seq);
+
+CREATE TABLE IF NOT EXISTS voices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    provider INTEGER NOT NULL,
+    kind TEXT DEFAULT 'clone',
+    language TEXT DEFAULT 'Auto',
+    ref_audio_path TEXT DEFAULT '',
+    ref_text TEXT DEFAULT '',
+    instruct TEXT DEFAULT '',
+    external_voice_id TEXT DEFAULT '',
+    tuning_params TEXT DEFAULT '{}',
+    preview_audio_path TEXT DEFAULT '',
+    is_active INTEGER DEFAULT 1,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_voices_provider ON voices(provider);
+CREATE INDEX IF NOT EXISTS idx_voices_active ON voices(is_active);
+CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at);
 """
 
 

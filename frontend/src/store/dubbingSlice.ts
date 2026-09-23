@@ -2,6 +2,14 @@ import { StateCreator } from 'zustand';
 import type { Speaker, VoiceOption, DubbingTuning } from '../types/dubbing';
 import type { Segment } from '../types/segment';
 import { fetchVoices } from '../api/settings';
+import {
+  type CustomVoice,
+  type CreateVoicePayload,
+  fetchCustomVoices,
+  createCustomVoice as apiCreateCustomVoice,
+  updateCustomVoice as apiUpdateCustomVoice,
+  deleteCustomVoice as apiDeleteCustomVoice,
+} from '../api/voices';
 
 const SPEAKER_COLORS = ['amber', 'secondary', 'emerald', 'sky', 'indigo', 'purple', 'rose'];
 
@@ -11,8 +19,20 @@ export interface DubbingSlice {
   segmentVoiceOverrides: Record<number, string>;
   tuning: DubbingTuning;
   voices: VoiceOption[];
+  customVoices: CustomVoice[];
+  activePreviewVoiceId: string | null;
+  isCreateVoiceModalOpen: boolean;
+  isVoiceManagerDrawerOpen: boolean;
 
   loadVoices: () => Promise<void>;
+  loadCustomVoices: (provider?: number) => Promise<void>;
+  createVoice: (payload: CreateVoicePayload) => Promise<CustomVoice>;
+  updateVoice: (id: string, updates: Partial<CustomVoice>) => Promise<void>;
+  deleteVoice: (id: string, hard?: boolean) => Promise<void>;
+  setCreateVoiceModalOpen: (open: boolean) => void;
+  setVoiceManagerDrawerOpen: (open: boolean) => void;
+  setActivePreviewVoiceId: (id: string | null) => void;
+
   setSpeakerVoice: (speakerId: string, voiceId: string) => void;
   setSegmentVoiceOverride: (segmentId: number, voiceId: string) => void;
   clearSegmentVoiceOverride: (segmentId: number) => void;
@@ -52,16 +72,72 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
     ducking: "85/15",
   },
   voices: [],
+  customVoices: [],
+  activePreviewVoiceId: null,
+  isCreateVoiceModalOpen: false,
+  isVoiceManagerDrawerOpen: false,
 
   loadVoices: async () => {
     try {
-      const ttsType = get().backend?.config?.ttsType || 2;
-      const vList = await fetchVoices(ttsType);
-      set({ voices: vList });
+      const ttsType = get().backend?.config?.ttsType ?? 2;
+      const [vList, cList] = await Promise.all([
+        fetchVoices(ttsType),
+        fetchCustomVoices(ttsType).catch(() => []),
+      ]);
+
+      const normalizedVoices: VoiceOption[] = (vList || []).map((item: any) => {
+        if (typeof item === 'string') {
+          return {
+            id: item,
+            name: item,
+            provider: ttsType,
+            kind: item.toLowerCase() === 'clone' ? 'clone' : (item === 'No' ? 'preset' : 'preset'),
+          };
+        }
+        return {
+          id: item.id || item.name,
+          name: item.name || item.id,
+          provider: item.provider ?? ttsType,
+          kind: item.kind ?? 'preset',
+          sampleUrl: item.sampleUrl,
+        };
+      });
+
+      set({ voices: normalizedVoices, customVoices: cList || [] });
     } catch (err) {
       console.warn('Failed to load voices:', err);
     }
   },
+
+  loadCustomVoices: async (provider?: number) => {
+    try {
+      const p = provider ?? get().backend?.config?.ttsType ?? 2;
+      const cList = await fetchCustomVoices(p);
+      set({ customVoices: cList || [] });
+    } catch (err) {
+      console.warn('Failed to load custom voices:', err);
+    }
+  },
+
+  createVoice: async (payload: CreateVoicePayload) => {
+    const newVoice = await apiCreateCustomVoice(payload);
+    await get().loadVoices();
+    return newVoice;
+  },
+
+  updateVoice: async (id: string, updates: Partial<CustomVoice>) => {
+    await apiUpdateCustomVoice(id, updates);
+    await get().loadVoices();
+  },
+
+  deleteVoice: async (id: string, hard: boolean = false) => {
+    await apiDeleteCustomVoice(id, hard);
+    await get().loadVoices();
+  },
+
+  setCreateVoiceModalOpen: (open: boolean) => set({ isCreateVoiceModalOpen: open }),
+  setVoiceManagerDrawerOpen: (open: boolean) => set({ isVoiceManagerDrawerOpen: open }),
+  setActivePreviewVoiceId: (id: string | null) => set({ activePreviewVoiceId: id }),
 
   setSpeakerVoice: (speakerId: string, voiceId: string) => {
     if (!speakerId || speakerId === '__proto__' || speakerId === 'constructor' || speakerId === 'prototype') return;

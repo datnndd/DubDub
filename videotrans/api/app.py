@@ -29,8 +29,10 @@ from videotrans.api.provider_helpers import (
 )
 from videotrans.api.task_params import build_task_params
 from videotrans.api.ocr_helpers import extract_ocr_segment_text
-from videotrans.api.routes import projects, jobs, media, settings, stages
+from videotrans.api.routes import projects, jobs, media, settings, stages, voices
+from videotrans.core import voice_store
 from videotrans.util.gpus import getset_gpu
+from videotrans.util import help_role
 from videotrans.util.help_role import role_menu
 
 
@@ -40,7 +42,7 @@ async def no_cache_middleware(request: web.Request, handler: Callable) -> web.St
     if (
         request.path == "/"
         or request.path.endswith((".html", ".js", ".css"))
-        or request.path.startswith(("/js", "/css", "/assets"))
+        or request.path.startswith("/assets")
     ):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
@@ -108,7 +110,7 @@ def create_app(
     asr_validator: Callable = ensure_asr_configured,
     translation_validator: Callable = ensure_translation_configured,
     gpu_initializer: Callable = getset_gpu,
-    role_provider: Callable = role_menu,
+    role_provider: Callable | None = None,
     reload: bool = False,
 ) -> web.Application:
     init_db()
@@ -135,7 +137,7 @@ def create_app(
     app["asr_validator"] = asr_validator
     app["translation_validator"] = translation_validator
     app["gpu_initializer"] = gpu_initializer
-    app["role_provider"] = role_provider
+    app["role_provider"] = role_provider if role_provider is not None else help_role.role_menu
     app["reload"] = reload
 
     # Static and root routes
@@ -149,6 +151,11 @@ def create_app(
     projects.register_routes(app)
     jobs.register_routes(app)
     stages.register_routes(app)
+    voices.register_routes(app)
+
+    # Initialize voice storage directories and migrate legacy configurations
+    voice_store.init_voice_dirs()
+    voice_store.migrate_legacy_voices()
 
     # Static assets
     app.router.add_static("/assets", frontend_dir / "assets")

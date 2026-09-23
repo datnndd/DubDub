@@ -5,8 +5,8 @@ export async function fetchOptions(): Promise<any> {
 }
 
 export async function fetchVoices(ttsType: number = 2): Promise<any[]> {
-  const data = await apiRequest<{ voices: any[] }>(`/api/voices?tts_type=${ttsType}`);
-  return data.voices || [];
+  const data = await apiRequest<{ voices: any[]; items?: any[] }>(`/api/voices?ttsType=${ttsType}`);
+  return data.items || data.voices || [];
 }
 
 export async function saveAsrSettings(providerId: string, apiKey: string): Promise<any> {
