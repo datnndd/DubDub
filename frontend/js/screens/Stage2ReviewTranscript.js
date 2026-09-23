@@ -32,46 +32,29 @@ export function renderStage2ReviewTranscript(state) {
   };
 
   return `
-    <div class="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden relative">
-      ${state.translationError ? `
-        <!-- Translation Error Banner -->
-        <div data-translation-error class="w-full px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-center justify-between shadow-2xs flex-shrink-0">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="material-symbols-outlined text-red-600 text-base flex-shrink-0">error</span>
-            <span class="font-semibold truncate">${escapeHtml(state.translationError)}</span>
-          </div>
-          <button 
-            type="button"
-            data-action="dismiss-translation-error"
-            onclick="window.dubDubStore.dismissTranslationError()"
-            class="px-2 py-0.5 rounded bg-red-100 hover:bg-red-200 text-red-800 text-[10px] font-bold border border-red-300 transition-colors flex-shrink-0 cursor-pointer">
-            Dismiss
-          </button>
-        </div>
-      ` : ''}
-
-      <!-- UPPER DECK: Video Screen (Left) + Translation Config (Right) -->
-      <section class="flex-1 min-h-0 w-full grid grid-cols-12 gap-2.5 overflow-hidden">
-        <!-- LEFT: SYNCHRONIZED VIDEO PLAYER (7-8 cols) -->
-        <div class="col-span-12 lg:col-span-7 xl:col-span-8 h-full flex flex-col min-h-0">
+    <div class="flex-1 min-h-0 w-full p-2 flex flex-col gap-2 overflow-hidden">
+      <!-- TOP SECTION: MAXIMIZED BROADCAST MONITOR & COMPACT TRANSLATION PANEL (62% Height) -->
+      <section class="h-[62%] min-h-0 w-full grid grid-cols-12 gap-2">
+        <!-- LEFT: MAXIMIZED SYNCHRONIZED VIDEO PLAYER (9 cols) -->
+        <div class="col-span-12 lg:col-span-8 xl:col-span-9 h-full flex flex-col min-h-0">
           ${renderVideoPlayer(state, {
-            title: "Synchronized Video Player",
-            showOcrBox: false,
-            subtitleVariant: "none"
-          })}
+    title: "Synchronized Video Player",
+    showOcrBox: false,
+    subtitleVariant: "none"
+  })}
         </div>
 
-        <!-- RIGHT: COMPACT LLM TRANSLATION CONFIGURATION PANEL (4-5 cols) -->
+        <!-- RIGHT: COMPACT LLM TRANSLATION CONFIGURATION PANEL (3 cols) -->
         ${renderTranslationConfig(state, {
-          containerClass: "col-span-12 lg:col-span-5 xl:col-span-4 h-full",
-          title: "LLM Translation",
-          headerHeight: "h-7.5",
-          badge: "Reasoning"
-        })}
+    containerClass: "col-span-12 lg:col-span-4 xl:col-span-3 h-full",
+    title: "LLM Translation",
+    headerHeight: "h-7.5",
+    badge: "Reasoning"
+  })}
       </section>
 
-      <!-- LOWER DECK: COMPACT TELEPROMPTER & SCRIPT FEED (Same height as Stage 4 lower deck: 210px) -->
-      <section class="h-[210px] flex-shrink-0 w-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col overflow-hidden">
+      <!-- BOTTOM SECTION: COMPACT TELEPROMPTER & SCRIPT FEED (38% Height) -->
+      <section class="h-[38%] min-h-0 w-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col overflow-hidden">
         <!-- Teleprompter Stream Header Bar -->
         <div class="h-7.5 px-3 border-b border-[#E7E4DC] bg-[#FAF9F6] flex items-center justify-between flex-shrink-0">
           <div class="flex items-center gap-2.5">
@@ -104,14 +87,14 @@ export function renderStage2ReviewTranscript(state) {
         <!-- Teleprompter Dialogue Rows -->
         <div class="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
           ${state.segments.map(seg => {
-            const isActive = String(seg.id) === String(state.activeSegmentId);
-            const activeSeg = isActive;
-            const hasConflict = seg.hasOcrDiff && !seg.ocrResolved;
-            const colorClass = speakerColorClasses[seg.speakerColor] || 'bg-amber-100 text-amber-900 border-amber-300';
-            const dotBg = speakerDotBg[seg.speakerColor] || 'bg-[#8D4B00]';
-            const safeId = escapeHtml(JSON.stringify(seg.id));
+    const isActive = String(seg.id) === String(state.activeSegmentId);
+    const activeSeg = isActive;
+    const hasConflict = seg.hasOcrDiff && !seg.ocrResolved;
+    const colorClass = speakerColorClasses[seg.speakerColor] || 'bg-amber-100 text-amber-900 border-amber-300';
+    const dotBg = speakerDotBg[seg.speakerColor] || 'bg-[#8D4B00]';
+    const safeId = escapeHtml(JSON.stringify(seg.id));
 
-            return `
+    return `
               <div 
                 data-segment-card="${escapeHtml(seg.id)}"
                 class="px-2.5 py-1.5 rounded-lg border ${isActive ? 'border-2 border-[#8D4B00] bg-amber-50/50 shadow-xs' : 'border-stone-200 bg-white hover:border-amber-300 hover:bg-stone-50/40'} shadow-2xs flex flex-col md:flex-row md:items-center gap-2 relative transition-all cursor-pointer"
@@ -191,7 +174,7 @@ export function renderStage2ReviewTranscript(state) {
                 </div>
               </div>
             `;
-          }).join('')}
+  }).join('')}
         </div>
       </section>
 

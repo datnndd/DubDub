@@ -71,8 +71,7 @@ async def dev_reload_handler(request: web.Request) -> web.Response:
 
 async def index_handler(request: web.Request) -> web.StreamResponse:
     frontend_dir = request.app["frontend_dir"]
-    dist_index = frontend_dir / "dist" / "index.html"
-    index_file = dist_index if dist_index.is_file() else (frontend_dir / "index.html")
+    index_file = frontend_dir / "index.html"
 
     if request.app.get("reload"):
         html = index_file.read_text(encoding="utf-8")
@@ -114,9 +113,10 @@ def create_app(
 ) -> web.Application:
     init_db()
     sweep_orphans_on_startup()
-    frontend_dir = frontend_dir or get_frontend_dir()
-    if not (frontend_dir / "index.html").is_file() and not (frontend_dir / "dist" / "index.html").is_file():
-        raise RuntimeError(f"Frontend not found: {frontend_dir}")
+    frontend_root = frontend_dir or get_frontend_dir()
+    frontend_dir = frontend_root / "dist"
+    if not (frontend_dir / "index.html").is_file():
+        raise RuntimeError(f"React build not found: {frontend_dir}. Run `bun run build` in frontend/.")
     app = web.Application(middlewares=[no_cache_middleware], client_max_size=20 * 1024 ** 3)
     if job_manager is None and translation_runner is not None:
         job_manager = JobManager(
@@ -151,13 +151,7 @@ def create_app(
     stages.register_routes(app)
 
     # Static assets
-    app.router.add_static("/css", frontend_dir / "css")
-    app.router.add_static("/js", frontend_dir / "js")
-    dist_assets = frontend_dir / "dist" / "assets"
-    if dist_assets.is_dir():
-        app.router.add_static("/assets", dist_assets)
-    else:
-        app.router.add_static("/assets", frontend_dir / "assets")
+    app.router.add_static("/assets", frontend_dir / "assets")
 
     return app
 

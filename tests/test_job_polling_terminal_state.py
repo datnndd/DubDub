@@ -1,7 +1,9 @@
 import time
+
+from videotrans.core.job_manager import JobManager, JobRecord
+from videotrans.task.orchestrator import CancellationToken
 import pytest
 from videotrans.task.orchestrator import TaskEvent, EventKind, TaskStatus
-from tests import webui_support as webui
 
 
 def test_job_manager_unhandled_runner_exception_transitions_to_failed():
@@ -9,7 +11,7 @@ def test_job_manager_unhandled_runner_exception_transitions_to_failed():
     def broken_runner(*args, **kwargs):
         raise RuntimeError("Unexpected failure in ASR runner")
 
-    manager = webui.JobManager(runner=broken_runner, asr_runner=broken_runner)
+    manager = JobManager(runner=broken_runner, asr_runner=broken_runner)
     job = manager.submit({"name": "test_video"}, media_id="media_1", job_type="asr")
 
     deadline = time.time() + 2
@@ -24,7 +26,7 @@ def test_job_manager_unhandled_runner_exception_transitions_to_failed():
 
 def test_job_record_accept_terminal_events_updates_status():
     """JobRecord.accept must update status on terminal events (FAILED, CANCELLED, SUCCEEDED)."""
-    job = webui.JobRecord("job_1", webui.CancellationToken())
+    job = JobRecord("job_1", CancellationToken())
     assert job.status == "queued"
 
     job.accept(TaskEvent("job_1", EventKind.RUNNING, "prepare"))
@@ -37,8 +39,8 @@ def test_job_record_accept_terminal_events_updates_status():
 
 def test_job_manager_cancel_transitions_status_to_cancelled():
     """JobManager.cancel must transition the job to 'cancelled' so polling stops."""
-    manager = webui.JobManager()
-    job = webui.JobRecord("job_cancel", webui.CancellationToken())
+    manager = JobManager()
+    job = JobRecord("job_cancel", CancellationToken())
     manager._jobs[job.id] = job
 
     manager.cancel("job_cancel")

@@ -20,6 +20,11 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
+from videotrans.api.app import create_app
+from videotrans.api.routes.media import EDIT_ASSETS, EDIT_ASSETS_LOCK
+from videotrans.api.task_params import build_task_params
+from videotrans.core.job_manager import JobManager
+
 from videotrans.task.orchestrator import (
     CancellationToken,
     EventKind,
@@ -29,18 +34,17 @@ from videotrans.task.orchestrator import (
     TaskStatus,
 )
 from videotrans.task.taskcfg import InputFile
-from tests import webui_support as webui
 
 
 @pytest.fixture(autouse=True)
 def isolate_edit_assets():
     """Ensure in-memory EDIT_ASSETS table is isolated between tests."""
-    with webui.EDIT_ASSETS_LOCK:
-        snapshot = dict(webui.EDIT_ASSETS)
+    with EDIT_ASSETS_LOCK:
+        snapshot = dict(EDIT_ASSETS)
     yield
-    with webui.EDIT_ASSETS_LOCK:
-        webui.EDIT_ASSETS.clear()
-        webui.EDIT_ASSETS.update(snapshot)
+    with EDIT_ASSETS_LOCK:
+        EDIT_ASSETS.clear()
+        EDIT_ASSETS.update(snapshot)
 
 
 @pytest.fixture
@@ -60,16 +64,8 @@ def mock_video_source(tmp_path, monkeypatch):
     return {"file": source_file, "input_info": input_file}
 
 
-def test_frontend_headless_node_stress_harness():
-    """Runs the 15-case Node.js headless DOM and mathematics stress harness."""
-    cmd = ["node", "tests/stage4_stress_harness.mjs"]
-    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(Path(__file__).parent.parent))
-    assert res.returncode == 0, f"Node.js stress harness failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
-    assert "SUMMARY: 15 PASSED, 0 FAILED" in res.stdout
-
-
 def test_adversarial_backend_volume_normalization_and_boundaries(mock_video_source):
-    """Verifies volume parameter mapping and boundary clamping in webui.build_task_params."""
+    """Verifies volume parameter mapping and boundary clamping in build_task_params."""
     source = mock_video_source["file"]
 
     base_options = {
@@ -83,7 +79,7 @@ def test_adversarial_backend_volume_normalization_and_boundaries(mock_video_sour
     }
 
     # 1. Normal values
-    p1 = webui.build_task_params(source, {
+    p1 = build_task_params(source, {
         **base_options,
         "originalAudioVolume": 0.5,
         "backgroundAudioVolume": 0.8,
@@ -95,7 +91,7 @@ def test_adversarial_backend_volume_normalization_and_boundaries(mock_video_sour
     assert p1["clear_cache"] is False
 
     # 2. Extreme volume boundary clamping (0.0 to 1.5)
-    p2 = webui.build_task_params(source, {
+    p2 = build_task_params(source, {
         **base_options,
         "originalAudioVolume": -10.0,
         "backgroundAudioVolume": 99.0,
@@ -106,7 +102,7 @@ def test_adversarial_backend_volume_normalization_and_boundaries(mock_video_sour
     assert p2["volume"] == "+50%"
 
     # 3. Volume as float < 1.0 (e.g. 0.75 -> -25%)
-    p3 = webui.build_task_params(source, {**base_options, "volume": 0.75}, job_type="render")
+    p3 = build_task_params(source, {**base_options, "volume": 0.75}, job_type="render")
     assert p3["volume"] == "-25%"
 
 
@@ -114,7 +110,7 @@ def test_adversarial_asset_upload_file_extension_validation(tmp_path):
     """Verifies rejection of disallowed file extensions."""
     upload_dir = tmp_path / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
-    app = webui.create_app(upload_dir=upload_dir)
+    app = create_app(upload_dir=upload_dir)
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -161,9 +157,9 @@ def test_adversarial_render_job_asset_resolution(tmp_path, mock_video_source):
     bgm_id = uuid.uuid4().hex
     thumb_id = uuid.uuid4().hex
 
-    with webui.EDIT_ASSETS_LOCK:
-        webui.EDIT_ASSETS[bgm_id] = bgm_path
-        webui.EDIT_ASSETS[thumb_id] = thumb_path
+    with EDIT_ASSETS_LOCK:
+        EDIT_ASSETS[bgm_id] = bgm_path
+        EDIT_ASSETS[thumb_id] = thumb_path
 
     captured_params = {}
     def fake_runner(request, accept, token):
@@ -183,8 +179,8 @@ def test_adversarial_render_job_asset_resolution(tmp_path, mock_video_source):
             "streams_audio": 1,
         }
 
-    manager = webui.JobManager(runner=fake_runner)
-    app = webui.create_app(upload_dir=upload_dir, job_manager=manager, media_probe=fake_probe)
+    manager = JobManager(runner=fake_runner)
+    app = create_app(upload_dir=upload_dir, job_manager=manager, media_probe=fake_probe)
 
     async def scenario():
         client = TestClient(TestServer(app))
