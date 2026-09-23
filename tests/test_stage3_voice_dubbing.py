@@ -43,7 +43,7 @@ import subprocess
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-import webui
+from tests import webui_support as webui
 from videotrans import tts
 
 

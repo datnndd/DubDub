@@ -22,11 +22,16 @@ from videotrans.api.catalog import (
     get_frontend_dir,
 )
 from videotrans.api.provider_helpers import (
+    ensure_asr_configured,
+    ensure_translation_configured,
     test_asr_provider,
     test_translation_provider,
 )
+from videotrans.api.task_params import build_task_params
 from videotrans.api.ocr_helpers import extract_ocr_segment_text
 from videotrans.api.routes import projects, jobs, media, settings, stages
+from videotrans.util.gpus import getset_gpu
+from videotrans.util.help_role import role_menu
 
 
 @web.middleware
@@ -43,9 +48,9 @@ async def no_cache_middleware(request: web.Request, handler: Callable) -> web.St
     return response
 
 
-def frontend_version() -> str:
+def frontend_version(frontend_dir: Path | None = None) -> str:
     digest = hashlib.sha1()
-    frontend_dir = get_frontend_dir()
+    frontend_dir = frontend_dir or get_frontend_dir()
     for path in sorted(frontend_dir.rglob("*")):
         if not path.is_file():
             continue
@@ -57,22 +62,22 @@ def frontend_version() -> str:
     return digest.hexdigest()
 
 
-async def dev_reload_handler(_request: web.Request) -> web.Response:
+async def dev_reload_handler(request: web.Request) -> web.Response:
     return web.json_response(
-        {"version": frontend_version()},
+        {"version": frontend_version(request.app["frontend_dir"])},
         headers={"Cache-Control": "no-store"},
     )
 
 
 async def index_handler(request: web.Request) -> web.StreamResponse:
-    frontend_dir = get_frontend_dir()
+    frontend_dir = request.app["frontend_dir"]
     dist_index = frontend_dir / "dist" / "index.html"
     index_file = dist_index if dist_index.is_file() else (frontend_dir / "index.html")
 
     if request.app.get("reload"):
         html = index_file.read_text(encoding="utf-8")
         script = f"""<script>
-let frontendVersion = '{frontend_version()}';
+let frontendVersion = '{frontend_version(frontend_dir)}';
 setInterval(async () => {{
   try {{
     const response = await fetch('/__dev_reload__', {{ cache: 'no-store' }});
@@ -99,11 +104,17 @@ def create_app(
     translation_runner: Callable | None = None,
     ocr_extractor: Callable | None = None,
     edit_asset_store: EditAssetStore | None = None,
+    frontend_dir: Path | None = None,
+    task_params_builder: Callable = build_task_params,
+    asr_validator: Callable = ensure_asr_configured,
+    translation_validator: Callable = ensure_translation_configured,
+    gpu_initializer: Callable = getset_gpu,
+    role_provider: Callable = role_menu,
     reload: bool = False,
 ) -> web.Application:
     init_db()
     sweep_orphans_on_startup()
-    frontend_dir = get_frontend_dir()
+    frontend_dir = frontend_dir or get_frontend_dir()
     if not (frontend_dir / "index.html").is_file() and not (frontend_dir / "dist" / "index.html").is_file():
         raise RuntimeError(f"Frontend not found: {frontend_dir}")
     app = web.Application(middlewares=[no_cache_middleware], client_max_size=20 * 1024 ** 3)
@@ -119,6 +130,12 @@ def create_app(
     app["translation_tester"] = translation_tester
     app["ocr_extractor"] = ocr_extractor or extract_ocr_segment_text
     app["edit_asset_store"] = edit_asset_store or EDIT_ASSET_STORE
+    app["frontend_dir"] = frontend_dir
+    app["task_params_builder"] = task_params_builder
+    app["asr_validator"] = asr_validator
+    app["translation_validator"] = translation_validator
+    app["gpu_initializer"] = gpu_initializer
+    app["role_provider"] = role_provider
     app["reload"] = reload
 
     # Static and root routes

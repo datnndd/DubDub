@@ -12,7 +12,7 @@ from videotrans.task.orchestrator import (
     TaskResult,
     TaskStatus,
 )
-from webui import JobManager, JobRecord
+from videotrans.core.job_manager import JobManager, JobRecord
 
 
 def test_frontend_files_contain_timing_markers():

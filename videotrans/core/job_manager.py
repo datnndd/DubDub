@@ -15,7 +15,6 @@ from videotrans.task.orchestrator import (
     EventKind,
     TaskEvent,
     TaskRequest,
-    TaskStatus,
     run,
     run_staged_asr,
     run_staged_translation,
@@ -23,19 +22,15 @@ from videotrans.task.orchestrator import (
 from videotrans.core.job_store import (
     create_job as db_create_job,
     get_job as db_get_job,
-    list_jobs as db_list_jobs,
     update_job as db_update_job,
-    mark_running as db_mark_running,
-    mark_done as db_mark_done,
-    mark_failed as db_mark_failed,
     mark_cancelled as db_mark_cancelled,
     append_event,
 )
 from videotrans.core.project_store import update_project
 from videotrans.core.proc_registry import (
     kill_job_procs,
-    set_current_job_id,
 )
+from videotrans.core.job_executor import JobRunners, execute_job
 
 
 class ActiveJobError(RuntimeError):
@@ -176,6 +171,7 @@ class JobManager:
         self._runner = runner
         self._asr_runner = asr_runner or run_staged_asr
         self._translation_runner = translation_runner or run_staged_translation
+        self._runners = JobRunners(self._runner, self._asr_runner, self._translation_runner)
 
     def submit(
         self,
@@ -273,65 +269,9 @@ class JobManager:
         return job
 
     def _execute(self, job: JobRecord, params: dict[str, Any]) -> None:
-        set_current_job_id(job.id)
         try:
-            db_mark_running(job.id)
-            if job.project_id:
-                try:
-                    update_project(job.project_id, status="processing")
-                except Exception:
-                    pass
-            if job.job_type == "asr":
-                runner = self._asr_runner
-            elif job.job_type == "translation":
-                runner = self._translation_runner
-            else:
-                runner = self._runner
-            result = runner(TaskRequest(params), job.accept, job.token)
-            with job._lock:
-                if result is not None and hasattr(result, "status"):
-                    job.status = result.status.value
-                    job.outputs = getattr(result, "outputs", ())
-                    if getattr(result, "segments", ()):
-                        job.segments = tuple(result.segments)
-                    if getattr(result, "asr_duration", None) is not None:
-                        job.asr_duration = result.asr_duration
-                    if result.status == TaskStatus.SUCCEEDED:
-                        job.message = "Processing complete"
-                        job.progress = 100.0
-                        db_mark_done(job.id, message=job.message)
-                        if job.project_id:
-                            target_stage = 2 if job.job_type == "asr" else (3 if job.job_type == "translation" else 4)
-                            update_project(job.project_id, stage=target_stage, status="completed")
-                    elif result.status == TaskStatus.CANCELLED:
-                        job.message = "Processing cancelled"
-                        db_mark_cancelled(job.id, message=job.message)
-                        if job.project_id:
-                            update_project(job.project_id, status="paused")
-                    else:
-                        job.error = result.failure.message if getattr(result, "failure", None) else "Processing failed"
-                        job.message = job.error
-                        db_mark_failed(job.id, error=job.error)
-                        if job.project_id:
-                            update_project(job.project_id, status="failed")
-                else:
-                    job.status = TaskStatus.FAILED.value
-                    job.error = "Job runner returned an invalid result"
-                    job.message = job.error
-                    db_mark_failed(job.id, error=job.error)
-                    if job.project_id:
-                        update_project(job.project_id, status="failed")
-        except Exception as exc:
-            runtime_config.logger.exception("Unhandled exception in job execution %s: %s", job.id, exc, exc_info=True)
-            with job._lock:
-                job.status = TaskStatus.FAILED.value
-                job.error = str(exc) or "Internal job execution error"
-                job.message = f"Processing failed: {job.error}"
-            db_mark_failed(job.id, error=job.error)
-            if job.project_id:
-                update_project(job.project_id, status="failed")
+            execute_job(job, params, self._runners)
         finally:
-            set_current_job_id(None)
             with self._lock:
                 if self._active_by_media.get(job.media_id) == job.id:
                     self._active_by_media.pop(job.media_id, None)
@@ -341,10 +281,10 @@ def run_prepare_review(
     request: TaskRequest,
     event_sink: Callable[[TaskEvent], None] | None = None,
     cancellation_token: CancellationToken | None = None,
+    *,
+    runner: Callable = run,
 ):
     """Run only the stages needed to produce a transcript for Review Transcript."""
-    import sys
-    runner = getattr(sys.modules.get("webui"), "run", run) if "webui" in sys.modules else run
     return runner(
         request,
         event_sink,

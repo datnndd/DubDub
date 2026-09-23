@@ -1,0 +1,48 @@
+"""Legacy test imports while tests migrate to their owning backend modules."""
+
+from aiohttp import web
+from videotrans import recognition, translator, tts
+from videotrans.configure import config as runtime_config
+from videotrans.configure.config import ROOT_DIR, TEMP_DIR, app_cfg, params as app_params
+from videotrans.configure.contants import AUDIO_EXITS, VIDEO_EXTS
+from videotrans.task.orchestrator import CancellationToken, EventKind, TaskEvent, TaskRequest, TaskResult, TaskStatus, run, run_staged_asr, run_staged_translation
+from videotrans.util.help_role import role_menu
+from videotrans.util._ffmpeg_misc import format_video
+from videotrans.util.gpus import getset_gpu
+from videotrans.core.job_manager import ActiveJobError, JobRecord, JobManager, run_prepare_review as _run_prepare_review, JOBS
+from videotrans.core.media_store import MediaRecord, MediaStore, MEDIA
+from videotrans.api.catalog import FRONTEND_DIR, UPLOAD_DIR, OUTPUT_DIR, ASR_PROVIDERS, ASR_BY_TYPE, ASR_BY_ID, TIMING_MODES, TRANSLATION_MODES, TRANSLATION_PROVIDERS, TRANSLATION_BY_TYPE, TRANSLATION_BY_ID, TTS_PROVIDER_ALIASES
+from videotrans.api.task_params import _required_index, _optional_index, _safe_volume, _translation_mode, build_task_params as _build_task_params
+from videotrans.api.provider_helpers import ensure_asr_configured, ensure_translation_configured, _save_asr_settings, _translation_models, _translation_snapshot, _save_translation_settings, test_asr_provider as _test_asr_provider, test_translation_provider
+from videotrans.api.ocr_helpers import NormalizedRoi, extract_ocr_segment_text
+from videotrans.api.routes.media import EDIT_ASSETS, EDIT_ASSETS_LOCK
+from videotrans.api.app import create_app as _create_app, main, frontend_version, dev_reload_handler, index_handler, no_cache_middleware
+
+
+def build_task_params(*args, **kwargs):
+    kwargs.setdefault("format_video_fn", format_video)
+    kwargs.setdefault("output_dir", OUTPUT_DIR)
+    kwargs.setdefault("temp_dir", TEMP_DIR)
+    kwargs.setdefault("role_provider", role_menu)
+    return _build_task_params(*args, **kwargs)
+
+
+def test_asr_provider(*args, **kwargs):
+    kwargs.setdefault("recognition_runner", recognition.run)
+    kwargs.setdefault("temp_dir", TEMP_DIR)
+    return _test_asr_provider(*args, **kwargs)
+
+
+def run_prepare_review(*args, **kwargs):
+    kwargs.setdefault("runner", run)
+    return _run_prepare_review(*args, **kwargs)
+
+
+def create_app(**kwargs):
+    kwargs.setdefault("frontend_dir", FRONTEND_DIR)
+    kwargs.setdefault("task_params_builder", build_task_params)
+    kwargs.setdefault("asr_validator", ensure_asr_configured)
+    kwargs.setdefault("translation_validator", ensure_translation_configured)
+    kwargs.setdefault("gpu_initializer", getset_gpu)
+    kwargs.setdefault("role_provider", role_menu)
+    return _create_app(**kwargs)

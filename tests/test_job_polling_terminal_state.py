@@ -1,7 +1,7 @@
 import time
 import pytest
 from videotrans.task.orchestrator import TaskEvent, EventKind, TaskStatus
-import webui
+from tests import webui_support as webui
 
 
 def test_job_manager_unhandled_runner_exception_transitions_to_failed():

@@ -79,7 +79,7 @@ from videotrans.task.orchestrator import (
 )
 from videotrans.task.taskcfg import InputFile
 from videotrans.util._srt_ass import set_ass_font
-import webui
+from tests import webui_support as webui
 
 
 # ============================================================================

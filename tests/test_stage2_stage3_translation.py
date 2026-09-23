@@ -37,7 +37,7 @@ from unittest.mock import MagicMock
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-import webui
+from tests import webui_support as webui
 from videotrans import translator
 from videotrans.task.orchestrator import (
     CancellationToken,

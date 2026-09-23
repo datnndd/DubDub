@@ -19,9 +19,6 @@ from videotrans.core.job_store import (
     events_since,
 )
 from videotrans.core.project_store import update_project
-from videotrans.util.gpus import getset_gpu
-from videotrans.api.task_params import build_task_params
-from videotrans.api.provider_helpers import ensure_asr_configured, ensure_translation_configured
 
 
 async def list_jobs_handler(request: web.Request) -> web.Response:
@@ -70,16 +67,12 @@ async def create_job_handler(request: web.Request) -> web.Response:
     if project_id:
         options["projectId"] = project_id
     try:
-        params = build_task_params(media.path, options, job_type=job_type, project_id=project_id)
-        import sys
+        params = request.app["task_params_builder"](media.path, options, job_type=job_type, project_id=project_id)
         if job_type not in {"render", "translation"}:
-            asr_conf = getattr(sys.modules.get("webui"), "ensure_asr_configured", ensure_asr_configured) if "webui" in sys.modules else ensure_asr_configured
-            asr_conf(params["recogn_type"], request.app["settings_store"])
+            request.app["asr_validator"](params["recogn_type"], request.app["settings_store"])
         if job_type not in {"asr", "render"}:
-            trans_conf = getattr(sys.modules.get("webui"), "ensure_translation_configured", ensure_translation_configured) if "webui" in sys.modules else ensure_translation_configured
-            trans_conf(params["translate_type"], request.app["settings_store"])
-        gpu_fn = getattr(sys.modules.get("webui"), "getset_gpu", getset_gpu) if "webui" in sys.modules else getset_gpu
-        gpu_fn()
+            request.app["translation_validator"](params["translate_type"], request.app["settings_store"])
+        request.app["gpu_initializer"]()
         manager = request.app["job_manager"]
         job = manager.submit(params, media_id=media.id, job_type=job_type, project_id=project_id)
         if project_id:
