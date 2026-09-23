@@ -2,7 +2,7 @@
 import asyncio
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
-import webui
+from tests import webui_support as webui
 from videotrans.core.db import init_db, set_db_path, get_db_path
 from videotrans.core.project_store import create_project, get_project
 from videotrans.core.job_store import create_job, append_event, mark_done

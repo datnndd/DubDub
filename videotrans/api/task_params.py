@@ -68,22 +68,23 @@ def build_task_params(
     options: dict[str, Any],
     job_type: str = "full",
     project_id: str | None = None,
+    *,
+    format_video_fn=format_video,
+    output_dir: Path | str = OUTPUT_DIR,
+    temp_dir: Path | str = TEMP_DIR,
+    role_provider=role_menu,
 ) -> dict[str, Any]:
     """Translate supported frontend fields into the existing task configuration."""
-    import sys
-    fmt_vid = getattr(sys.modules.get("webui"), "format_video", format_video) if "webui" in sys.modules else format_video
-    file_info = fmt_vid(input_path.resolve().as_posix())
+    file_info = format_video_fn(input_path.resolve().as_posix())
     safe_stem = re.sub(r"[^\w.-]+", "-", file_info.basename, flags=re.UNICODE).strip("-")
     pid = project_id or options.get("projectId") or options.get("project_id")
-    out_dir = getattr(sys.modules.get("webui"), "OUTPUT_DIR", OUTPUT_DIR) if "webui" in sys.modules else OUTPUT_DIR
-    tmp_dir = getattr(sys.modules.get("webui"), "TEMP_DIR", TEMP_DIR) if "webui" in sys.modules else TEMP_DIR
     if pid:
         from videotrans.core.project_store import get_project_dir
         target_dir = get_project_dir(str(pid)) / "exports"
         target_dir.mkdir(parents=True, exist_ok=True)
     else:
-        target_dir = Path(out_dir) / (safe_stem or file_info.uuid)
-    cache_dir = Path(tmp_dir) / file_info.uuid
+        target_dir = Path(output_dir) / (safe_stem or file_info.uuid)
+    cache_dir = Path(temp_dir) / file_info.uuid
 
     if job_type in {"render", "translation"}:
         recogn_type = _optional_index(options.get("recognType"), len(recognition.RECOGN_NAME_LIST), 0)
@@ -132,9 +133,8 @@ def build_task_params(
             timing_flags = TIMING_MODES["voice"]
         voice_role = str(options.get("voiceRole") or "")
         if not voice_role and job_type != "translation":
-            role_fn = getattr(sys.modules.get("webui"), "role_menu", role_menu) if "webui" in sys.modules else role_menu
             try:
-                voice_role = next((voice for voice in role_fn(tts_type, langcode=target_language) if voice != "No"), "No")
+                voice_role = next((voice for voice in role_provider(tts_type, langcode=target_language) if voice != "No"), "No")
             except Exception:
                 voice_role = "No"
         elif not voice_role:

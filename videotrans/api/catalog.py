@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -17,13 +16,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_frontend_dir() -> Path:
-    """Return the frontend directory, respecting any test monkeypatching on webui.FRONTEND_DIR."""
-    if "webui" in sys.modules:
-        mod = sys.modules["webui"]
-        if mod is not None and hasattr(mod, "FRONTEND_DIR"):
-            val = mod.FRONTEND_DIR
-            if val is not None:
-                return Path(val)
+    """Return the configured frontend source directory."""
     return FRONTEND_DIR
 
 

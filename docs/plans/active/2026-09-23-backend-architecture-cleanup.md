@@ -41,9 +41,9 @@ user assets while removing desktop-only compatibility and generated files.
 ### Phase 1: establish backend ownership
 
 - [x] Move edit-asset state out of HTTP route modules into an injected service.
-- [ ] Replace `sys.modules['webui']` test hooks with constructor/app dependencies.
-- [ ] Reduce `webui.py` to runtime initialization and application startup.
-- [ ] Split job state/event publication from execution and persistence without
+- [x] Replace `sys.modules['webui']` test hooks with constructor/app dependencies.
+- [x] Reduce `webui.py` to runtime initialization and application startup.
+- [x] Split job registration/cancellation from execution and persistence without
   changing the public API.
 
 ### Phase 2: retire the legacy frontend

@@ -173,10 +173,8 @@ async def voices_handler(request: web.Request) -> web.Response:
         or request.query.get("targetLanguage")
         or ""
     )
-    import sys
-    role_func = getattr(sys.modules.get("webui"), "role_menu", role_menu) if "webui" in sys.modules else role_menu
     try:
-        voices = role_func(tts_type, langcode=language) or ["No"]
+        voices = request.app["role_provider"](tts_type, langcode=language) or ["No"]
         if not voices:
             voices = ["No"]
     except Exception:

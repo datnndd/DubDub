@@ -29,7 +29,7 @@ from videotrans.task.orchestrator import (
     TaskStatus,
 )
 from videotrans.task.taskcfg import InputFile
-import webui
+from tests import webui_support as webui
 
 
 @pytest.fixture(autouse=True)

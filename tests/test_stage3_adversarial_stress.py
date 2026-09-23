@@ -17,7 +17,7 @@ import shutil
 import subprocess
 
 import pytest
-import webui
+from tests import webui_support as webui
 
 
 def resolve_effective_voice_spec(seg, speaker_voice_map, default_voice="default"):

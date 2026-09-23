@@ -31,7 +31,7 @@ import subprocess
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-import webui
+from tests import webui_support as webui
 from videotrans import tts
 
 
@@ -301,7 +301,10 @@ def test_voices_role_menu_exception_and_empty_edge_cases(tmp_path, monkeypatch):
     - role_menu returns [] -> endpoint returns {"voices": ["No"]}
     - role_menu raises unhandled RuntimeError, KeyError, MemoryError -> endpoint returns {"voices": ["No"]}
     """
-    app = webui.create_app(upload_dir=tmp_path / "uploads")
+    app = webui.create_app(
+        upload_dir=tmp_path / "uploads",
+        role_provider=lambda *args, **kwargs: webui.role_menu(*args, **kwargs),
+    )
 
     async def scenario():
         client = TestClient(TestServer(app))

@@ -118,19 +118,22 @@ def test_translation_provider(translate_type: int, aisendsrt: bool | None = None
     return str(translated[0]["text"])
 
 
-def test_asr_provider(recogn_type: int, model_name: str) -> str:
+def test_asr_provider(
+    recogn_type: int,
+    model_name: str,
+    *,
+    recognition_runner=recognition.run,
+    temp_dir: Path | str = TEMP_DIR,
+) -> str:
     provider = ASR_BY_TYPE.get(recogn_type)
     if provider is None or not provider.get("thirdParty"):
         raise ValueError("Connection testing is only available for third-party ASR providers")
     if model_name not in provider["models"]:
         raise ValueError(f"Model {model_name} is not supported by {provider['label']}")
 
-    import sys
     sample_audio = Path(ROOT_DIR) / "videotrans" / "assets" / "no-remove.wav"
-    rec = getattr(sys.modules.get("webui"), "recognition", recognition) if "webui" in sys.modules else recognition
-    tmp_dir = getattr(sys.modules.get("webui"), "TEMP_DIR", TEMP_DIR) if "webui" in sys.modules else TEMP_DIR
-    with TemporaryDirectory(prefix="asr-test-", dir=tmp_dir) as cache_folder:
-        result = rec.run(
+    with TemporaryDirectory(prefix="asr-test-", dir=temp_dir) as cache_folder:
+        result = recognition_runner(
             audio_file=sample_audio.as_posix(),
             cache_folder=cache_folder,
             recogn_type=recogn_type,

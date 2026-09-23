@@ -14,7 +14,7 @@ from aiohttp import web, FormData
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
-import webui
+from tests import webui_support as webui
 from videotrans.configure.contants import AUDIO_EXITS, VIDEO_EXTS
 from videotrans.task.taskcfg import InputFile
 
