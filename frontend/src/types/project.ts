@@ -36,6 +36,9 @@ export interface BackendOptionItem {
   translateType?: number;
   ttsType?: number;
   thirdParty?: boolean;
+  requiresSettings?: boolean;
+  configured?: boolean;
+  testable?: boolean;
 }
 
 export interface BackendOptions {

@@ -9,6 +9,13 @@ export async function fetchVoices(ttsType: number = 2): Promise<any[]> {
   return data.voices || [];
 }
 
+export async function saveAsrSettings(providerId: string, apiKey: string): Promise<any> {
+  return apiRequest(`/api/asr-settings/${encodeURIComponent(providerId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ apiKey }),
+  });
+}
+
 export async function testAsrProvider(recognType: number, modelName: string): Promise<{ ok: boolean; message: string }> {
   return apiRequest('/api/test/asr', {
     method: 'POST',
