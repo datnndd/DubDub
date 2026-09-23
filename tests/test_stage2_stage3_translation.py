@@ -28,10 +28,7 @@ Automated verification covering:
 """
 
 import asyncio
-import json
 from pathlib import Path
-import shutil
-import subprocess
 from unittest.mock import MagicMock
 
 from aiohttp.test_utils import TestClient, TestServer

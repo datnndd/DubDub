@@ -9,6 +9,7 @@ export const Header: React.FC = () => {
   const projectsList = useDubDubStore((s) => s.projectsList);
   const drawerOpen = useDubDubStore((s) => s.drawerOpen);
   const setDrawerOpen = useDubDubStore((s) => s.setDrawerOpen);
+  const setVoiceManagerDrawerOpen = useDubDubStore((s) => s.setVoiceManagerDrawerOpen);
 
   return (
     <header className="h-[50px] flex-shrink-0 bg-white border-b border-[#E7E4DC] px-4 flex items-center justify-between gap-4 z-30 shadow-2xs">
@@ -35,7 +36,10 @@ export const Header: React.FC = () => {
             <Video className="w-3.5 h-3.5 text-[#8D4B00]" />
             <span>Video Dub</span>
           </button>
-          <button className="px-2.5 py-1 rounded-md font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center gap-1 leading-none">
+          <button
+            onClick={() => setVoiceManagerDrawerOpen(true)}
+            className="px-2.5 py-1 rounded-md font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center gap-1 leading-none cursor-pointer"
+          >
             <Mic className="w-3.5 h-3.5 text-stone-400" />
             <span>Manage Voice</span>
           </button>

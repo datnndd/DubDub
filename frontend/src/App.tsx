@@ -4,6 +4,8 @@ import { Header } from './components/Header';
 import { WorkflowStepper } from './components/WorkflowStepper';
 import { StatusFooter } from './components/StatusFooter';
 import { ProjectDrawer } from './components/ProjectDrawer';
+import { CreateVoiceModal } from './components/CreateVoiceModal';
+import { VoiceManagerDrawer } from './components/VoiceManagerDrawer';
 import { FloatingPill } from './components/FloatingPill';
 import { Stage1Prepare } from './screens/Stage1Prepare';
 import { Stage2ReviewTranscript } from './screens/Stage2ReviewTranscript';
@@ -51,6 +53,8 @@ export const App: React.FC = () => {
       </main>
       <StatusFooter />
       <ProjectDrawer />
+      <CreateVoiceModal />
+      <VoiceManagerDrawer />
       <FloatingPill />
     </div>
   );

@@ -63,6 +63,28 @@ def _translation_mode(value: Any = None) -> tuple[str, bool]:
     return mode_id, bool(mode["aisendsrt"])
 
 
+def _resolve_voice_id_to_role(voice_id_or_role: str, tts_type: int) -> str:
+    s = str(voice_id_or_role).strip()
+    if not s or s in {"No", "clone"}:
+        return s
+    if s.startswith("voice_"):
+        try:
+            from videotrans.core import voice_store
+            from videotrans import tts
+            v = voice_store.get_voice(s)
+            if v:
+                if tts_type == tts.VIENEU_TTS:
+                    return f"Custom: {v['name']}"
+                elif tts_type == tts.OMNIVOICE_TTS:
+                    return v["name"]
+                elif tts_type == tts.ELEVENLABS_TTS:
+                    return v.get("external_voice_id") or v["name"]
+                return v["name"]
+        except Exception:
+            pass
+    return s
+
+
 def build_task_params(
     input_path: Path,
     options: dict[str, Any],
@@ -139,6 +161,7 @@ def build_task_params(
                 voice_role = "No"
         elif not voice_role:
             voice_role = "No"
+    voice_role = _resolve_voice_id_to_role(voice_role, tts_type)
 
     raw_vol = options.get("volume")
     if isinstance(raw_vol, (int, float)) and not isinstance(raw_vol, bool):
@@ -170,7 +193,7 @@ def build_task_params(
             or speaker_voice_map.get(segment.get("speakerId"))
         )
         if voice:
-            line_roles[str(index)] = str(voice)
+            line_roles[str(index)] = _resolve_voice_id_to_role(str(voice), tts_type)
 
     params = asdict(file_info)
     params.update({

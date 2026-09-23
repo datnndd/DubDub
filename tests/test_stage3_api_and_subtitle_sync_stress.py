@@ -23,15 +23,12 @@ Comprehensive stress tests covering:
 """
 
 import asyncio
-import json
-from pathlib import Path
-import shutil
-import subprocess
 
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
 from videotrans.api.app import create_app
+from videotrans.util import help_role
 from videotrans.util.help_role import role_menu
 
 from videotrans import tts
@@ -56,7 +53,8 @@ def mock_tts_catalogs(monkeypatch):
         calls.append({"tts_type": tts_type, "langcode": langcode})
         return catalogs.get(tts_type, ["No"])
 
-    monkeypatch.setattr(webui, "role_menu", fake_role_menu)
+    monkeypatch.setattr("videotrans.api.app.role_menu", fake_role_menu)
+    monkeypatch.setattr("videotrans.util.help_role.role_menu", fake_role_menu)
     return {"catalogs": catalogs, "calls": calls}
 
 
@@ -305,7 +303,7 @@ def test_voices_role_menu_exception_and_empty_edge_cases(tmp_path, monkeypatch):
     """
     app = create_app(
         upload_dir=tmp_path / "uploads",
-        role_provider=lambda *args, **kwargs: role_menu(*args, **kwargs),
+        role_provider=lambda *args, **kwargs: help_role.role_menu(*args, **kwargs),
     )
 
     async def scenario():
@@ -313,13 +311,13 @@ def test_voices_role_menu_exception_and_empty_edge_cases(tmp_path, monkeypatch):
         await client.start_server()
         try:
             # Case 1: role_menu returns None
-            monkeypatch.setattr(webui, "role_menu", lambda *a, **k: None)
+            monkeypatch.setattr("videotrans.util.help_role.role_menu", lambda *a, **k: None)
             res1 = await client.get("/api/voices?ttsType=0")
             assert res1.status == 200
             assert (await res1.json()) == {"voices": ["No"]}
 
             # Case 2: role_menu returns []
-            monkeypatch.setattr(webui, "role_menu", lambda *a, **k: [])
+            monkeypatch.setattr("videotrans.util.help_role.role_menu", lambda *a, **k: [])
             res2 = await client.get("/api/voices?ttsType=0")
             assert res2.status == 200
             assert (await res2.json()) == {"voices": ["No"]}
@@ -327,7 +325,7 @@ def test_voices_role_menu_exception_and_empty_edge_cases(tmp_path, monkeypatch):
             # Case 3: role_menu raises KeyError
             def raise_key_error(*a, **k):
                 raise KeyError("missing_provider_key")
-            monkeypatch.setattr(webui, "role_menu", raise_key_error)
+            monkeypatch.setattr("videotrans.util.help_role.role_menu", raise_key_error)
             res3 = await client.get("/api/voices?ttsType=1")
             assert res3.status == 200
             assert (await res3.json()) == {"voices": ["No"]}
@@ -335,7 +333,7 @@ def test_voices_role_menu_exception_and_empty_edge_cases(tmp_path, monkeypatch):
             # Case 4: role_menu raises MemoryError
             def raise_mem_error(*a, **k):
                 raise MemoryError("simulated out of memory")
-            monkeypatch.setattr(webui, "role_menu", raise_mem_error)
+            monkeypatch.setattr("videotrans.util.help_role.role_menu", raise_mem_error)
             res4 = await client.get("/api/voices?ttsType=2")
             assert res4.status == 200
             assert (await res4.json()) == {"voices": ["No"]}

@@ -18,7 +18,7 @@ def omnivoice_fun(
         device_index=0, # gpu索引
         is_redubb=False#是否处于单视频校对配音流程
 )->Tuple[bool,Union[str,None]]:
-    from videotrans.util.help_role import get_f5tts_role
+    from videotrans.util.help_role import get_f5tts_role, get_omnivoice_voice_info
     from videotrans.util.help_misc import vail_file
     import torch
     from omnivoice import OmniVoice
@@ -60,9 +60,7 @@ def omnivoice_fun(
                     wavfile = it.get('ref_wav', '')
                     ref_text = it.get('ref_text', '')
                 else:
-                    # 使用 f5-tts文件夹内音频
-                    wavfile = f'{ROOT_DIR}/f5-tts/{role}'
-                    ref_text = roledict.get(role,{}).get('ref_text') if roledict  else None
+                    wavfile, ref_text = get_omnivoice_voice_info(role)
 
                 if not wavfile or not Path(wavfile).is_file():
                     # 仍然不存在，无参考音频不可用

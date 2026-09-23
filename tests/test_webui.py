@@ -13,7 +13,7 @@ from videotrans.api.app import create_app, main
 from videotrans.api.provider_helpers import (
     ensure_asr_configured,
     ensure_translation_configured,
-    test_asr_provider,
+    test_asr_provider as run_asr_provider_test,
 )
 from videotrans.api.task_params import build_task_params
 from videotrans.configure import config as runtime_config
@@ -42,7 +42,8 @@ def test_new_frontend_is_the_only_webui():
     assert "/api/asr-settings/{provider_id}/test" in routes
     assert "/api/translation-settings/{provider_id}" in routes
     assert "/api/translation-settings/{provider_id}/test" in routes
-    assert "gradio" not in Path(__file__).read_text(encoding="utf-8").lower()
+    assert not any(route.startswith(("/js", "/css")) for route in routes)
+    assert "gradio" not in (Path(ROOT_DIR) / "webui.py").read_text(encoding="utf-8").lower()
 
 
 def test_frontend_static_and_html_have_no_cache_headers():
@@ -85,8 +86,6 @@ def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch)
     temp_dir = tmp_path / "temp"
     output_dir = tmp_path / "output"
     temp_dir.mkdir()
-    monkeypatch.setattr(webui, "TEMP_DIR", str(temp_dir))
-    monkeypatch.setattr(webui, "OUTPUT_DIR", output_dir)
     params = build_task_params(source, {
         "sourceLanguage": "en",
         "targetLanguage": "fr",
@@ -99,7 +98,7 @@ def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch)
         "speakerDiarization": True,
         "speakerCount": 2,
         "voiceRate": "+10%",
-    }, job_type="asr")
+    }, job_type="asr", temp_dir=str(temp_dir), output_dir=output_dir)
 
     assert params["name"] == source.resolve().as_posix()
     assert params["source_language_code"] == "en"
@@ -519,10 +518,9 @@ def test_asr_connection_tester_uses_production_recognition_with_selected_model(t
         assert Path(kwargs["cache_folder"]).is_dir()
         return [{"text": "Sample transcript"}]
 
-    monkeypatch.setattr(webui, "TEMP_DIR", str(tmp_path))
     monkeypatch.setattr(recognition, "run", fake_run)
 
-    result = test_asr_provider(recognition.Deepgram, "nova-3")
+    result = run_asr_provider_test(recognition.Deepgram, "nova-3", recognition_runner=fake_run, temp_dir=str(tmp_path))
 
     assert result == "Sample transcript"
     assert calls[0]["recogn_type"] == recognition.Deepgram
@@ -541,7 +539,6 @@ def test_job_manager_reports_events_outputs_and_terminal_status(tmp_path, monkey
         sink(TaskEvent("task", EventKind.PROGRESS, "prepare", progress=42.0))
         return TaskResult("task", TaskStatus.SUCCEEDED, tmp_path, (output,))
 
-    monkeypatch.setattr(webui, "run", fake_run)
     manager = JobManager(runner=fake_run)
     job = manager.submit({"name": "unused"}, media_id="media")
 
@@ -601,8 +598,7 @@ def test_media_ingest_and_job_submission_are_end_to_end(tmp_path, monkeypatch):
         return TaskResult("task", TaskStatus.SUCCEEDED, tmp_path, (output,))
 
     manager = JobManager(runner=fake_run)
-    monkeypatch.setattr(webui, "getset_gpu", lambda: None)
-    app = create_app(job_manager=manager, upload_dir=tmp_path / "uploads", media_probe=fake_probe)
+    app = create_app(job_manager=manager, upload_dir=tmp_path / "uploads", media_probe=fake_probe, gpu_initializer=lambda: None)
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -694,14 +690,13 @@ def test_prepare_job_stops_at_transcript_checkpoint_and_skips_render_work(tmp_pa
         sink(TaskEvent("task", EventKind.STAGE_STARTED, "recogn"))
         return TaskResult("task", TaskStatus.SUCCEEDED, tmp_path, ())
 
-    monkeypatch.setattr(webui, "run", fake_run)
     request = TaskRequest({
         "name": str(tmp_path / "input.mp4"),
         "target_dir": str(tmp_path / "output"),
     })
     (tmp_path / "input.mp4").write_bytes(b"video")
 
-    result = run_prepare_review(request, lambda event: None, CancellationToken())
+    result = run_prepare_review(request, lambda event: None, CancellationToken(), runner=fake_run)
 
     assert result.status == TaskStatus.SUCCEEDED
     assert received["stop_after_stage"] == "diariz"

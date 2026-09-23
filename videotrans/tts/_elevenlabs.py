@@ -22,15 +22,41 @@ class ElevenLabsC(BaseTTS):
     def _run(self, data_item: Union[Dict, List, None], idx: int = -1) -> Union[str, None]:
         if vail_file(data_item['filename']):return
         role = data_item['role']
-        with open(ROOT_DIR+'/videotrans/voicejson/elevenlabs.json','r',encoding='utf-8') as f:
-            jsondata=json.loads(f.read())
+        voice_id = None
+        try:
+            with open(ROOT_DIR+'/videotrans/voicejson/elevenlabs.json','r',encoding='utf-8') as f:
+                jsondata=json.loads(f.read())
+            if isinstance(jsondata, dict) and role in jsondata:
+                voice_id = jsondata[role].get('voice_id')
+        except Exception:
+            pass
+
+        if not voice_id:
+            try:
+                from videotrans.core import voice_store
+                from videotrans import tts
+                v = None
+                if str(role).startswith("voice_"):
+                    v = voice_store.get_voice(str(role))
+                if not v:
+                    v = voice_store.find_voice_by_name(str(role), provider=tts.ELEVENLABS_TTS)
+                if not v:
+                    v = voice_store.get_voice(str(role))
+                if v and v.get("external_voice_id"):
+                    voice_id = v["external_voice_id"]
+            except Exception:
+                pass
+
+        if not voice_id:
+            voice_id = role
+
         try:
             client = ElevenLabs(
                 api_key=params.get('elevenlabstts_key','')
             )
             response = client.text_to_speech.convert(
                 text=data_item['text'],
-                voice_id=jsondata[role]['voice_id'],
+                voice_id=voice_id,
                 model_id=params.get("elevenlabstts_models"),
 
                 output_format="mp3_44100_128",

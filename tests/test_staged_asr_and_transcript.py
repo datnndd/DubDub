@@ -376,8 +376,7 @@ def test_job_submission_supports_asr_job_type(tmp_path, monkeypatch):
         return TaskResult("task", TaskStatus.SUCCEEDED, tmp_path, (), segments=sample_segments)
 
     manager = JobManager(asr_runner=fake_asr_runner)
-    monkeypatch.setattr(webui, "getset_gpu", lambda: None)
-    app = create_app(job_manager=manager, upload_dir=tmp_path / "uploads", media_probe=fake_probe)
+    app = create_app(job_manager=manager, upload_dir=tmp_path / "uploads", media_probe=fake_probe, gpu_initializer=lambda: None)
 
     async def scenario():
         client = TestClient(TestServer(app))
@@ -715,9 +714,6 @@ def test_asr_job_params_skip_video_render_preparation(tmp_path, monkeypatch):
     output_dir = tmp_path / "output"
     temp_dir.mkdir()
 
-    monkeypatch.setattr(webui, "TEMP_DIR", str(temp_dir))
-    monkeypatch.setattr(webui, "OUTPUT_DIR", output_dir)
-
     params = build_task_params(source, {
         "sourceLanguage": "en",
         "targetLanguage": "vi",
@@ -727,7 +723,7 @@ def test_asr_job_params_skip_video_render_preparation(tmp_path, monkeypatch):
         "voiceRole": "should-not-run-in-prepare",
         "backgroundMusicPath": "bgm.mp3",
         "thumbnailPath": "cover.jpg",
-    }, job_type="asr")
+    }, job_type="asr", temp_dir=str(temp_dir), output_dir=output_dir)
 
     assert params["voice_role"] == "No"
     assert params["video_autorate"] is False

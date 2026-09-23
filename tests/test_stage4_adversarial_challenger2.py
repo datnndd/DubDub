@@ -11,8 +11,6 @@ Target areas:
 
 import asyncio
 import io
-from pathlib import Path
-import subprocess
 import uuid
 
 import aiohttp
@@ -21,6 +19,7 @@ from aiohttp.test_utils import TestClient, TestServer
 import pytest
 
 from videotrans.api.app import create_app
+from videotrans.api import task_params as task_params_module
 from videotrans.api.routes.media import EDIT_ASSETS, EDIT_ASSETS_LOCK
 from videotrans.api.task_params import build_task_params
 from videotrans.core.job_manager import JobManager
@@ -60,7 +59,7 @@ def mock_video_source(tmp_path, monkeypatch):
         ext="mp4",
         uuid="stage4-test-uuid",
     )
-    monkeypatch.setattr(webui, "format_video", lambda _path: input_file)
+    monkeypatch.setattr(task_params_module, "format_video", lambda _path: input_file)
     return {"file": source_file, "input_info": input_file}
 
 

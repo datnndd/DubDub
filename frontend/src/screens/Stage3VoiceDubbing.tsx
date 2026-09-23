@@ -1,7 +1,8 @@
 import React from 'react';
 import { useDubDubStore } from '../store';
 import { VideoPlayer } from '../components/VideoPlayer';
-import { Volume2, Play, Sliders, Mic, RefreshCw } from 'lucide-react';
+import { VoiceSelector } from '../components/VoiceSelector';
+import { Volume2, Play, Sliders, Mic, RefreshCw, Plus } from 'lucide-react';
 
 export const Stage3VoiceDubbing: React.FC = () => {
   const segments = useDubDubStore((s) => s.segments);
@@ -15,6 +16,8 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const clearSegmentVoiceOverride = useDubDubStore((s) => s.clearSegmentVoiceOverride);
   const updateTuning = useDubDubStore((s) => s.updateTuning);
   const updateSegmentText = useDubDubStore((s) => s.updateSegmentText);
+  const setCreateVoiceModalOpen = useDubDubStore((s) => s.setCreateVoiceModalOpen);
+  const setVoiceManagerDrawerOpen = useDubDubStore((s) => s.setVoiceManagerDrawerOpen);
 
   return (
     <div className="flex-1 min-h-0 w-full p-2.5 grid grid-cols-12 gap-2.5 overflow-hidden">
@@ -33,6 +36,25 @@ export const Stage3VoiceDubbing: React.FC = () => {
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-[#8D4B00]">
               {speakers.length} Speakers
             </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setCreateVoiceModalOpen(true)}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-[#8D4B00] text-white hover:bg-[#723c00] transition-colors cursor-pointer shadow-2xs"
+              title="Create New Custom Cloned Voice"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Voice</span>
+            </button>
+            <button
+              onClick={() => setVoiceManagerDrawerOpen(true)}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-stone-700 bg-white border border-stone-200 hover:bg-stone-50 hover:border-amber-400 transition-colors cursor-pointer shadow-2xs"
+              title="Open Voice Management Library"
+            >
+              <Sliders className="w-3.5 h-3.5 text-stone-500" />
+              <span>Manage Voices</span>
+            </button>
           </div>
         </div>
 
@@ -59,21 +81,11 @@ export const Stage3VoiceDubbing: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    <select
+                    <VoiceSelector
                       value={currentVoice}
-                      onChange={(e) => setSpeakerVoice(spk.id, e.target.value)}
-                      className="text-xs font-semibold p-1.5 bg-white rounded-lg border border-stone-200 focus:border-amber-400"
-                    >
-                      {voices.length > 0 ? (
-                        voices.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="default">Default Neural Voice</option>
-                      )}
-                    </select>
+                      onChange={(voiceId) => setSpeakerVoice(spk.id, voiceId)}
+                      size="md"
+                    />
                   </div>
                 </div>
               );
@@ -141,22 +153,16 @@ export const Stage3VoiceDubbing: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-1.5">
-                      <select
+                      <VoiceSelector
                         value={activeVoice}
-                        onChange={(e) => setSegmentVoiceOverride(seg.id, e.target.value)}
-                        className="text-[11px] p-1 bg-stone-50 rounded border border-stone-200"
-                      >
-                        {voices.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(voiceId) => setSegmentVoiceOverride(seg.id, voiceId)}
+                        size="sm"
+                      />
 
                       {hasOverride && (
                         <button
                           onClick={() => clearSegmentVoiceOverride(seg.id)}
-                          className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-700"
+                          className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer"
                           title="Reset to Speaker Default"
                         >
                           <RefreshCw className="w-3 h-3" />

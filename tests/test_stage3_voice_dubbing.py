@@ -34,11 +34,6 @@ Automated verification covering:
 
 import asyncio
 import io
-import json
-from pathlib import Path
-import re
-import shutil
-import subprocess
 
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
@@ -70,7 +65,7 @@ def mock_tts_catalogs(monkeypatch):
         calls.append({"tts_type": tts_type, "langcode": langcode})
         return catalogs.get(tts_type, ["No"])
 
-    monkeypatch.setattr(webui, "role_menu", fake_role_menu)
+    monkeypatch.setattr("videotrans.util.help_role.role_menu", fake_role_menu)
     return {"catalogs": catalogs, "calls": calls}
 
 
@@ -337,8 +332,7 @@ def test_voices_endpoint_exception_resilience(tmp_path, monkeypatch):
     def crash_role_menu(*_args, **_kwargs):
         raise RuntimeError("Remote TTS engine unavailable")
 
-    monkeypatch.setattr(webui, "role_menu", crash_role_menu)
-    app = create_app(upload_dir=tmp_path / "uploads")
+    app = create_app(upload_dir=tmp_path / "uploads", role_provider=crash_role_menu)
 
     async def scenario():
         client = TestClient(TestServer(app))

@@ -15,6 +15,8 @@ export interface VoiceOption {
   gender?: string;
   lang?: string;
   sampleUrl?: string;
+  provider?: number;
+  kind?: string;
 }
 
 export interface DubbingTuning {
