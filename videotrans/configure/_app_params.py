@@ -175,22 +175,77 @@ class AppParams:
 
     def _apply_dict(self, data: Dict):
         for k, v in data.items():
-            setattr(self, k, v)
+            if k in self._secret_keys():
+                if v:
+                    try:
+                        from videotrans.core.secret_store import set_secret
+                        set_secret(k, str(v).strip())
+                    except Exception:
+                        pass
+                setattr(self, k, "")
+            else:
+                setattr(self, k, v)
+
+    def _secret_keys(self) -> set[str]:
+        try:
+            from videotrans.core.secret_store import SECRET_KEYS
+            return SECRET_KEYS
+        except Exception:
+            return {"deepgram_apikey", "chatgpt_key", "gemini_key", "deepseek_key", "elevenlabstts_key", "hf_token"}
 
     def to_dict(self) -> Dict:
-        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+        data = {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+        for sk in self._secret_keys():
+            if sk in data:
+                data[sk] = ""
+        return data
 
     def _save_to_disk(self):
         try:
-            _write_with_retry(self._json_path, json.dumps(self.to_dict(), ensure_ascii=False))
+            data = self.to_dict()
+            _write_with_retry(self._json_path, json.dumps(data, ensure_ascii=False))
         except Exception as e:
             logging.getLogger('VideoTrans').exception(f'保存 params 到本地失败：{e}', exc_info=True)
 
+    def __getattribute__(self, item):
+        if not item.startswith('_') and item in {
+            "deepgram_apikey", "chatgpt_key", "gemini_key", "deepseek_key", "elevenlabstts_key", "hf_token"
+        }:
+            try:
+                from videotrans.core.secret_store import resolve_secret
+                val = resolve_secret(item)
+                if val is not None and val.strip():
+                    return val
+            except Exception:
+                pass
+            return ""
+        return super().__getattribute__(item)
+
     def __getitem__(self, item):
+        if item in self._secret_keys():
+            return self.get(item, "")
         return getattr(self, item)
 
     def __setitem__(self, key, value):
+        if key in self._secret_keys():
+            try:
+                from videotrans.core.secret_store import set_secret
+                set_secret(key, str(value or "").strip())
+            except Exception:
+                pass
+            setattr(self, key, "")
+            return
         setattr(self, key, value)
 
     def get(self, key, default=None):
+        if key in self._secret_keys():
+            try:
+                from videotrans.core.secret_store import resolve_secret
+                resolved = resolve_secret(key)
+                if resolved is not None and resolved.strip():
+                    return resolved
+            except Exception:
+                pass
+            return default if default is not None else ""
         return getattr(self, key, default)
+

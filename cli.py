@@ -99,7 +99,7 @@ TEXT_DB: Dict[str, Dict[str, str]] = {
     "help_detect_lang":  {"zh": "音频视频发音语言", "en": "Source language of audio/video"},
     "help_model_name": {
         "zh": "语音识别模型名称\nWhisper Large-v3 模型: {}\n其他渠道请在软件界面中查看",
-        "en": "ASR model name\nWhisper Large-v3 model: {}\nOthers: check GUI"
+        "en": "ASR model name\nWhisper Large-v3 model: {}\nSee the WebUI provider settings for other models"
     },
     "help_cuda":           {"zh": "启用CUDA加速", "en": "Enable CUDA acceleration"},
     "help_remove_noise":   {"zh": "启用降噪", "en": "Enable noise reduction"},

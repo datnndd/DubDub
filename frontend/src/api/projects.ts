@@ -2,21 +2,29 @@ import { apiRequest } from './client';
 import type { ProjectRecord } from '../types/project';
 
 export async function fetchProjects(): Promise<ProjectRecord[]> {
-  const data = await apiRequest<{ projects: ProjectRecord[] }>('/api/projects');
-  return data.projects || [];
+  const data = await apiRequest<any>('/api/projects');
+  return data?.projects || (Array.isArray(data) ? data : []);
 }
 
 export async function fetchProject(id: string): Promise<ProjectRecord> {
-  const data = await apiRequest<{ project: ProjectRecord }>(`/api/projects/${encodeURIComponent(id)}`);
-  return data.project;
+  const data = await apiRequest<any>(`/api/projects/${encodeURIComponent(id)}`);
+  return data?.project || data;
 }
 
-export async function createProject(payload: { name?: string; media_path?: string; state?: any }): Promise<ProjectRecord> {
-  const data = await apiRequest<{ project: ProjectRecord }>('/api/projects', {
+export async function createProject(payload: {
+  name?: string;
+  media_path?: string;
+  media_id?: string;
+  mediaId?: string;
+  duration?: number;
+  stage?: number;
+  state?: any;
+}): Promise<ProjectRecord> {
+  const data = await apiRequest<any>('/api/projects', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  return data.project;
+  return data?.project || data;
 }
 
 export async function updateProjectState(id: string, state: any, stage?: number): Promise<void> {

@@ -63,6 +63,7 @@ class TaskResult:
     failure: TaskFailure | None = None
     segments: tuple[dict[str, Any], ...] = ()
     asr_duration: float | None = None
+    transcript_options: dict[str, Any] | None = None
 
 
 class CancellationToken:
@@ -255,10 +256,27 @@ def run(
         _embed_thumbnail(task.cfg)
         outputs = _collect_outputs(task.cfg)
         segments = extract_transcript_segments(task)
+        transcript_options = extract_transcript_options(task)
         if asr_duration_val is None:
             asr_duration_val = getattr(task, "asr_duration", None)
-        send(EventKind.SUCCEEDED, details={"outputs": tuple(map(str, outputs)), "segments": list(segments), "asr_duration": asr_duration_val})
-        return TaskResult(job_id, TaskStatus.SUCCEEDED, output_dir, outputs, segments=tuple(segments), asr_duration=asr_duration_val)
+        send(
+            EventKind.SUCCEEDED,
+            details={
+                "outputs": tuple(map(str, outputs)),
+                "segments": list(segments),
+                "transcript_options": transcript_options,
+                "asr_duration": asr_duration_val,
+            },
+        )
+        return TaskResult(
+            job_id,
+            TaskStatus.SUCCEEDED,
+            output_dir,
+            outputs,
+            segments=tuple(segments),
+            asr_duration=asr_duration_val,
+            transcript_options=transcript_options,
+        )
     except Exception as exc:
         cause = "".join(traceback.format_exception(exc))
         logger.exception("Task %s failed during %s", job_id, stage, exc_info=True)
@@ -348,12 +366,19 @@ def _persist_stage_artifacts(task: Any, stage_name: str) -> None:
             speaker_file = Path(task.cfg.cache_folder) / "speaker.json"
             if speaker_file.is_file():
                 shutil.copy2(speaker_file, dirs["transcripts"] / "speaker.json")
+            opts_file = Path(task.cfg.cache_folder) / "transcript_options.json"
+            if opts_file.is_file():
+                shutil.copy2(opts_file, dirs["transcripts"] / "transcript_options.json")
             segments = extract_transcript_segments(task)
+            transcript_options = extract_transcript_options(task)
             if segments:
                 (dirs["transcripts"] / "segments.json").write_text(json.dumps(list(segments), ensure_ascii=False, indent=2), encoding="utf-8")
                 p = get_project(pid)
                 cur_state = dict(p.get("state") or {}) if p else {}
                 cur_state["segments"] = list(segments)
+                if transcript_options:
+                    cur_state["transcript_options"] = transcript_options
+                    cur_state["selected_segment_option"] = cur_state.get("selected_segment_option", "utterances")
                 update_project_state(pid, cur_state, stage=2, status="completed" if stage_name == "diariz" else "processing")
 
         elif stage_name == "trans":
@@ -575,25 +600,8 @@ def run_staged_translation(
         return TaskResult(job_id, TaskStatus.FAILED, output_dir, failure=failure)
 
 
-def extract_transcript_segments(task: object) -> list[dict[str, Any]]:
-    """Extract and normalize recognized dialogue segments from a completed ASR task."""
+def _get_speaker_list(task: object) -> list[str]:
     import json
-    from typing import Any
-    from videotrans.util.segment_ops import calculate_cps, format_timestamp, parse_timestamp
-
-    raw_items = getattr(task, "source_srt_list", None) or []
-    if not raw_items:
-        source_sub = getattr(getattr(task, "cfg", None), "source_sub", None)
-        if source_sub and Path(source_sub).is_file():
-            try:
-                from videotrans.util.help_srt import get_subtitle_from_srt
-                raw_items = get_subtitle_from_srt(str(source_sub), is_file=True) or []
-            except Exception:
-                raw_items = []
-
-    if not raw_items:
-        return []
-
     cache_folder = getattr(getattr(task, "cfg", None), "cache_folder", None)
     target_dir = getattr(getattr(task, "cfg", None), "target_dir", None)
     speaker_list: list[str] = []
@@ -618,9 +626,22 @@ def extract_transcript_segments(task: object) -> list[dict[str, Any]]:
                     break
             except Exception:
                 pass
+    return speaker_list
 
-    enable_diariz = getattr(getattr(task, "cfg", None), "enable_diariz", False)
 
+def _raw_items_to_segments(
+    raw_items: list[Any],
+    speaker_list: list[str] | None = None,
+    enable_diariz: bool = False,
+) -> list[dict[str, Any]]:
+    """Convert raw subtitle items into normalized frontend Segment objects with start/end timing."""
+    from typing import Any
+    from videotrans.util.segment_ops import calculate_cps, format_timestamp, parse_timestamp
+
+    if not raw_items:
+        return []
+
+    speaker_list = speaker_list or []
     raw_spk_per_item = []
     for idx, item in enumerate(raw_items):
         item_dict = item if isinstance(item, dict) else dict(item.items()) if hasattr(item, "items") else getattr(item, "__dict__", {})
@@ -702,3 +723,60 @@ def extract_transcript_segments(task: object) -> list[dict[str, Any]]:
         })
 
     return segments
+
+
+def extract_transcript_segments(task: object) -> list[dict[str, Any]]:
+    """Extract and normalize recognized dialogue segments from a completed ASR task."""
+    raw_items = getattr(task, "source_srt_list", None) or []
+    if not raw_items:
+        source_sub = getattr(getattr(task, "cfg", None), "source_sub", None)
+        if source_sub and Path(source_sub).is_file():
+            try:
+                from videotrans.util.help_srt import get_subtitle_from_srt
+                raw_items = get_subtitle_from_srt(str(source_sub), is_file=True) or []
+            except Exception:
+                raw_items = []
+
+    if not raw_items:
+        return []
+
+    speaker_list = _get_speaker_list(task)
+    enable_diariz = getattr(getattr(task, "cfg", None), "enable_diariz", False)
+    return _raw_items_to_segments(raw_items, speaker_list, enable_diariz)
+
+
+def extract_transcript_options(task: object) -> dict[str, list[dict[str, Any]]] | None:
+    """Extract and normalize alternative transcript segmentation options (e.g. Deepgram utterances vs paragraphs)."""
+    import json
+    cache_folder = getattr(getattr(task, "cfg", None), "cache_folder", None)
+    target_dir = getattr(getattr(task, "cfg", None), "target_dir", None)
+
+    raw_options = getattr(task, "transcript_options", None)
+    if not isinstance(raw_options, dict):
+        raw_options = None
+    if not raw_options:
+        for opts_path in (
+            Path(cache_folder) / "transcript_options.json" if cache_folder else None,
+            Path(target_dir) / "transcript_options.json" if target_dir else None,
+        ):
+            if opts_path and opts_path.is_file():
+                try:
+                    loaded = json.loads(opts_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        raw_options = loaded
+                        break
+                except Exception:
+                    pass
+
+    if not raw_options or not isinstance(raw_options, dict):
+        return None
+
+    speaker_list = _get_speaker_list(task)
+    enable_diariz = getattr(getattr(task, "cfg", None), "enable_diariz", False)
+
+    normalized_options: dict[str, list[dict[str, Any]]] = {}
+    for key, items in raw_options.items():
+        if isinstance(items, (list, tuple)) and items:
+            normalized_options[key] = _raw_items_to_segments(list(items), speaker_list, enable_diariz)
+
+    return normalized_options if normalized_options else None

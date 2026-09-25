@@ -73,6 +73,12 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
       return;
     }
 
+    // Ensure active project exists before starting job
+    let activeProjectId = get().activeProjectId;
+    if (!activeProjectId) {
+      activeProjectId = await get().createNewProject(project.filename || 'Untitled Video Project', mediaId, project.durationSec);
+    }
+
     set({
       jobStatus: 'running',
       jobProgress: 0,
@@ -92,6 +98,10 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
       }
 
       if (res.status === 'succeeded') {
+        const transOpts = res.transcriptOptions || (res as any)?.details?.transcript_options;
+        if (transOpts) {
+          get().setTranscriptOptions(transOpts);
+        }
         if (Array.isArray(res.segments) && res.segments.length > 0) {
           get().setSegments(res.segments);
         }
@@ -99,11 +109,11 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
           jobStatus: 'completed',
           jobProgress: 100,
           jobMessage: 'Job completed successfully',
+          currentStep: 2,
+          maxUnlockedStep: Math.max(get().maxUnlockedStep || 1, 2),
         });
-        if (get().currentStep === 1) {
-          get().setStep(2);
-        }
         get().triggerAutosave();
+        get().loadProjects();
         return;
       }
 
@@ -149,6 +159,10 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
       }
       try {
         const fullJob = await fetchJob(jobId);
+        const transOpts = fullJob?.transcriptOptions || (fullJob as any)?.details?.transcript_options;
+        if (transOpts) {
+          get().setTranscriptOptions(transOpts);
+        }
         if (fullJob?.segments && Array.isArray(fullJob.segments) && fullJob.segments.length > 0) {
           get().setSegments(fullJob.segments);
         }
@@ -158,11 +172,11 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
         jobStatus: 'completed',
         jobProgress: 100,
         jobMessage: message || 'Speech recognition complete',
+        currentStep: 2,
+        maxUnlockedStep: Math.max(get().maxUnlockedStep || 1, 2),
       });
-      if (get().currentStep === 1) {
-        get().setStep(2);
-      }
       get().triggerAutosave();
+      get().loadProjects();
     };
 
     const unsub = subscribeJobStream(
@@ -184,6 +198,10 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
           set({ jobMessage: payload.message });
         }
 
+        const streamTransOpts = payload.details?.transcript_options || payload.details?.transcriptOptions;
+        if (streamTransOpts) {
+          get().setTranscriptOptions(streamTransOpts);
+        }
         if (payload.details?.segments && Array.isArray(payload.details.segments)) {
           get().setSegments(payload.details.segments);
         }
@@ -264,11 +282,11 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
           jobStatus: 'completed',
           jobProgress: 100,
           jobMessage: job.message || 'Speech recognition complete',
+          currentStep: 2,
+          maxUnlockedStep: Math.max(get().maxUnlockedStep || 1, 2),
         });
-        if (get().currentStep === 1) {
-          get().setStep(2);
-        }
         get().triggerAutosave();
+        get().loadProjects();
       } else if (job.status === 'failed' || job.error) {
         if (get().pollTimer) {
           clearInterval(get().pollTimer);

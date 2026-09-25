@@ -216,6 +216,7 @@ def build_task_params(
         "voice_rate": str(options.get("voiceRate") or "+0%"),
         "volume": norm_volume,
         "pitch": "+0Hz",
+        "deepgram_options": options.get("deepgramOptions") or options.get("deepgram_options") or {},
         **timing_flags,
         # ASR-only jobs should extract audio, transcribe, and diarize only.
         # Prevent PrepareMixin from spawning the no-audio video render thread,

@@ -1,19 +1,24 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useDubDubStore } from '../store';
-import { Tv as VideoIcon } from 'lucide-react';
+import { Tv as VideoIcon, Subtitles } from 'lucide-react';
 
 interface VideoPlayerProps {
   title?: string;
   subtitleVariant?: 'capcut' | 'dual' | 'none';
   showAudioSwitcher?: boolean;
+  showSubtitleToggle?: boolean;
+  initialSubtitlesVisible?: boolean;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   title = 'Synchronized Video Player',
   subtitleVariant = 'capcut',
   showAudioSwitcher = false,
+  showSubtitleToggle = true,
+  initialSubtitlesVisible = true,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [subtitlesVisible, setSubtitlesVisible] = useState(initialSubtitlesVisible);
 
   const project = useDubDubStore((s) => s.project);
   const playback = useDubDubStore((s) => s.playback);
@@ -67,6 +72,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {showSubtitleToggle && subtitleVariant !== 'none' && (
+            <button
+              type="button"
+              data-testid="toggle-subtitles-btn"
+              onClick={() => setSubtitlesVisible(!subtitlesVisible)}
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors border cursor-pointer ${
+                subtitlesVisible
+                  ? 'bg-amber-50 text-[#8D4B00] border-amber-200 hover:bg-amber-100'
+                  : 'bg-stone-100 text-stone-400 border-stone-200 hover:text-stone-600'
+              }`}
+              title={subtitlesVisible ? 'Remove subtitles overlay from video' : 'Show subtitles overlay on video'}
+            >
+              <Subtitles className="w-3 h-3" />
+              <span>CC {subtitlesVisible ? 'ON' : 'OFF'}</span>
+            </button>
+          )}
+
           {showAudioSwitcher && (
             <div className="flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-[10px]">
               <button
@@ -123,7 +145,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         )}
 
         {/* Subtitles Overlay */}
-        {subtitleVariant !== 'none' && (
+        {subtitleVariant !== 'none' && subtitlesVisible && (
           <div className="absolute inset-x-3 bottom-4 z-20 flex justify-center text-center pointer-events-none">
             {subtitleVariant === 'capcut' ? (
               <div className="w-full max-w-2xl px-4 py-1 flex flex-col items-center">

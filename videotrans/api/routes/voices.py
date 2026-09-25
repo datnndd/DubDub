@@ -10,20 +10,41 @@ import uuid
 from typing import Any, Optional
 from urllib.parse import unquote
 
-from aiohttp import web
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.datastructures import UploadFile
 
 from videotrans import tts
 from videotrans.api.catalog import TTS_PROVIDER_ALIASES
-from videotrans.configure.config import ROOT_DIR
 from videotrans.core import voice_store
 from videotrans.services.audio_normalizer import (
     normalize_reference_audio,
-    MIN_REFERENCE_DURATION_SEC,
-    MAX_REFERENCE_DURATION_SEC,
 )
 from videotrans.services.voice_preview import synthesize_voice_preview
 
+from pydantic import BaseModel, ConfigDict, Field
+
 logger = logging.getLogger("videotrans.api.voices")
+router = APIRouter()
+
+
+class VoiceUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    instruct: Optional[str] = None
+    ref_text: Optional[str] = None
+    language: Optional[str] = None
+    tuning_params: Optional[dict[str, Any]] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class VoicePreviewRequest(BaseModel):
+    text: Optional[str] = None
+    language: Optional[str] = None
+    force_refresh: Optional[bool] = False
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 def _parse_provider(raw: Any) -> int:
@@ -42,65 +63,63 @@ def _parse_provider(raw: Any) -> int:
     return tts.DEFAULT_TTS
 
 
-async def list_custom_voices_handler(request: web.Request) -> web.Response:
-    """GET /api/custom-voices"""
-    raw_provider = request.query.get("provider")
-    provider = _parse_provider(raw_provider) if raw_provider is not None else None
+@router.get("/api/custom-voices")
+async def list_custom_voices_handler(
+    provider: Optional[str] = None,
+    active: str = "true",
+) -> JSONResponse:
+    parsed_provider = _parse_provider(provider) if provider is not None else None
+    active_only = active.strip().lower() not in {"false", "0", "no"}
+    voices = voice_store.list_voices(provider=parsed_provider, active_only=active_only)
+    return JSONResponse({"voices": voices})
 
-    raw_active = request.query.get("active", "true").strip().lower()
-    active_only = raw_active not in {"false", "0", "no"}
 
-    voices = voice_store.list_voices(provider=provider, active_only=active_only)
-    return web.json_response({"voices": voices})
-
-
-async def get_custom_voice_handler(request: web.Request) -> web.Response:
-    """GET /api/custom-voices/{id}"""
-    voice_id = request.match_info["id"]
-    voice = voice_store.get_voice(voice_id)
+@router.get("/api/custom-voices/{id}")
+async def get_custom_voice_handler(id: str) -> JSONResponse:
+    voice = voice_store.get_voice(id)
     if not voice:
-        raise web.HTTPNotFound(text=f"Voice {voice_id} not found")
-    return web.json_response(voice)
+        raise HTTPException(status_code=404, detail=f"Voice {id} not found")
+    return JSONResponse(voice)
 
 
-async def create_custom_voice_handler(request: web.Request) -> web.Response:
-    """
-    POST /api/custom-voices
-    Accepts multipart/form-data or application/json.
-    Normalizes audio to 16-bit mono PCM WAV and creates voice profile.
-    """
+@router.post("/api/custom-voices", status_code=201)
+async def create_custom_voice_handler(request: Request) -> JSONResponse:
     voice_store.init_voice_dirs()
     fields: dict[str, Any] = {}
+    audio_file_obj: Optional[UploadFile] = None
     audio_bytes: Optional[bytes] = None
     audio_filename: str = ""
 
-    content_type = (request.content_type or "").lower()
+    content_type = (request.headers.get("content-type") or "").lower()
 
     if "multipart" in content_type:
-        reader = await request.multipart()
-        async for part in reader:
-            if part.name in {"audio", "file"} and part.filename:
-                audio_filename = Path(unquote(part.filename)).name
-                chunks = []
-                while chunk := await part.read_chunk():
-                    chunks.append(chunk)
-                audio_bytes = b"".join(chunks)
+        try:
+            form = await request.form()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid multipart form: {exc}") from exc
+
+        for key, val in form.items():
+            if key in {"audio", "file"}:
+                if hasattr(val, "filename") and val.filename:
+                    audio_file_obj = val
+                    audio_filename = Path(unquote(val.filename)).name
+                elif isinstance(val, (bytes, bytearray)):
+                    audio_bytes = bytes(val)
+                    audio_filename = "sample.wav"
             else:
-                text_val = await part.text()
-                fields[part.name] = text_val
+                fields[key] = str(val)
     elif "json" in content_type:
         try:
             fields = await request.json()
         except Exception as exc:
-            raise web.HTTPBadRequest(text=f"Invalid JSON: {exc}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
     else:
-        raise web.HTTPBadRequest(text="Expected multipart/form-data or application/json")
+        raise HTTPException(status_code=400, detail="Expected multipart/form-data or application/json")
 
-    # Name validation
     raw_name = fields.get("name", "")
     clean_name = " ".join(str(raw_name).split())
     if not clean_name:
-        raise web.HTTPBadRequest(text="Voice name is required")
+        raise HTTPException(status_code=400, detail="Voice name is required")
 
     provider = _parse_provider(fields.get("provider"))
     language = str(fields.get("language") or "Auto").strip()
@@ -124,12 +143,12 @@ async def create_custom_voice_handler(request: web.Request) -> web.Response:
     voice_id = f"voice_{uuid.uuid4().hex[:8]}"
     ref_audio_rel = ""
 
-    # Audio normalization pipeline
-    if audio_bytes:
+    if audio_file_obj:
         ext = Path(audio_filename).suffix or ".wav"
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
             tmp_path = Path(tmp_file.name)
-            tmp_path.write_bytes(audio_bytes)
+            while chunk := await audio_file_obj.read(4 * 1024 * 1024):
+                tmp_file.write(chunk)
 
         try:
             dest_filename = f"{voice_id}.wav"
@@ -137,14 +156,32 @@ async def create_custom_voice_handler(request: web.Request) -> web.Response:
             normalize_reference_audio(tmp_path, dest_path, provider=provider)
             ref_audio_rel = dest_filename
         except ValueError as exc:
-            raise web.HTTPBadRequest(text=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             logger.exception("Failed to normalize audio", exc_info=True)
-            raise web.HTTPBadRequest(text=f"Audio normalization failed: {exc}")
+            raise HTTPException(status_code=400, detail=f"Audio normalization failed: {exc}") from exc
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    elif audio_bytes:
+        ext = Path(audio_filename).suffix or ".wav"
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+            tmp_file.write(audio_bytes)
+
+        try:
+            dest_filename = f"{voice_id}.wav"
+            dest_path = voice_store.VOICES_DIR / dest_filename
+            normalize_reference_audio(tmp_path, dest_path, provider=provider)
+            ref_audio_rel = dest_filename
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to normalize audio", exc_info=True)
+            raise HTTPException(status_code=400, detail=f"Audio normalization failed: {exc}") from exc
         finally:
             tmp_path.unlink(missing_ok=True)
     elif provider != tts.ELEVENLABS_TTS or not external_voice_id:
-        raise web.HTTPBadRequest(text="Audio file is required for voice cloning")
+        raise HTTPException(status_code=400, detail="Audio file is required for voice cloning")
 
     created = voice_store.create_voice(
         name=clean_name,
@@ -160,136 +197,118 @@ async def create_custom_voice_handler(request: web.Request) -> web.Response:
         tuning_params=tuning_params,
     )
 
-    return web.json_response(created, status=201)
+    return JSONResponse(created, status_code=201)
 
 
-async def update_custom_voice_handler(request: web.Request) -> web.Response:
-    """PUT /api/custom-voices/{id}"""
-    voice_id = request.match_info["id"]
-    voice = voice_store.get_voice(voice_id)
+@router.put("/api/custom-voices/{id}")
+async def update_custom_voice_handler(
+    id: str,
+    payload: VoiceUpdateRequest,
+    request: Request,
+) -> JSONResponse:
+    voice = voice_store.get_voice(id)
     if not voice:
-        raise web.HTTPNotFound(text=f"Voice {voice_id} not found")
+        raise HTTPException(status_code=404, detail=f"Voice {id} not found")
 
+    update_dict = payload.model_dump(exclude_unset=True)
     try:
-        payload = await request.json()
-    except Exception as exc:
-        raise web.HTTPBadRequest(text=f"Invalid JSON: {exc}")
-
-    if not isinstance(payload, dict):
-        raise web.HTTPBadRequest(text="Request body must be a JSON object")
-
-    try:
-        updated = voice_store.update_voice(voice_id, **payload)
+        updated = voice_store.update_voice(id, **update_dict)
     except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not updated:
-        raise web.HTTPNotFound(text=f"Voice {voice_id} not found")
+        raise HTTPException(status_code=404, detail=f"Voice {id} not found")
 
-    return web.json_response(updated)
+    return JSONResponse(updated)
 
 
-async def delete_custom_voice_handler(request: web.Request) -> web.Response:
-    """DELETE /api/custom-voices/{id}"""
-    voice_id = request.match_info["id"]
-    voice = voice_store.get_voice(voice_id)
+@router.delete("/api/custom-voices/{id}")
+async def delete_custom_voice_handler(
+    id: str,
+    hard: str = Query("false"),
+) -> JSONResponse:
+    voice = voice_store.get_voice(id)
     if not voice:
-        raise web.HTTPNotFound(text=f"Voice {voice_id} not found")
+        raise HTTPException(status_code=404, detail=f"Voice {id} not found")
 
-    hard_delete = request.query.get("hard", "").strip().lower() in {"true", "1", "yes"}
-    success = voice_store.delete_voice(voice_id, hard=hard_delete)
+    hard_delete = hard.strip().lower() in {"true", "1", "yes"}
+    success = voice_store.delete_voice(id, hard=hard_delete)
     if not success:
-        raise web.HTTPNotFound(text=f"Voice {voice_id} not found")
+        raise HTTPException(status_code=404, detail=f"Voice {id} not found")
 
-    return web.json_response({"ok": True, "id": voice_id, "hard": hard_delete})
+    return JSONResponse({"ok": True, "id": id, "hard": hard_delete})
 
 
-async def get_custom_voice_audio_handler(request: web.Request) -> web.Response:
-    """GET /api/custom-voices/{id}/audio"""
-    voice_id = request.match_info["id"]
-    voice = voice_store.get_voice(voice_id)
+@router.get("/api/custom-voices/{id}/audio")
+async def get_custom_voice_audio_handler(id: str) -> FileResponse:
+    voice = voice_store.get_voice(id)
     if not voice or not voice.get("ref_audio_path"):
-        raise web.HTTPNotFound(text="Reference audio not found")
+        raise HTTPException(status_code=404, detail="Reference audio not found")
 
     try:
         audio_path = voice_store.get_voice_audio_path(voice["ref_audio_path"])
     except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not audio_path.is_file():
-        raise web.HTTPNotFound(text="Reference audio file missing from storage")
+        raise HTTPException(status_code=404, detail="Reference audio file missing from storage")
 
-    return web.FileResponse(audio_path, headers={"Content-Type": "audio/wav"})
+    return FileResponse(audio_path, media_type="audio/wav")
 
 
-async def create_custom_voice_preview_handler(request: web.Request) -> web.Response:
-    """POST /api/custom-voices/{id}/preview"""
-    voice_id = request.match_info["id"]
-    voice = voice_store.get_voice(voice_id)
+@router.post("/api/custom-voices/{id}/preview")
+async def create_custom_voice_preview_handler(
+    id: str,
+    payload: Optional[VoicePreviewRequest] = None,
+    request: Request = None,
+) -> JSONResponse:
+    voice = voice_store.get_voice(id)
     if not voice:
-        raise web.HTTPNotFound(text=f"Voice {voice_id} not found")
+        raise HTTPException(status_code=404, detail=f"Voice {id} not found")
 
-    text = None
-    language = None
-    force_refresh = False
-
-    if request.can_read_body:
-        try:
-            payload = await request.json()
-            if isinstance(payload, dict):
-                text = payload.get("text")
-                language = payload.get("language")
-                force_refresh = bool(payload.get("force_refresh", False))
-        except Exception:
-            pass
+    text = payload.text if payload else None
+    language = payload.language if payload else None
+    force_refresh = bool(payload.force_refresh) if payload else False
 
     try:
         preview_path = await synthesize_voice_preview(
-            voice_id,
+            id,
             text=text,
             language=language,
             force_refresh=force_refresh,
         )
     except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Preview generation failed", exc_info=True)
-        raise web.HTTPInternalServerError(text=f"Preview generation failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Preview generation failed: {exc}") from exc
 
-    preview_url = f"/api/custom-voices/{voice_id}/preview/audio"
-    return web.json_response({
+    preview_url = f"/api/custom-voices/{id}/preview/audio"
+    return JSONResponse({
         "ok": True,
-        "voice_id": voice_id,
+        "voice_id": id,
         "preview_url": preview_url,
         "preview_filename": preview_path.name,
     })
 
 
-async def get_custom_voice_preview_audio_handler(request: web.Request) -> web.Response:
-    """GET /api/custom-voices/{id}/preview/audio"""
-    voice_id = request.match_info["id"]
-    voice = voice_store.get_voice(voice_id)
+@router.get("/api/custom-voices/{id}/preview/audio")
+async def get_custom_voice_preview_audio_handler(id: str) -> FileResponse:
+    voice = voice_store.get_voice(id)
     if not voice:
-        raise web.HTTPNotFound(text=f"Voice {voice_id} not found")
+        raise HTTPException(status_code=404, detail=f"Voice {id} not found")
 
-    preview_filename = voice.get("preview_audio_path") or f"{voice_id}_preview.wav"
+    preview_filename = voice.get("preview_audio_path") or f"{id}_preview.wav"
     try:
         preview_path = voice_store.get_preview_audio_path(preview_filename)
     except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not preview_path.is_file():
-        raise web.HTTPNotFound(text="Preview audio not generated yet")
+        raise HTTPException(status_code=404, detail="Preview audio not generated yet")
 
-    return web.FileResponse(preview_path, headers={"Content-Type": "audio/wav"})
+    return FileResponse(preview_path, media_type="audio/wav")
 
 
-def register_routes(app: web.Application) -> None:
-    app.router.add_get("/api/custom-voices", list_custom_voices_handler)
-    app.router.add_post("/api/custom-voices", create_custom_voice_handler)
-    app.router.add_get("/api/custom-voices/{id}", get_custom_voice_handler)
-    app.router.add_put("/api/custom-voices/{id}", update_custom_voice_handler)
-    app.router.add_delete("/api/custom-voices/{id}", delete_custom_voice_handler)
-    app.router.add_get("/api/custom-voices/{id}/audio", get_custom_voice_audio_handler)
-    app.router.add_post("/api/custom-voices/{id}/preview", create_custom_voice_preview_handler)
-    app.router.add_get("/api/custom-voices/{id}/preview/audio", get_custom_voice_preview_audio_handler)
+def register_routes(app) -> None:
+    app.include_router(router)

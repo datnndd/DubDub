@@ -85,6 +85,13 @@ CREATE TABLE IF NOT EXISTS voices (
 CREATE INDEX IF NOT EXISTS idx_voices_provider ON voices(provider);
 CREATE INDEX IF NOT EXISTS idx_voices_active ON voices(is_active);
 CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_settings_updated ON settings(updated_at);
 """
 
 

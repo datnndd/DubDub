@@ -13,7 +13,7 @@ export interface ProjectSlice {
   setDrawerOpen: (open: boolean) => void;
   loadProjects: () => Promise<void>;
   selectProject: (id: string) => Promise<void>;
-  createNewProject: (name?: string) => Promise<string>;
+  createNewProject: (name?: string, mediaId?: string, duration?: number) => Promise<string>;
   deleteProjectById: (id: string) => Promise<void>;
   triggerAutosave: () => void;
 }
@@ -45,35 +45,45 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
   selectProject: async (id: string) => {
     try {
       const project = await fetchProject(id);
+      if (!project) return;
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('dubdub_active_project_id', id);
       }
-      set({ activeProjectId: id, drawerOpen: false });
-      if (project.state_json) {
-        try {
-          const parsed = JSON.parse(project.state_json);
-          set((state: any) => ({
-            ...state,
-            ...parsed,
-            activeProjectId: id,
-            drawerOpen: false,
-          }));
-        } catch (_) {}
-      }
+      const stateData = (project as any).state || (project.state_json ? JSON.parse(project.state_json) : null);
+      const targetStep = stateData?.currentStep || project.stage || 1;
+      const mediaId = (project as any).media_id || stateData?.backend?.mediaId;
+
+      set((state: any) => ({
+        ...state,
+        ...(stateData || {}),
+        activeProjectId: id,
+        currentStep: targetStep,
+        maxUnlockedStep: Math.max(state.maxUnlockedStep || 1, project.stage || 1, targetStep),
+        drawerOpen: false,
+        project: {
+          ...(state.project || {}),
+          ...(stateData?.project || {}),
+          filename: project.name || stateData?.project?.filename || state.project.filename,
+          previewUrl: stateData?.project?.previewUrl || (mediaId ? `/api/media/${mediaId}/file` : state.project.previewUrl),
+        },
+      }));
     } catch (err) {
       console.error('Failed to select project:', err);
     }
   },
 
-  createNewProject: async (name: string = 'Untitled Video Project') => {
+  createNewProject: async (name: string = 'Untitled Video Project', mediaId?: string, duration?: number) => {
     try {
-      const proj = await createProject({ name });
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('dubdub_active_project_id', proj.id);
+      const proj = await createProject({ name, mediaId, duration });
+      const newId = proj?.id;
+      if (newId) {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('dubdub_active_project_id', newId);
+        }
+        set({ activeProjectId: newId, currentStep: 1 });
       }
-      set({ activeProjectId: proj.id, currentStep: 1 });
       await get().loadProjects();
-      return proj.id;
+      return newId || '';
     } catch (err) {
       console.error('Failed to create new project:', err);
       return '';
@@ -108,6 +118,8 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       speakerVoiceMap: currentState.speakerVoiceMap,
       tuning: currentState.tuning,
       segments: currentState.segments,
+      transcriptOptions: currentState.transcriptOptions,
+      selectedSegmentOption: currentState.selectedSegmentOption,
       subtitleStyles: currentState.subtitleStyles,
       editVideo: {
         audioMix: currentState.editVideo?.audioMix,
@@ -115,8 +127,18 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       },
       currentStep: currentState.currentStep,
     };
-    updateProjectState(id, snapshot, currentState.currentStep).catch((err) => {
-      console.warn('Autosave failed:', err);
-    });
+    updateProjectState(id, snapshot, currentState.currentStep)
+      .then(() => {
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        set((s: any) => ({
+          project: {
+            ...s.project,
+            lastSaved: timeStr,
+          },
+        }));
+      })
+      .catch((err) => {
+        console.warn('Autosave failed:', err);
+      });
   },
 });

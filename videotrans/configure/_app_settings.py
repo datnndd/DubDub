@@ -229,7 +229,10 @@ class AppSettings:
 
     def _save_to_disk(self):
         try:
-            _write_with_retry(self._json_path, json.dumps(self.to_dict(), ensure_ascii=False))
+            data = self.to_dict()
+            if "hf_token" in data:
+                data["hf_token"] = ""
+            _write_with_retry(self._json_path, json.dumps(data, ensure_ascii=False))
         except Exception as e:
             logging.getLogger('VideoTrans').exception(f'保存settings到本地失败：{e}', exc_info=True)
 
@@ -238,11 +241,35 @@ class AppSettings:
         if p.is_file():
             tk = p.read_text().strip()
             if tk:
-                self.hf_token = tk
-        if not p.is_file() and self.hf_token:
-            p.write_text(self.hf_token)
+                try:
+                    from videotrans.core.secret_store import set_secret
+                    set_secret("hf_token", tk)
+                except Exception:
+                    pass
+            self.hf_token = ""
+
+    def __getattribute__(self, item):
+        if item == "hf_token":
+            try:
+                from videotrans.core.secret_store import resolve_secret
+                val = resolve_secret("hf_token")
+                if val is not None and val.strip():
+                    return val
+            except Exception:
+                pass
+            return ""
+        return super().__getattribute__(item)
 
     def __getitem__(self, key):
+        if key == "hf_token":
+            try:
+                from videotrans.core.secret_store import resolve_secret
+                val = resolve_secret("hf_token")
+                if val is not None and val.strip():
+                    return val
+            except Exception:
+                pass
+            return ""
         attr = key
         if key == "initial_prompt_zh-cn":
             attr = "initial_prompt_zh_cn"
@@ -251,6 +278,14 @@ class AppSettings:
         return getattr(self, attr)
 
     def __setitem__(self, key, value):
+        if key == "hf_token":
+            try:
+                from videotrans.core.secret_store import set_secret
+                set_secret("hf_token", str(value or "").strip())
+            except Exception:
+                pass
+            self.hf_token = ""
+            return
         attr = key
         if key == "initial_prompt_zh-cn":
             attr = "initial_prompt_zh_cn"

@@ -6,7 +6,7 @@ attribute-bearing objects (``obj.text``) or as dict-like mappings
 (``obj["text"]`` / ``obj.get("text")``).
 
 This module must remain import-side-effect free and must NOT import any heavy
-dependency (paddleocr, cv2, numpy, torch, PySide6). Only Python stdlib is used.
+dependency (paddleocr, cv2, numpy, torch). Only Python stdlib is used.
 """
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple

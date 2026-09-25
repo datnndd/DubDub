@@ -12,6 +12,7 @@ export interface Segment {
   cpsStatus?: 'Optimal' | 'Good' | 'Warning' | 'Critical';
   confidence?: number;
   sourceText: string;
+  text?: string;
   targetText: string;
   hasOcrDiff?: boolean;
   ocrBoxNumber?: string;

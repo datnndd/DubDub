@@ -5,7 +5,7 @@ provider-id constant, a lazy provider registry keyed by id, and a `run` entry
 that resolves the provider on demand via `get_class`.
 
 This module is import-side-effect free and must NOT eagerly import any heavy
-dependency (paddleocr, cv2, numpy, torch, PySide6) or the paddle provider
+dependency (paddleocr, cv2, numpy, torch) or the paddle provider
 module. The paddle provider (imp="._paddle") is registered but only imported
 lazily inside `run`.
 """

@@ -15,10 +15,18 @@ export async function apiRequest<T = any>(url: string, options: RequestInit = {}
   if (!response.ok) {
     let errorMsg = `Request failed: ${response.status} ${response.statusText}`;
     try {
-      const errJson = await response.json();
-      if (errJson.detail) errorMsg = errJson.detail;
-      else if (errJson.message) errorMsg = errJson.message;
-      else if (errJson.error) errorMsg = errJson.error;
+      const text = await response.text();
+      if (text && text.trim()) {
+        try {
+          const errJson = JSON.parse(text);
+          if (errJson.detail) errorMsg = errJson.detail;
+          else if (errJson.message) errorMsg = errJson.message;
+          else if (errJson.error) errorMsg = errJson.error;
+          else errorMsg = text.trim();
+        } catch (_) {
+          errorMsg = text.trim();
+        }
+      }
     } catch (_) {}
     throw new Error(errorMsg);
   }

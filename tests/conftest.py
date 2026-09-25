@@ -1,6 +1,6 @@
 """
 conftest.py — sets up mocks for heavy dependencies so videotrans
-modules can be imported without a full PySide6 / torch installation.
+modules can be imported without a full optional model-runtime installation.
 
 Only mocks packages that are genuinely NOT installed.
 """
@@ -110,3 +110,171 @@ if not _HAS_PYDUB:
     sys.modules["pydub"] = _m
     _ms = MagicMock()
     sys.modules["pydub.playback"] = _ms
+
+# ---------------------------------------------------------------------------
+# ASGI TestClient / TestServer adapter for aiohttp.test_utils compatibility
+# ---------------------------------------------------------------------------
+import types
+import unittest
+import httpx
+from aiohttp import FormData
+
+class _AwaitableStr(str):
+    def __await__(self):
+        async def _coro():
+            return str(self)
+        return _coro().__await__()
+
+    def __call__(self):
+        return self
+
+
+class _AwaitableData:
+    def __init__(self, data):
+        self._data = data
+
+    def __await__(self):
+        async def _coro():
+            return self._data
+        return _coro().__await__()
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        self._data[key] = value
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+
+    def get(self, key, default=None):
+        return self._data.get(key, default) if isinstance(self._data, dict) else default
+
+
+class _WrappedResponse:
+    def __init__(self, resp: httpx.Response):
+        self._resp = resp
+
+    @property
+    def status(self) -> int:
+        return self._resp.status_code
+
+    @property
+    def status_code(self) -> int:
+        return self._resp.status_code
+
+    @property
+    def headers(self):
+        return self._resp.headers
+
+    def json(self):
+        try:
+            return _AwaitableData(self._resp.json())
+        except Exception:
+            return _AwaitableData({})
+
+    @property
+    def text(self):
+        return _AwaitableStr(self._resp.text)
+
+    async def read(self):
+        return self._resp.content
+
+
+class _TestServer:
+    __test__ = False
+    def __init__(self, app):
+        self.app = app
+
+
+class _TestClient:
+    __test__ = False
+    def __init__(self, server_or_app):
+        if hasattr(server_or_app, "app"):
+            self.app = server_or_app.app
+        else:
+            self.app = server_or_app
+        self._transport = httpx.ASGITransport(app=self.app)
+        self._client = httpx.AsyncClient(transport=self._transport, base_url="http://test")
+
+    async def start_server(self):
+        return self
+
+    async def close(self):
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        await self._client.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._client.__aexit__(exc_type, exc_val, exc_tb)
+
+    def _prepare_kwargs(self, kwargs):
+        if "data" in kwargs:
+            data = kwargs.pop("data")
+            if isinstance(data, FormData):
+                files = []
+                data_dict = {}
+                for params, headers, content in data._fields:
+                    if "filename" in params:
+                        raw = content.getvalue() if hasattr(content, "getvalue") else (content.read() if hasattr(content, "read") else content)
+                        files.append((params["name"], (params["filename"], raw, headers.get("Content-Type"))))
+                    else:
+                        data_dict[params["name"]] = content
+                if files:
+                    kwargs["files"] = files
+                if data_dict:
+                    kwargs["data"] = data_dict
+            elif isinstance(data, (bytes, bytearray)):
+                kwargs["content"] = data
+            elif isinstance(data, dict):
+                kwargs["data"] = data
+        return kwargs
+
+    async def get(self, path, **kwargs):
+        kwargs = self._prepare_kwargs(kwargs)
+        resp = await self._client.get(path, **kwargs)
+        return _WrappedResponse(resp)
+
+    async def post(self, path, **kwargs):
+        kwargs = self._prepare_kwargs(kwargs)
+        resp = await self._client.post(path, **kwargs)
+        return _WrappedResponse(resp)
+
+    async def put(self, path, **kwargs):
+        kwargs = self._prepare_kwargs(kwargs)
+        resp = await self._client.put(path, **kwargs)
+        return _WrappedResponse(resp)
+
+    async def delete(self, path, **kwargs):
+        kwargs = self._prepare_kwargs(kwargs)
+        resp = await self._client.delete(path, **kwargs)
+        return _WrappedResponse(resp)
+
+
+class _AioHTTPTestCase(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.app = await self.get_application()
+        self.client = _TestClient(_TestServer(self.app))
+        await self.client.start_server()
+
+    async def asyncTearDown(self):
+        await self.client.close()
+
+    async def get_application(self):
+        raise NotImplementedError
+
+
+# Install into sys.modules so any test importing aiohttp.test_utils gets this ASGI-backed adapter
+_atu = types.ModuleType("aiohttp.test_utils")
+_atu.TestClient = _TestClient
+_atu.TestServer = _TestServer
+_atu.AioHTTPTestCase = _AioHTTPTestCase
+sys.modules["aiohttp.test_utils"] = _atu

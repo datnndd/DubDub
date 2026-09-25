@@ -72,12 +72,13 @@ def test_frontend_static_and_html_have_no_cache_headers():
 def test_main_accepts_reload_flag(monkeypatch):
     captured = {}
     monkeypatch.setattr("sys.argv", ["py", "--reload", "--port", "8765"])
-    monkeypatch.setattr(web, "run_app", lambda app, **kwargs: captured.update(app=app, **kwargs))
+    import uvicorn
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: captured.update(app=app, **kwargs))
 
     main()
 
     assert captured["port"] == 8765
-    assert captured["app"]["reload"] is True
+    assert captured["reload"] is True
 
 
 def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch):

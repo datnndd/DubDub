@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDubDubStore } from '../store';
-import { Waves, Video, Mic, BookOpen, FolderOpen, Sparkles } from 'lucide-react';
+import { Waves, Video, Mic, BookOpen, FolderOpen, Sparkles, Settings as SettingsIcon } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const currentStep = useDubDubStore((s) => s.currentStep);
@@ -10,6 +10,7 @@ export const Header: React.FC = () => {
   const drawerOpen = useDubDubStore((s) => s.drawerOpen);
   const setDrawerOpen = useDubDubStore((s) => s.setDrawerOpen);
   const setVoiceManagerDrawerOpen = useDubDubStore((s) => s.setVoiceManagerDrawerOpen);
+  const openSettings = useDubDubStore((s) => s.openSettings);
 
   return (
     <header className="h-[50px] flex-shrink-0 bg-white border-b border-[#E7E4DC] px-4 flex items-center justify-between gap-4 z-30 shadow-2xs">
@@ -60,6 +61,15 @@ export const Header: React.FC = () => {
 
       {/* Right: Projects Drawer, Auto-save status */}
       <div className="flex items-center gap-3 flex-shrink-0">
+        <button
+          onClick={() => openSettings()}
+          className="px-2.5 py-1 rounded-md font-semibold text-stone-700 hover:text-stone-900 bg-stone-100/90 hover:bg-stone-200/80 border border-stone-200 transition-colors flex items-center gap-1.5 leading-none cursor-pointer shadow-2xs"
+          title="Open Settings & Preferences"
+        >
+          <SettingsIcon className="w-3.5 h-3.5 text-[#8D4B00]" />
+          <span>Settings</span>
+        </button>
+
         <button
           onClick={() => setDrawerOpen(!drawerOpen)}
           data-project-drawer-trigger="true"

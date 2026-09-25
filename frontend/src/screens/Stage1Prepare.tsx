@@ -12,16 +12,18 @@ import {
   Mic,
   Key,
   X,
-  Check,
+  Globe,
+  Cpu,
+  Users,
+  Sparkles,
+  StopCircle,
+  FileVideo,
 } from 'lucide-react';
-import { saveAsrSettings } from '../api/settings';
 
 export const Stage1Prepare: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [savingKey, setSavingKey] = useState(false);
-  const [keySavedMsg, setKeySavedMsg] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isDeepgramModalOpen, setIsDeepgramModalOpen] = useState(false);
 
   const project = useDubDubStore((s) => s.project);
   const languages = useDubDubStore((s) => s.languages);
@@ -35,8 +37,13 @@ export const Stage1Prepare: React.FC = () => {
   const selectMedia = useDubDubStore((s) => s.selectMedia);
   const updateSourceLanguage = useDubDubStore((s) => s.updateSourceLanguage);
   const updateTargetLanguage = useDubDubStore((s) => s.updateTargetLanguage);
+  const updateTimingMode = useDubDubStore((s) => s.updateTimingMode);
   const updateAsrProvider = useDubDubStore((s) => s.updateAsrProvider);
+  const updateUseCuda = useDubDubStore((s) => s.updateUseCuda);
   const updateEngineConfig = useDubDubStore((s) => s.updateEngineConfig);
+  const updateDeepgramOptions = useDubDubStore((s) => s.updateDeepgramOptions);
+  const cancelActiveJob = useDubDubStore((s) => s.cancelActiveJob);
+  const openSettings = useDubDubStore((s) => s.openSettings);
 
   const options = backend.options;
   const isAnalyzing = backend.status === 'analyzing';
@@ -50,31 +57,33 @@ export const Stage1Prepare: React.FC = () => {
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      selectMedia(file);
+    }
+  };
+
   const selectedProvider = options.asrProviders?.find(
     (item: any) => item.recognType === Number(backend.config.recognType)
   ) || options.asrProviders?.[0] || { id: 'deepgram', label: 'Deepgram', models: ['nova-3'], recognType: 1 };
 
-  const handleSaveApiKey = async () => {
-    if (!apiKeyInput.trim()) return;
-    setSavingKey(true);
-    setKeySavedMsg(null);
-    try {
-      await saveAsrSettings(String(selectedProvider.id || ''), apiKeyInput.trim());
-      selectedProvider.configured = true;
-      setKeySavedMsg('API key saved successfully!');
-      setTimeout(() => {
-        setSettingsModalOpen(false);
-        setKeySavedMsg(null);
-      }, 1200);
-    } catch (err: any) {
-      setKeySavedMsg(`Error: ${err.message}`);
-    } finally {
-      setSavingKey(false);
-    }
-  };
+  const isDeepgram = selectedProvider.id === 'deepgram' || Number(backend.config.recognType) === 1;
 
   return (
-    <div className="flex-1 min-h-0 w-full p-2.5 flex flex-col gap-2.5 overflow-hidden">
+    <div className="flex-1 min-h-0 w-full p-3 flex flex-col gap-3 overflow-y-auto bg-[#F9F8F5]">
       <input
         ref={fileInputRef}
         type="file"
@@ -83,31 +92,52 @@ export const Stage1Prepare: React.FC = () => {
         onChange={handleFileChange}
       />
 
-      {/* TOP MEDIA STRIP: Video Preview & Metadata */}
-      <section className="flex-1 min-h-0 w-full grid grid-cols-12 gap-2.5 overflow-hidden">
-        {/* LEFT: Video Snapshot (7-8 cols) */}
-        <div className="col-span-12 md:col-span-7 lg:col-span-8 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
-          <div className="h-7 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] shrink-0">
+      {/* TOP ZONE: Studio Video Monitor & Ingest Telemetry */}
+      <section className="min-h-[300px] flex-1 w-full grid grid-cols-12 gap-3">
+        {/* LEFT: Video Canvas & Viewport (8 cols) */}
+        <div className="col-span-12 lg:col-span-8 bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col overflow-hidden">
+          {/* Header Bar */}
+          <div className="h-9 px-3.5 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] shrink-0">
             <div className="flex items-center gap-2">
               <Film className="w-3.5 h-3.5 text-[#8D4B00]" />
-              <span className="text-xs font-bold text-stone-900">Source Video &amp; Sound Canvas</span>
+              <span className="text-xs font-bold text-stone-900">Source Video &amp; Audio Monitor</span>
               <span
                 onClick={() => fileInputRef.current?.click()}
-                className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-[#8D4B00] uppercase tracking-wide cursor-pointer hover:bg-amber-200 transition-colors"
+                className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide cursor-pointer transition-colors ${
+                  project.verified
+                    ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                    : 'bg-amber-100 text-[#8D4B00] hover:bg-amber-200 animate-pulse'
+                }`}
               >
-                {project.verified ? 'Media Verified' : 'Awaiting Media'}
+                {project.verified ? 'Stream Verified' : 'Awaiting Media'}
               </span>
             </div>
-            <div className="flex items-center gap-2 font-mono text-[10px] text-stone-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>{project.hasAudio ? `Audio: ${project.audioCodec}` : 'Audio stream not verified'}</span>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 font-mono text-[10px] text-stone-600">
+                <span className={`w-2 h-2 rounded-full ${project.hasAudio ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                <span>{project.hasAudio ? `Audio: ${project.audioCodec}` : 'No verified audio stream'}</span>
+              </div>
+              {project.verified && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+                >
+                  Replace Video
+                </button>
+              )}
             </div>
           </div>
 
+          {/* Viewport Area */}
           <div
-            className={`relative flex-1 min-h-0 bg-neutral-950 flex items-center justify-center overflow-hidden group ${
-              project.previewUrl ? '' : 'cursor-pointer hover:bg-neutral-900 transition-colors'
-            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`relative flex-1 min-h-[250px] bg-neutral-950 flex items-center justify-center overflow-hidden transition-colors ${
+              project.previewUrl ? '' : 'cursor-pointer'
+            } ${isDragOver ? 'bg-neutral-900 ring-2 ring-amber-500/80 ring-inset' : ''}`}
             onClick={() => {
               if (!project.previewUrl) fileInputRef.current?.click();
             }}
@@ -115,112 +145,145 @@ export const Stage1Prepare: React.FC = () => {
             {project.previewUrl ? (
               <video
                 data-source-preview="true"
-                className="w-full h-full object-contain bg-black"
+                className="w-full h-full object-contain bg-black max-h-[500px]"
                 src={project.previewUrl}
                 controls
                 preload="metadata"
               />
             ) : (
-              <div className="flex flex-col items-center justify-center gap-2.5 p-6 text-center select-none">
-                <div className="w-12 h-12 rounded-xl bg-stone-800/80 border border-stone-700/60 flex items-center justify-center text-amber-400 group-hover:scale-105 group-hover:bg-stone-800 group-hover:text-amber-300 transition-all shadow-md">
-                  <Upload className="w-6 h-6" />
+              <div className="flex flex-col items-center justify-center gap-3 p-8 text-center select-none max-w-sm">
+                <div
+                  className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all shadow-md ${
+                    isDragOver
+                      ? 'bg-amber-500 text-white scale-110'
+                      : 'bg-stone-800/90 border border-stone-700/80 text-amber-400 group-hover:scale-105'
+                  }`}
+                >
+                  <Upload className="w-7 h-7" />
                 </div>
-                <div className="flex flex-col items-center gap-0.5">
-                  <span className="text-xs font-bold text-stone-200 group-hover:text-white transition-colors">
-                    Click to select or upload a video
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-sm font-bold text-stone-100">
+                    {isDragOver ? 'Drop video or audio file here' : 'Drop video here, or click to browse'}
                   </span>
-                  <span className="text-[10px] text-stone-400">MP4, MKV, MOV, WebM (up to 4K supported)</span>
+                  <p className="text-[11px] text-stone-400 leading-relaxed">
+                    Supports MP4, MKV, MOV, WebM, MP3, WAV up to 4K. Audio will be automatically extracted for transcription.
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-1 px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold cursor-pointer transition-all"
+                >
+                  Select Media File
+                </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* RIGHT: Ingest Diagnostics & Stream Card (4-5 cols) */}
-        <div className="col-span-12 md:col-span-5 lg:col-span-4 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
-          <div className="h-7 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] shrink-0">
+        {/* RIGHT: Ingest Inspector & Live Telemetry (4 cols) */}
+        <div className="col-span-12 lg:col-span-4 bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col overflow-hidden">
+          <div className="h-9 px-3.5 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] shrink-0">
             <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900">
               <Sliders className="w-3.5 h-3.5 text-[#8D4B00]" />
               <span>Media Stream Diagnostics</span>
             </div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-2 py-0.5 rounded text-[10px] font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
-            >
-              Replace
-            </button>
+            <span className="font-mono text-[10px] text-stone-500 font-semibold">
+              {project.fileSize !== '—' ? project.fileSize : 'No File'}
+            </span>
           </div>
 
-          <div className="p-3 flex-1 overflow-y-auto flex flex-col gap-2.5">
-            {/* Live ASR Progress Card */}
+          <div className="p-3.5 flex-1 flex flex-col gap-3 overflow-y-auto">
+            {/* Live ASR Running Telemetry Card */}
             {isRunning && (
               <div
                 data-asr-progress="true"
-                className="p-2.5 rounded-lg bg-amber-50/90 border border-amber-300 text-xs text-amber-950 flex flex-col gap-1.5 shadow-xs"
+                className="p-3 rounded-xl bg-amber-50/95 border border-amber-300 text-xs text-amber-950 flex flex-col gap-2 shadow-xs animate-in fade-in duration-200"
               >
-                <div className="flex items-center justify-between font-bold text-[11px] text-[#8D4B00]">
+                <div className="flex items-center justify-between font-bold text-xs text-[#8D4B00]">
                   <span className="flex items-center gap-1.5">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>ASR Stage: {jobStage || 'Processing'}</span>
+                    <span>Stage: {jobStage || 'Transcribing Speech'}</span>
                   </span>
-                  <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-[#8D4B00] font-semibold">
+                  <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                    <span className="px-1.5 py-0.5 rounded bg-amber-200/70 text-[#8D4B00] font-bold">
                       ⏱️ {elapsedSeconds}s
                     </span>
-                    <span>{jobProgress != null ? `${jobProgress.toFixed(0)}%` : 'Running'}</span>
+                    <span className="font-bold">{jobProgress != null ? `${jobProgress.toFixed(0)}%` : 'Running'}</span>
                   </div>
                 </div>
-                <div className="w-full bg-amber-200/60 rounded-full h-2 overflow-hidden">
+
+                <div className="w-full bg-amber-200/70 rounded-full h-2.5 overflow-hidden">
                   <div
                     className="bg-[#8D4B00] h-full transition-all duration-300 rounded-full"
                     style={{ width: `${jobProgress != null ? Math.min(100, Math.max(5, jobProgress)) : 25}%` }}
                   />
                 </div>
-                <div className="text-[10px] text-stone-600 truncate font-mono">
-                  {jobMessage || 'Extracting audio & executing speech models...'}
+
+                <div className="flex items-center justify-between text-[11px] text-stone-600 font-mono">
+                  <span className="truncate pr-2">{jobMessage || 'Processing audio stream with Deepgram ASR...'}</span>
+                  <button
+                    type="button"
+                    onClick={() => cancelActiveJob()}
+                    className="shrink-0 flex items-center gap-1 text-rose-700 hover:text-rose-800 font-bold hover:underline cursor-pointer"
+                  >
+                    <StopCircle className="w-3 h-3" />
+                    <span>Cancel</span>
+                  </button>
                 </div>
               </div>
             )}
 
             {/* Error Banner */}
             {isFailed && (
-              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-300 text-xs text-rose-900 flex items-start gap-2 shadow-xs">
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-900 flex items-start gap-2.5 shadow-xs">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <div className="font-bold text-[11px] text-rose-800">Processing Error</div>
-                  <div className="text-[10px] text-rose-700 mt-0.5">{jobMessage}</div>
+                  <div className="font-bold text-xs text-rose-800">Processing Failed</div>
+                  <div className="text-[11px] text-rose-700 mt-0.5 leading-snug">{jobMessage}</div>
                   {selectedProvider.requiresSettings && !selectedProvider.configured && (
                     <button
-                      onClick={() => setSettingsModalOpen(true)}
-                      className="mt-1.5 px-2 py-0.5 bg-rose-700 text-white rounded text-[10px] font-bold hover:bg-rose-800 cursor-pointer"
+                      type="button"
+                      onClick={() => openSettings('providers', String(selectedProvider.id || ''))}
+                      className="mt-2 px-2.5 py-1 bg-rose-700 text-white rounded-md text-[10px] font-bold hover:bg-rose-800 cursor-pointer shadow-2xs"
                     >
-                      Configure {selectedProvider.label} API Key
+                      Configure {selectedProvider.label} API Key in Settings
                     </button>
                   )}
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="p-2 rounded-lg bg-stone-50 border border-stone-200/80">
-                <span className="text-[10px] text-stone-400 font-medium block">Resolution</span>
-                <span className="font-mono font-bold text-stone-900">{project.resolution}</span>
+            {/* Ingest Analyzing State */}
+            {isAnalyzing && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
+                <Loader2 className="w-4 h-4 animate-spin text-[#8D4B00]" />
+                <span className="font-medium">Uploading and extracting audio streams…</span>
               </div>
-              <div className="p-2 rounded-lg bg-stone-50 border border-stone-200/80">
-                <span className="text-[10px] text-stone-400 font-medium block">Frame Rate</span>
-                <span className="font-mono font-bold text-stone-900">{project.fps}</span>
+            )}
+
+            {/* Technical Metadata Specs 2x2 */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-lg bg-stone-50 border border-stone-200/90 flex flex-col justify-between">
+                <span className="text-[10px] text-stone-500 font-medium">Resolution</span>
+                <span className="font-mono font-bold text-stone-900 mt-0.5 text-xs">{project.resolution}</span>
               </div>
-              <div className="p-2 rounded-lg bg-stone-50 border border-stone-200/80">
-                <span className="text-[10px] text-stone-400 font-medium block">Duration</span>
-                <span className="font-mono font-bold text-stone-900">{project.duration}</span>
+              <div className="p-2.5 rounded-lg bg-stone-50 border border-stone-200/90 flex flex-col justify-between">
+                <span className="text-[10px] text-stone-500 font-medium">Frame Rate</span>
+                <span className="font-mono font-bold text-stone-900 mt-0.5 text-xs">{project.fps}</span>
               </div>
-              <div className="p-2 rounded-lg bg-stone-50 border border-stone-200/80">
-                <span className="text-[10px] text-stone-400 font-medium block">Container Format</span>
-                <span className="font-mono font-bold text-stone-900">{project.format}</span>
+              <div className="p-2.5 rounded-lg bg-stone-50 border border-stone-200/90 flex flex-col justify-between">
+                <span className="text-[10px] text-stone-500 font-medium">Duration</span>
+                <span className="font-mono font-bold text-stone-900 mt-0.5 text-xs">{project.duration}</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-stone-50 border border-stone-200/90 flex flex-col justify-between">
+                <span className="text-[10px] text-stone-500 font-medium">Container Format</span>
+                <span className="font-mono font-bold text-stone-900 mt-0.5 text-xs">{project.format}</span>
               </div>
             </div>
 
-            <div className="p-2.5 rounded-lg bg-stone-50 border border-stone-200/80 flex flex-col gap-1 text-[11px]">
+            {/* Stream Codec Info Card */}
+            <div className="p-3 rounded-lg bg-stone-50 border border-stone-200/90 flex flex-col gap-1.5 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-stone-500 font-medium">Video Codec:</span>
                 <span className="font-mono font-bold text-stone-800">{project.videoCodec}</span>
@@ -235,35 +298,40 @@ export const Stage1Prepare: React.FC = () => {
               </div>
             </div>
 
-            {isAnalyzing && (
-              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-[#8D4B00]" />
-                <span>Uploading and inspecting source media…</span>
-              </div>
-            )}
+            {/* File info notice */}
+            <div className="mt-auto p-2 rounded-lg bg-amber-50/50 border border-amber-200/50 text-[11px] text-stone-600 flex items-start gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#8D4B00] shrink-0 mt-0.5" />
+              <span>
+                {project.verified
+                  ? `Ready for automated speech recognition with ${selectedProvider.label}.`
+                  : 'Upload video to verify audio tracks and enable transcription.'}
+              </span>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* BOTTOM CONFIGURATION DECK: Languages, ASR, Diarization */}
-      <section className="h-[220px] shrink-0 w-full grid grid-cols-12 gap-2.5 overflow-hidden">
-        {/* Languages & Timing (4 cols) */}
-        <div className="col-span-12 md:col-span-4 h-full bg-white rounded-xl border border-[#E7E4DC] p-3 shadow-xs flex flex-col justify-between overflow-hidden">
-          <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900 mb-2">
-            <span className="text-[#8D4B00]">🌐</span>
+      {/* BOTTOM ZONE: Engineering Console (Languages, ASR Engine, Audio Enhancements) */}
+      <section className="w-full grid grid-cols-12 gap-3">
+        {/* 1. Language & Timing Route (4 cols) */}
+        <div className="col-span-12 md:col-span-4 bg-white rounded-xl border border-[#E7E4DC] p-3.5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900 mb-2.5">
+            <Globe className="w-3.5 h-3.5 text-[#8D4B00]" />
             <span>Language &amp; Timing</span>
           </div>
 
-          <div className="space-y-2 flex-1">
+          <div className="space-y-2.5 flex-1">
             <div>
-              <label className="text-[10px] text-stone-500 font-semibold block mb-0.5">Source Language</label>
+              <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+                Source Spoken Language
+              </label>
               <select
                 value={languages.source.code}
                 onChange={(e) => {
                   const opt = options.languages?.find((l: any) => l.code === e.target.value);
                   updateSourceLanguage(e.target.value, opt?.name || e.target.value);
                 }}
-                className="w-full text-xs font-semibold p-1.5 bg-stone-50 rounded-lg border border-stone-200"
+                className="w-full text-xs font-semibold p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
               >
                 {(options.languages || []).map((l: any) => (
                   <option key={l.code} value={l.code}>
@@ -274,14 +342,16 @@ export const Stage1Prepare: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-[10px] text-stone-500 font-semibold block mb-0.5">Target Language</label>
+              <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+                Target Dubbing Language
+              </label>
               <select
                 value={languages.target.code}
                 onChange={(e) => {
                   const opt = options.languages?.find((l: any) => l.code === e.target.value);
                   updateTargetLanguage(e.target.value, opt?.name || e.target.value);
                 }}
-                className="w-full text-xs font-semibold p-1.5 bg-stone-50 rounded-lg border border-stone-200"
+                className="w-full text-xs font-semibold p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
               >
                 {(options.languages || []).map((l: any) => (
                   <option key={l.code} value={l.code}>
@@ -290,88 +360,189 @@ export const Stage1Prepare: React.FC = () => {
                 ))}
               </select>
             </div>
+
+            <div>
+              <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+                Timing Synchronization Mode
+              </label>
+              <select
+                value={languages.timingMode || 'voice'}
+                onChange={(e) => updateTimingMode?.(e.target.value)}
+                className="w-full text-xs font-semibold p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
+              >
+                <option value="voice">Voice Alignment (Fit speech to video)</option>
+                <option value="video">Video Auto-speed (Adjust video speed)</option>
+                <option value="none">Subtitle Only (No timing stretch)</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        {/* ASR Speech Recognition Engine (4 cols) */}
-        <div className="col-span-12 md:col-span-4 h-full bg-white rounded-xl border border-[#E7E4DC] p-3 shadow-xs flex flex-col justify-between overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
+        {/* 2. ASR Speech Recognition Engine (4 cols) */}
+        <div className="col-span-12 md:col-span-4 bg-white rounded-xl border border-[#E7E4DC] p-3.5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2.5">
             <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900">
               <Mic className="w-3.5 h-3.5 text-[#8D4B00]" />
               <span>ASR Engine</span>
             </div>
-            {selectedProvider.requiresSettings && (
+            <div className="flex items-center gap-1.5">
+              {selectedProvider.requiresSettings && (
+                <button
+                  type="button"
+                  onClick={() => openSettings('providers', String(selectedProvider.id || ''))}
+                  className={`px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                    selectedProvider.configured
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-amber-100 text-[#8D4B00] border border-amber-300 animate-pulse'
+                  }`}
+                >
+                  <Key className="w-2.5 h-2.5" />
+                  <span>{selectedProvider.configured ? 'Key Set' : 'Key Needed'}</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setSettingsModalOpen(true)}
-                className={`px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
-                  selectedProvider.configured
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-amber-100 text-[#8D4B00] border border-amber-300 animate-pulse'
-                }`}
+                onClick={() => openSettings('providers', String(selectedProvider.id || ''))}
+                className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+                title="Configure Provider Settings"
               >
-                <Key className="w-2.5 h-2.5" />
-                <span>{selectedProvider.configured ? 'Key Set' : 'Key Needed'}</span>
+                <Settings2 className="w-3.5 h-3.5 text-[#8D4B00]" />
               </button>
-            )}
-          </div>
-
-          <div className="space-y-2 flex-1">
-            <div>
-              <label className="text-[10px] text-stone-500 font-semibold block mb-0.5">Provider</label>
-              <select
-                value={backend.config.recognType}
-                onChange={(e) => {
-                  const p = options.asrProviders?.find((x: any) => x.recognType === Number(e.target.value));
-                  updateAsrProvider(Number(e.target.value), p?.models?.[0] || 'default');
-                }}
-                className="w-full text-xs font-semibold p-1.5 bg-stone-50 rounded-lg border border-stone-200"
-              >
-                {(options.asrProviders || []).map((p: any) => (
-                  <option key={p.recognType} value={p.recognType}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
             </div>
-
-            <div>
-              <label className="text-[10px] text-stone-500 font-semibold block mb-0.5">Model</label>
-              <select
-                value={backend.config.modelName}
-                onChange={(e) => updateAsrProvider(backend.config.recognType, e.target.value)}
-                className="w-full text-xs font-semibold p-1.5 bg-stone-50 rounded-lg border border-stone-200"
-              >
-                {(selectedProvider.models || []).map((m: string) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Diarization & Audio Enhancement (4 cols) */}
-        <div className="col-span-12 md:col-span-4 h-full bg-white rounded-xl border border-[#E7E4DC] p-3 shadow-xs flex flex-col justify-between overflow-hidden">
-          <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900 mb-2">
-            <Volume2 className="w-3.5 h-3.5 text-[#8D4B00]" />
-            <span>Diarization &amp; Enhancements</span>
           </div>
 
           <div className="space-y-2.5 flex-1">
-            <label className="flex items-center justify-between text-xs cursor-pointer p-1.5 rounded-lg bg-stone-50 border border-stone-200">
-              <span className="font-semibold text-stone-800">Speaker Diarization</span>
-              <input
-                type="checkbox"
-                checked={engines.speakerDiarization}
-                onChange={(e) => updateEngineConfig('speakerDiarization', e.target.checked)}
-                className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
-              />
-            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+                  Engine Provider
+                </label>
+                <select
+                  value={backend.config.recognType}
+                  onChange={(e) => {
+                    const p = options.asrProviders?.find((x: any) => x.recognType === Number(e.target.value));
+                    updateAsrProvider(Number(e.target.value), p?.models?.[0] || 'default');
+                  }}
+                  className="w-full text-xs font-semibold p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
+                >
+                  {(options.asrProviders || []).map((p: any) => (
+                    <option key={p.recognType} value={p.recognType}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <label className="flex items-center justify-between text-xs cursor-pointer p-1.5 rounded-lg bg-stone-50 border border-stone-200">
-              <span className="font-semibold text-stone-800">Denoise Background Audio</span>
+              <div>
+                <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+                  Model Variant
+                </label>
+                <select
+                  value={backend.config.modelName}
+                  onChange={(e) => updateAsrProvider(backend.config.recognType, e.target.value)}
+                  className="w-full text-xs font-semibold p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
+                >
+                  {(selectedProvider.models || []).map((m: string) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Deepgram Dedicated Parameters Bar */}
+            {isDeepgram && (
+              <div className="flex flex-col gap-2 pt-0.5">
+                <button
+                  type="button"
+                  data-testid="deepgram-options-btn"
+                  onClick={() => setIsDeepgramModalOpen(true)}
+                  className="w-full py-1.5 px-2.5 rounded-lg border border-amber-300 bg-amber-50/70 hover:bg-amber-100 text-[#8D4B00] text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer shadow-2xs"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>Deepgram Parameters</span>
+                  </div>
+                  <span className="font-mono text-[10px] bg-amber-200/80 px-1.5 py-0.5 rounded font-bold">
+                    utt_split={backend.config.deepgramOptions?.utt_split ?? 0.8}s
+                  </span>
+                </button>
+
+                {/* Inline Quick Switches for Deepgram */}
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <label className="flex items-center justify-between p-1.5 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                    <span className="text-stone-700 font-medium">Smart Format</span>
+                    <input
+                      type="checkbox"
+                      checked={backend.config.deepgramOptions?.smart_format ?? true}
+                      onChange={(e) => updateDeepgramOptions({ smart_format: e.target.checked })}
+                      className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-1.5 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                    <span className="text-stone-700 font-medium">Punctuate</span>
+                    <input
+                      type="checkbox"
+                      checked={backend.config.deepgramOptions?.punctuate ?? true}
+                      onChange={(e) => updateDeepgramOptions({ punctuate: e.target.checked })}
+                      className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 3. Audio Enhancements, Diarization & Hardware (4 cols) */}
+        <div className="col-span-12 md:col-span-4 bg-white rounded-xl border border-[#E7E4DC] p-3.5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900 mb-2.5">
+            <Volume2 className="w-3.5 h-3.5 text-[#8D4B00]" />
+            <span>Audio Processing &amp; Hardware</span>
+          </div>
+
+          <div className="space-y-2.5 flex-1">
+            {/* Speaker Diarization with Speaker Count */}
+            <div className="p-2 rounded-lg bg-stone-50 border border-stone-200 flex flex-col gap-2">
+              <label className="flex items-center justify-between text-xs cursor-pointer">
+                <div className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-[#8D4B00]" />
+                  <span className="font-semibold text-stone-800">Speaker Diarization</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={engines.speakerDiarization}
+                  onChange={(e) => updateEngineConfig('speakerDiarization', e.target.checked)}
+                  className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
+                />
+              </label>
+
+              {engines.speakerDiarization && (
+                <div className="flex items-center justify-between pt-1 border-t border-stone-200/80 text-[11px]">
+                  <span className="text-stone-600 font-medium">Expected Speakers:</span>
+                  <select
+                    value={engines.speakerCount ?? 0}
+                    onChange={(e) => updateEngineConfig('speakerCount', Number(e.target.value))}
+                    className="font-mono text-xs p-1 bg-white rounded border border-stone-300 font-bold"
+                  >
+                    <option value={0}>Auto-detect (0)</option>
+                    <option value={1}>1 Speaker</option>
+                    <option value={2}>2 Speakers</option>
+                    <option value={3}>3 Speakers</option>
+                    <option value={4}>4 Speakers</option>
+                    <option value={5}>5+ Speakers</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Denoise Background Audio */}
+            <label className="flex items-center justify-between text-xs cursor-pointer p-2 rounded-lg bg-stone-50 border border-stone-200">
+              <div className="flex items-center gap-1.5">
+                <Volume2 className="w-3.5 h-3.5 text-[#8D4B00]" />
+                <span className="font-semibold text-stone-800">Denoise Background Audio</span>
+              </div>
               <input
                 type="checkbox"
                 checked={engines.removeNoise}
@@ -379,64 +550,164 @@ export const Stage1Prepare: React.FC = () => {
                 className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
               />
             </label>
+
+            {/* GPU / CUDA Acceleration */}
+            <label className="flex items-center justify-between text-xs cursor-pointer p-2 rounded-lg bg-stone-50 border border-stone-200">
+              <div className="flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-[#8D4B00]" />
+                <span className="font-semibold text-stone-800">Hardware CUDA Acceleration</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={backend.config.useCuda ?? false}
+                onChange={(e) => updateUseCuda?.(e.target.checked)}
+                className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
+              />
+            </label>
           </div>
         </div>
       </section>
 
-      {/* ASR Settings Modal */}
-      {settingsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
-          <div className="w-full max-w-sm bg-white rounded-2xl p-5 shadow-2xl border border-stone-200 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-bold text-sm text-stone-900">
-                <Key className="w-4 h-4 text-[#8D4B00]" />
-                <span>Configure {selectedProvider.label} API Key</span>
+      {/* Deepgram Parameters Comprehensive Modal */}
+      {isDeepgramModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-stone-200 max-w-md w-full overflow-hidden flex flex-col">
+            <div className="px-5 py-3 border-b border-stone-200 flex items-center justify-between bg-[#FAF9F6]">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-[#8D4B00]" />
+                <h3 className="font-bold text-xs text-stone-900">Deepgram ASR Parameters</h3>
               </div>
               <button
-                onClick={() => setSettingsModalOpen(false)}
-                className="w-6 h-6 rounded-full hover:bg-stone-100 flex items-center justify-center text-stone-400 hover:text-stone-700 cursor-pointer"
+                type="button"
+                onClick={() => setIsDeepgramModalOpen(false)}
+                className="p-1 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <p className="text-xs text-stone-600">
-              Enter your {selectedProvider.label} API key to enable speech recognition with this provider.
-            </p>
+            <div className="p-5 space-y-3.5 text-xs max-h-[75vh] overflow-y-auto">
+              <p className="text-[11px] text-stone-500 leading-relaxed">
+                Configure Deepgram ASR prerecorded audio transcription parameters. Blank fields will use Deepgram preset defaults.
+              </p>
 
-            <div className="space-y-1">
-              <input
-                type="password"
-                placeholder="Enter API Key…"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-lg bg-stone-50 border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
-              />
-              {keySavedMsg && (
-                <div
-                  className={`text-[10px] font-semibold mt-1 ${
-                    keySavedMsg.startsWith('Error') ? 'text-rose-600' : 'text-emerald-700'
-                  }`}
-                >
-                  {keySavedMsg}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-stone-600 block mb-1">
+                    utt_split (split threshold in s)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="0.8"
+                    value={backend.config.deepgramOptions?.utt_split ?? 0.8}
+                    onChange={(e) =>
+                      updateDeepgramOptions({
+                        utt_split: e.target.value === '' ? undefined : parseFloat(e.target.value),
+                      })
+                    }
+                    className="w-full text-xs font-mono p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400 font-bold"
+                  />
                 </div>
-              )}
+
+                <div>
+                  <label className="text-[10px] font-semibold text-stone-600 block mb-1">
+                    diarize_model
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="latest"
+                    value={backend.config.deepgramOptions?.diarize_model ?? 'latest'}
+                    onChange={(e) => updateDeepgramOptions({ diarize_model: e.target.value })}
+                    className="w-full text-xs font-mono p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backend.config.deepgramOptions?.smart_format ?? true}
+                    onChange={(e) => updateDeepgramOptions({ smart_format: e.target.checked })}
+                    className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
+                  />
+                  <span className="text-[11px] font-medium text-stone-700">smart_format</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backend.config.deepgramOptions?.punctuate ?? true}
+                    onChange={(e) => updateDeepgramOptions({ punctuate: e.target.checked })}
+                    className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
+                  />
+                  <span className="text-[11px] font-medium text-stone-700">punctuate</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backend.config.deepgramOptions?.paragraphs ?? true}
+                    onChange={(e) => updateDeepgramOptions({ paragraphs: e.target.checked })}
+                    className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
+                  />
+                  <span className="text-[11px] font-medium text-stone-700">paragraphs</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={backend.config.deepgramOptions?.utterances ?? true}
+                    onChange={(e) => updateDeepgramOptions({ utterances: e.target.checked })}
+                    className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
+                  />
+                  <span className="text-[11px] font-medium text-stone-700">utterances</span>
+                </label>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold text-stone-600 block mb-1">
+                  Extra Deepgram Parameters (URL Query or JSON)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. keywords=term1,term2&numerals=true"
+                  value={backend.config.deepgramOptions?.extra || ''}
+                  onChange={(e) => updateDeepgramOptions({ extra: e.target.value })}
+                  className="w-full text-xs font-mono p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
+                />
+                <span className="text-[10px] text-stone-400 block mt-1">
+                  Pass additional Deepgram query options (e.g. keywords, numerals, profanity_filter).
+                </span>
+              </div>
             </div>
 
-            <div className="flex justify-end gap-2 mt-2">
+            <div className="px-5 py-3 border-t border-stone-200 flex justify-between items-center bg-[#FAF9F6]">
               <button
-                onClick={() => setSettingsModalOpen(false)}
-                className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-xs font-semibold text-stone-700 cursor-pointer"
+                type="button"
+                onClick={() =>
+                  updateDeepgramOptions({
+                    utt_split: 0.8,
+                    diarize_model: 'latest',
+                    smart_format: true,
+                    punctuate: true,
+                    paragraphs: true,
+                    utterances: true,
+                    extra: '',
+                  })
+                }
+                className="text-xs text-stone-500 hover:text-stone-800 underline cursor-pointer"
               >
-                Cancel
+                Reset Defaults
               </button>
               <button
-                onClick={handleSaveApiKey}
-                disabled={savingKey || !apiKeyInput.trim()}
-                className="px-4 py-1.5 rounded-lg bg-[#8D4B00] hover:bg-[#743D00] text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-xs"
+                type="button"
+                onClick={() => setIsDeepgramModalOpen(false)}
+                className="px-4 py-1.5 rounded-lg bg-[#8D4B00] hover:bg-[#743D00] text-white text-xs font-bold cursor-pointer shadow-2xs"
               >
-                {savingKey ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                <span>Save Key</span>
+                Done
               </button>
             </div>
           </div>

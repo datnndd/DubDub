@@ -57,6 +57,8 @@ class BaseRecogn(BaseCon):
     recogn2pass: bool = False
     asr_wait: float = float(settings.get('asr_wait', 0))
     local_dir: str = None
+    deepgram_options: Optional[Union[dict, str]] = None
+    transcript_options: Optional[dict] = None
 
     def __post_init__(self):
         super().__post_init__()

@@ -1,7 +1,7 @@
 """
 Comprehensive tests for cli.py — tests all public functions and argument handling.
 
-Uses conftest.py mocks for heavy dependencies (PySide6, torch, etc.)
+Uses conftest.py mocks for optional heavy model dependencies (torch, etc.)
 """
 
 import logging

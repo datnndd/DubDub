@@ -89,7 +89,7 @@ class BaseTTS(BaseCon):
                     loop = None
 
                 if loop and loop.is_running():
-                    # 如果当前线程已有正在运行的 loop（例如 GUI 线程或主异步框架），
+                    # 如果当前线程已有正在运行的 loop（例如 Web 框架主线程），
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                         future = executor.submit(asyncio.run, self._exec())
                         future.result()

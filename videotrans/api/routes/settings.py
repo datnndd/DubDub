@@ -2,12 +2,20 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-from aiohttp import web
+import os
+from typing import Any, Optional
+
+import httpx
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from videotrans import recognition, translator, tts
 from videotrans.configure import config as runtime_config
+from videotrans.configure.config import settings as global_settings, params as global_params
+from videotrans.configure.contants import DEFAULT_GEMINI_MODEL, ELEVENLABS_TTS_MODELS
 from videotrans.configure.excepts import get_msg_from_except
+from videotrans.core import secret_store, storage_config
 from videotrans.util.help_role import role_menu
 from videotrans.api.catalog import (
     ASR_BY_ID,
@@ -25,10 +33,151 @@ from videotrans.api.provider_helpers import (
     _translation_snapshot,
 )
 
+router = APIRouter()
 
-async def options_handler(request: web.Request) -> web.Response:
+class AsrSettingsRequest(BaseModel):
+    apiKey: Optional[str] = Field(None, alias="api_key")
+    model: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class AsrTestRequest(BaseModel):
+    apiKey: Optional[str] = Field(None, alias="api_key")
+    model: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class TranslationSettingsRequest(BaseModel):
+    apiKey: Optional[str] = Field(None, alias="api_key")
+    baseUrl: Optional[str] = Field(None, alias="base_url")
+    model: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class TranslationTestRequest(BaseModel):
+    apiKey: Optional[str] = Field(None, alias="api_key")
+    baseUrl: Optional[str] = Field(None, alias="base_url")
+    model: Optional[str] = None
+    translationMode: Optional[Any] = Field(None, alias="translation_mode")
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class ProviderSettingsRequest(BaseModel):
+    apiKey: Optional[str] = Field(None, alias="api_key")
+    token: Optional[str] = None
+    model: Optional[str] = None
+    baseUrl: Optional[str] = Field(None, alias="base_url")
+    mirrorUrl: Optional[str] = Field(None, alias="mirror_url")
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class ProviderTestRequest(BaseModel):
+    apiKey: Optional[str] = Field(None, alias="api_key")
+    token: Optional[str] = None
+    baseUrl: Optional[str] = Field(None, alias="base_url")
+    proxy: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class StorageSettingsRequest(BaseModel):
+    output_dir: Optional[str] = None
+    cache_dir: Optional[str] = None
+    models_dir: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class GeneralSettingsRequest(BaseModel):
+    proxy: Optional[str] = None
+    defaultSourceLanguage: Optional[str] = Field(None, alias="default_source_language")
+    defaultTargetLanguage: Optional[str] = Field(None, alias="default_target_language")
+    crf: Optional[int] = None
+    preset: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+PROVIDER_SECRET_MAP = {
+    "deepgram": "deepgram_apikey",
+    "openai": "chatgpt_key",
+    "chatgpt": "chatgpt_key",
+    "deepseek": "deepseek_key",
+    "gemini": "gemini_key",
+    "elevenlabs": "elevenlabstts_key",
+    "huggingface": "hf_token",
+    "hf": "hf_token",
+}
+
+
+async def probe_provider_connection(
+    provider_id: str,
+    api_key: str,
+    base_url: str = "",
+    proxy: str = "",
+    custom_session: Any = None,
+) -> tuple[bool, str]:
+    pid = provider_id.lower()
+    headers: dict[str, str] = {}
+    url: str = ""
+
+    if pid == "deepgram":
+        url = "https://api.deepgram.com/v1/projects"
+        headers["Authorization"] = f"Token {api_key}"
+    elif pid in ("openai", "chatgpt"):
+        from videotrans.util.network import process_openai_api
+        b = process_openai_api(base_url) if base_url else "https://api.openai.com/v1"
+        url = f"{b.rstrip('/')}/models"
+        headers["Authorization"] = f"Bearer {api_key}"
+    elif pid == "deepseek":
+        b = base_url.rstrip("/") if base_url else "https://api.deepseek.com"
+        url = f"{b}/models"
+        headers["Authorization"] = f"Bearer {api_key}"
+    elif pid == "gemini":
+        b = base_url.rstrip("/") if base_url else "https://generativelanguage.googleapis.com"
+        url = f"{b}/v1beta/models?key={api_key}"
+    elif pid == "elevenlabs":
+        url = "https://api.elevenlabs.io/v1/user"
+        headers["xi-api-key"] = api_key
+    elif pid in ("huggingface", "hf"):
+        url = "https://huggingface.co/api/whoami-v2"
+        headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        return False, f"Unsupported provider probe: {provider_id}"
+
+    client_proxy = proxy or global_settings.proxy or None
+
+    try:
+        if custom_session is not None and hasattr(custom_session, "get"):
+            # aiohttp session support
+            async with custom_session.get(url, headers=headers, proxy=client_proxy) as resp:
+                status = resp.status
+                if status in (200, 201):
+                    return True, "Connection successful"
+                if status in (401, 403):
+                    return False, f"Authentication failed (HTTP {status}): Invalid API key"
+                return False, f"Provider returned HTTP {status}"
+        else:
+            async with httpx.AsyncClient(proxy=client_proxy, timeout=10.0) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code in (200, 201):
+                    return True, "Connection successful"
+                if resp.status_code in (401, 403):
+                    return False, f"Authentication failed (HTTP {resp.status_code}): Invalid API key"
+                return False, f"Provider returned HTTP {resp.status_code}"
+    except Exception as exc:
+        return False, f"Connection failed: {exc}"
+
+
+@router.get("/api/options")
+async def options_handler(request: Request) -> JSONResponse:
     languages = [{"code": code, "name": name} for code, name in translator.LANGNAME_DICT.items()]
-    settings_store = request.app["settings_store"]
+    settings_store = getattr(request.app.state, "settings_store", None)
     asr_providers = []
     for provider in ASR_PROVIDERS:
         settings_key = provider.get("settingsKey")
@@ -38,10 +187,10 @@ async def options_handler(request: web.Request) -> web.Response:
             "recognType": provider["recognType"],
             "models": list(provider["models"]),
             "requiresSettings": bool(settings_key),
-            "configured": bool(settings_key and settings_store.get(settings_key)),
+            "configured": bool(settings_key and settings_store.get(settings_key) if settings_store else False),
             "testable": bool(provider.get("thirdParty")),
         })
-    return web.json_response({
+    return JSONResponse({
         "languages": languages,
         "asrProviders": asr_providers,
         "translationProviders": [
@@ -66,99 +215,14 @@ async def options_handler(request: web.Request) -> web.Response:
     })
 
 
-async def asr_settings_handler(request: web.Request) -> web.Response:
-    provider = ASR_BY_ID.get(request.match_info["provider_id"])
-    if provider is None or not provider.get("settingsKey"):
-        raise web.HTTPNotFound(text="This ASR provider has no WebUI API settings")
-    try:
-        payload = await request.json()
-    except Exception as exc:
-        raise web.HTTPBadRequest(text="A JSON settings request is required") from exc
-    if not isinstance(payload, dict):
-        raise web.HTTPBadRequest(text="ASR settings must be a JSON object")
-    try:
-        snapshot = _save_asr_settings(provider, payload, request.app["settings_store"])
-    except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
-    return web.json_response(snapshot)
-
-
-async def test_asr_settings_handler(request: web.Request) -> web.Response:
-    provider = ASR_BY_ID.get(request.match_info["provider_id"])
-    if provider is None or not provider.get("thirdParty"):
-        raise web.HTTPNotFound(text="This ASR provider does not use a third-party connection")
-    try:
-        payload = await request.json()
-    except Exception as exc:
-        raise web.HTTPBadRequest(text="A JSON settings request is required") from exc
-    if not isinstance(payload, dict):
-        raise web.HTTPBadRequest(text="ASR settings must be a JSON object")
-
-    model_name = str(payload.get("model") or "").strip()
-    if model_name not in provider["models"]:
-        raise web.HTTPBadRequest(text=f"Model {model_name or 'missing'} is not supported by {provider['label']}")
-    try:
-        if provider.get("settingsKey"):
-            _save_asr_settings(provider, payload, request.app["settings_store"])
-        result = await asyncio.to_thread(
-            request.app["asr_tester"], provider["recognType"], model_name
-        )
-    except Exception as exc:
-        runtime_config.logger.exception("ASR connection test failed", exc_info=True)
-        raise web.HTTPBadRequest(text=f"Connection test failed: {get_msg_from_except(exc)}") from exc
-    return web.json_response({
-        "ok": True,
-        "message": "Connection successful",
-        "model": model_name,
-        "result": result,
-    })
-
-
-async def translation_settings_handler(request: web.Request) -> web.Response:
-    provider = TRANSLATION_BY_ID.get(request.match_info["provider_id"])
-    if provider is None or not provider.get("keyKey"):
-        raise web.HTTPNotFound(text="This translation provider has no WebUI settings")
-    try:
-        payload = await request.json()
-    except Exception as exc:
-        raise web.HTTPBadRequest(text="A JSON settings request is required") from exc
-    if not isinstance(payload, dict):
-        raise web.HTTPBadRequest(text="Translation settings must be a JSON object")
-    try:
-        snapshot = _save_translation_settings(provider, payload, request.app["settings_store"])
-    except ValueError as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
-    return web.json_response(snapshot)
-
-
-async def test_translation_settings_handler(request: web.Request) -> web.Response:
-    provider = TRANSLATION_BY_ID.get(request.match_info["provider_id"])
-    if provider is None:
-        raise web.HTTPNotFound(text="Unsupported translation provider")
-    try:
-        payload = await request.json()
-    except Exception as exc:
-        raise web.HTTPBadRequest(text="A JSON settings request is required") from exc
-    if not isinstance(payload, dict):
-        raise web.HTTPBadRequest(text="Translation settings must be a JSON object")
-    try:
-        _, aisendsrt = _translation_mode(payload.get("translationMode"))
-        if provider.get("keyKey"):
-            _save_translation_settings(provider, payload, request.app["settings_store"])
-        result = await asyncio.to_thread(
-            request.app["translation_tester"], provider["translateType"], aisendsrt
-        )
-    except Exception as exc:
-        runtime_config.logger.exception("Translation connection test failed", exc_info=True)
-        raise web.HTTPBadRequest(text=f"Connection test failed: {get_msg_from_except(exc)}") from exc
-    return web.json_response({"ok": True, "message": "Connection successful", "result": result})
-
-
-async def voices_handler(request: web.Request) -> web.Response:
+@router.get("/api/voices")
+async def voices_handler(request: Request) -> JSONResponse:
+    if len(str(request.url.query)) > 8000:
+        raise HTTPException(status_code=400, detail="Query line exceeds limit")
     raw_provider = (
-        request.query.get("ttsType")
-        or request.query.get("tts_type")
-        or request.query.get("provider")
+        request.query_params.get("ttsType")
+        or request.query_params.get("tts_type")
+        or request.query_params.get("provider")
     )
 
     tts_type = 0
@@ -170,18 +234,19 @@ async def voices_handler(request: web.Request) -> web.Response:
             tts_type = _optional_index(raw_provider, len(tts.TTS_NAME_LIST), default=0)
 
     language = (
-        request.query.get("language")
-        or request.query.get("target_language")
-        or request.query.get("targetLanguage")
+        request.query_params.get("language")
+        or request.query_params.get("target_language")
+        or request.query_params.get("targetLanguage")
         or ""
     )
+    role_provider = getattr(request.app.state, "role_provider", None) or role_menu
     try:
-        raw_voices = request.app["role_provider"](tts_type, langcode=language)
+        raw_voices = role_provider(tts_type, langcode=language)
         if raw_voices is None or (isinstance(raw_voices, (list, tuple)) and len(raw_voices) == 0):
-            return web.json_response({"voices": ["No"]})
+            return JSONResponse({"voices": ["No"]})
         voices = raw_voices
     except Exception:
-        return web.json_response({"voices": ["No"]})
+        return JSONResponse({"voices": ["No"]})
 
     from videotrans.core import voice_store
     items: list[dict[str, Any]] = []
@@ -238,13 +303,352 @@ async def voices_handler(request: web.Request) -> web.Response:
             })
             existing_item_ids.add(cv["id"])
 
-    return web.json_response({"voices": voices, "items": items})
+    return JSONResponse({"voices": voices, "items": items})
 
 
-def register_routes(app: web.Application) -> None:
-    app.router.add_get("/api/options", options_handler)
-    app.router.add_get("/api/voices", voices_handler)
-    app.router.add_post("/api/asr-settings/{provider_id}", asr_settings_handler)
-    app.router.add_post("/api/asr-settings/{provider_id}/test", test_asr_settings_handler)
-    app.router.add_post("/api/translation-settings/{provider_id}", translation_settings_handler)
-    app.router.add_post("/api/translation-settings/{provider_id}/test", test_translation_settings_handler)
+@router.post("/api/asr-settings/{provider_id}")
+async def asr_settings_handler(
+    provider_id: str,
+    payload: AsrSettingsRequest,
+    request: Request,
+) -> JSONResponse:
+    provider = ASR_BY_ID.get(provider_id)
+    if provider is None or not provider.get("settingsKey"):
+        raise HTTPException(status_code=404, detail="This ASR provider has no WebUI API settings")
+    try:
+        snapshot = _save_asr_settings(provider, payload.model_dump(exclude_unset=True), getattr(request.app.state, "settings_store", None))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse(snapshot)
+
+
+@router.post("/api/asr-settings/{provider_id}/test")
+async def test_asr_settings_handler(
+    provider_id: str,
+    payload: AsrTestRequest,
+    request: Request,
+) -> JSONResponse:
+    provider = ASR_BY_ID.get(provider_id)
+    if provider is None or not provider.get("thirdParty"):
+        raise HTTPException(status_code=404, detail="This ASR provider does not use a third-party connection")
+
+    model_name = str(payload.model or "").strip()
+    if model_name not in provider["models"]:
+        raise HTTPException(status_code=400, detail=f"Model {model_name or 'missing'} is not supported by {provider['label']}")
+    try:
+        settings_store = getattr(request.app.state, "settings_store", None)
+        if provider.get("settingsKey"):
+            _save_asr_settings(provider, payload.model_dump(exclude_unset=True), settings_store)
+        asr_tester = getattr(request.app.state, "asr_tester", None)
+        result = await asyncio.to_thread(
+            asr_tester, provider["recognType"], model_name
+        )
+    except Exception as exc:
+        runtime_config.logger.exception("ASR connection test failed", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Connection test failed: {get_msg_from_except(exc)}") from exc
+    return JSONResponse({
+        "ok": True,
+        "message": "Connection successful",
+        "model": model_name,
+        "result": result,
+    })
+
+
+@router.post("/api/translation-settings/{provider_id}")
+async def translation_settings_handler(
+    provider_id: str,
+    payload: TranslationSettingsRequest,
+    request: Request,
+) -> JSONResponse:
+    provider = TRANSLATION_BY_ID.get(provider_id)
+    if provider is None or not provider.get("keyKey"):
+        raise HTTPException(status_code=404, detail="This translation provider has no WebUI settings")
+    try:
+        snapshot = _save_translation_settings(provider, payload.model_dump(exclude_unset=True), getattr(request.app.state, "settings_store", None))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse(snapshot)
+
+
+@router.post("/api/translation-settings/{provider_id}/test")
+async def test_translation_settings_handler(
+    provider_id: str,
+    payload: TranslationTestRequest,
+    request: Request,
+) -> JSONResponse:
+    provider = TRANSLATION_BY_ID.get(provider_id)
+    if provider is None:
+        raise HTTPException(status_code=404, detail="Unsupported translation provider")
+    try:
+        _, aisendsrt = _translation_mode(payload.translationMode)
+        settings_store = getattr(request.app.state, "settings_store", None)
+        if provider.get("keyKey"):
+            _save_translation_settings(provider, payload.model_dump(exclude_unset=True), settings_store)
+        translation_tester = getattr(request.app.state, "translation_tester", None)
+        result = await asyncio.to_thread(
+            translation_tester, provider["translateType"], aisendsrt
+        )
+    except Exception as exc:
+        runtime_config.logger.exception("Translation connection test failed", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Connection test failed: {get_msg_from_except(exc)}") from exc
+    return JSONResponse({"ok": True, "message": "Connection successful", "result": result})
+
+
+@router.get("/api/settings")
+async def get_settings_handler(request: Request) -> JSONResponse:
+    storage_metrics = storage_config.get_storage_metrics()
+
+    providers = {
+        "deepgram": {
+            "id": "deepgram",
+            "name": "Deepgram",
+            "category": "asr",
+            "configured": secret_store.is_secret_configured("deepgram_apikey"),
+            "fromEnv": secret_store.is_from_env("deepgram_apikey"),
+            "model": global_params.get("model_name", "nova-3"),
+            "models": ["nova-3", "nova-2"],
+        },
+        "openai": {
+            "id": "openai",
+            "name": "OpenAI ChatGPT",
+            "category": "llm",
+            "configured": secret_store.is_secret_configured("chatgpt_key"),
+            "fromEnv": secret_store.is_from_env("chatgpt_key"),
+            "model": global_params.get("chatgpt_model", "gpt-4o"),
+            "models": [m.strip() for m in str(global_settings.get("chatgpt_model", "gpt-4o,gpt-4o-mini,gpt-3.5-turbo")).split(",") if m.strip()],
+            "baseUrl": global_params.get("chatgpt_api", ""),
+        },
+        "deepseek": {
+            "id": "deepseek",
+            "name": "DeepSeek",
+            "category": "llm",
+            "configured": secret_store.is_secret_configured("deepseek_key"),
+            "fromEnv": secret_store.is_from_env("deepseek_key"),
+            "model": global_params.get("deepseek_model", "deepseek-chat"),
+            "models": [m.strip() for m in str(global_settings.get("deepseek_model", "deepseek-chat,deepseek-reasoner")).split(",") if m.strip()],
+            "baseUrl": global_params.get("deepseek_api", "https://api.deepseek.com/v1"),
+        },
+        "gemini": {
+            "id": "gemini",
+            "name": "Google Gemini",
+            "category": "multimodal",
+            "configured": secret_store.is_secret_configured("gemini_key"),
+            "fromEnv": secret_store.is_from_env("gemini_key"),
+            "model": global_params.get("gemini_model", "gemini-2.0-flash"),
+            "models": [m.strip() for m in str(global_settings.get("gemini_model", "gemini-2.0-flash,gemini-1.5-pro,gemini-1.5-flash")).split(",") if m.strip()],
+            "baseUrl": global_params.get("gemini_api", ""),
+        },
+        "elevenlabs": {
+            "id": "elevenlabs",
+            "name": "ElevenLabs",
+            "category": "tts",
+            "configured": secret_store.is_secret_configured("elevenlabstts_key"),
+            "fromEnv": secret_store.is_from_env("elevenlabstts_key"),
+            "model": global_params.get("elevenlabstts_models", "eleven_multilingual_v2"),
+            "models": [m.strip() for m in str(ELEVENLABS_TTS_MODELS).split(",") if m.strip()],
+        },
+        "huggingface": {
+            "id": "huggingface",
+            "name": "Hugging Face",
+            "category": "weights",
+            "configured": secret_store.is_secret_configured("hf_token"),
+            "fromEnv": secret_store.is_from_env("hf_token"),
+            "mirrorUrl": os.environ.get("HF_ENDPOINT", ""),
+        },
+    }
+
+    general = {
+        "proxy": global_settings.proxy or os.environ.get("HTTPS_PROXY", ""),
+        "defaultSourceLanguage": global_params.get("source_language", "en"),
+        "defaultTargetLanguage": global_params.get("target_language", "zh-cn"),
+        "crf": global_settings.get("crf", 23),
+        "preset": global_settings.get("preset", "slow"),
+    }
+
+    return JSONResponse({
+        "providers": providers,
+        "storage": storage_metrics,
+        "general": general,
+    })
+
+
+@router.put("/api/settings/providers/{category}/{provider_id}")
+async def update_provider_settings_handler(
+    category: str,
+    provider_id: str,
+    payload: ProviderSettingsRequest,
+    request: Request,
+) -> JSONResponse:
+    provider_id = provider_id.lower()
+    secret_key = PROVIDER_SECRET_MAP.get(provider_id)
+    if not secret_key:
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider_id}")
+
+    raw_key = payload.apiKey if payload.apiKey is not None else payload.token
+    if raw_key is not None:
+        key_val = str(raw_key).strip()
+        secret_store.set_secret(secret_key, key_val)
+        if secret_key == "hf_token":
+            global_settings["hf_token"] = key_val
+            global_settings.save()
+        else:
+            global_params[secret_key] = key_val
+
+    if payload.model is not None:
+        model_str = str(payload.model).strip()
+        if provider_id == "deepgram":
+            global_params["model_name"] = model_str
+            global_params["stt_model_name"] = model_str
+        elif provider_id in ("openai", "chatgpt"):
+            global_params["chatgpt_model"] = model_str
+        elif provider_id == "deepseek":
+            global_params["deepseek_model"] = model_str
+        elif provider_id == "gemini":
+            global_params["gemini_model"] = model_str
+        elif provider_id == "elevenlabs":
+            global_params["elevenlabstts_models"] = model_str
+
+    if payload.baseUrl is not None:
+        b_str = str(payload.baseUrl).strip()
+        if provider_id in ("openai", "chatgpt"):
+            global_params["chatgpt_api"] = b_str
+        elif provider_id == "deepseek":
+            global_params["deepseek_api"] = b_str
+        elif provider_id == "gemini":
+            global_params["gemini_api"] = b_str
+
+    if payload.mirrorUrl is not None and provider_id in ("huggingface", "hf"):
+        m_str = str(payload.mirrorUrl).strip()
+        if m_str:
+            os.environ["HF_ENDPOINT"] = m_str
+        else:
+            os.environ.pop("HF_ENDPOINT", None)
+
+    if provider_id in ("huggingface", "hf"):
+        global_settings.save()
+    else:
+        global_params._save_to_disk()
+
+    return JSONResponse({
+        "ok": True,
+        "providerId": provider_id,
+        "configured": secret_store.is_secret_configured(secret_key),
+        "message": "Settings saved successfully",
+    })
+
+
+@router.post("/api/settings/providers/{category}/{provider_id}/test")
+async def test_provider_connection_handler(
+    category: str,
+    provider_id: str,
+    payload: Optional[ProviderTestRequest] = None,
+    request: Request = None,
+) -> JSONResponse:
+    provider_id = provider_id.lower()
+    secret_key = PROVIDER_SECRET_MAP.get(provider_id)
+    if not secret_key:
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider_id}")
+
+    api_key = str((payload.apiKey if payload else None) or (payload.token if payload else None) or "").strip()
+    if not api_key:
+        api_key = secret_store.resolve_secret(secret_key) or ""
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"API key is not configured for {provider_id}")
+
+    base_url = str((payload.baseUrl if payload else None) or "").strip()
+    if not base_url:
+        if provider_id in ("openai", "chatgpt"):
+            base_url = global_params.get("chatgpt_api", "")
+        elif provider_id == "deepseek":
+            base_url = global_params.get("deepseek_api", "")
+        elif provider_id == "gemini":
+            base_url = global_params.get("gemini_api", "")
+
+    proxy = str((payload.proxy if payload else None) or global_settings.proxy or "").strip()
+
+    req_app = request.app if request is not None else None
+    probe_fn = (getattr(req_app.state, "provider_probe", None) if req_app else None) or probe_provider_connection
+    ok, msg = await probe_fn(provider_id, api_key, base_url, proxy)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return JSONResponse({"ok": True, "message": msg})
+
+
+@router.get("/api/settings/storage")
+async def get_storage_settings_handler() -> JSONResponse:
+    return JSONResponse(storage_config.get_storage_metrics())
+
+
+@router.put("/api/settings/storage")
+async def update_storage_settings_handler(
+    payload: StorageSettingsRequest,
+    request: Request,
+) -> JSONResponse:
+    try:
+        storage_config.update_storage_paths(payload.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return JSONResponse({
+        "ok": True,
+        "storage": storage_config.get_storage_metrics(),
+        "message": "Storage paths updated successfully",
+    })
+
+
+@router.post("/api/settings/storage/clean-temp")
+async def clean_temp_storage_handler() -> JSONResponse:
+    res = storage_config.clean_temp_cache()
+    return JSONResponse(res)
+
+
+@router.put("/api/settings/general")
+async def update_general_settings_handler(
+    payload: GeneralSettingsRequest,
+    request: Request,
+) -> JSONResponse:
+    if payload.proxy is not None:
+        proxy_val = str(payload.proxy).strip()
+        global_settings.proxy = proxy_val
+        if proxy_val:
+            os.environ["HTTP_PROXY"] = proxy_val
+            os.environ["HTTPS_PROXY"] = proxy_val
+        else:
+            os.environ.pop("HTTP_PROXY", None)
+            os.environ.pop("HTTPS_PROXY", None)
+
+    if payload.defaultSourceLanguage is not None:
+        lang = str(payload.defaultSourceLanguage).strip()
+        if lang:
+            global_params["source_language"] = lang
+
+    if payload.defaultTargetLanguage is not None:
+        lang = str(payload.defaultTargetLanguage).strip()
+        if lang:
+            global_params["target_language"] = lang
+
+    if payload.crf is not None:
+        try:
+            crf_val = int(payload.crf)
+            if 0 <= crf_val <= 51:
+                global_settings["crf"] = crf_val
+        except (ValueError, TypeError):
+            pass
+
+    if payload.preset is not None:
+        preset_val = str(payload.preset).strip()
+        if preset_val:
+            global_settings["preset"] = preset_val
+
+    global_settings.save()
+    global_params.save()
+
+    return JSONResponse({
+        "ok": True,
+        "message": "General settings saved successfully",
+    })
+
+
+def register_routes(app) -> None:
+    app.include_router(router)

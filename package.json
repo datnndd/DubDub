@@ -1,0 +1,11 @@
+{
+  "name": "pyvideotrans-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "bunx concurrently -n api,fe -c green,cyan --kill-others-on-fail \"uv run python webui.py\" \"cd frontend && bun run dev\"",
+    "build": "cd frontend && bun run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

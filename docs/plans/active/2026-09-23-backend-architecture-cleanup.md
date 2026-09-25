@@ -53,23 +53,41 @@ user assets while removing desktop-only compatibility and generated files.
   only after equivalent React proof exists.
 - [x] Make CI and Docker build the React production bundle from the lockfile.
 
-Phase 2 implementation and automated validation are complete. The configured
-browser workflow smoke test remains outstanding before the phase can be closed.
+Phase 2 implementation and automated validation are complete. The user reports
+that the configured Stage 1-through-Stage 4 browser workflow smoke test passed.
+The deployment context was not specified, so the clean-checkout/Docker portion
+of the verification gate is not independently confirmed here.
 
 ### Phase 3: documentation and dependency closure
 
-- [ ] Rewrite architecture and FAQ material as current web-only documentation.
-- [ ] Remove stale desktop names/comments and verify no supported import reaches
+- [x] Rewrite architecture and FAQ material as current web-only documentation.
+- [x] Remove stale desktop names/comments and verify no supported import reaches
   PySide6 or deleted desktop modules.
-- [ ] Audit Python dependencies against runtime imports and remove only those
-  proved unused by supported providers and workflows.
+- [x] Audit Python dependencies against runtime imports and remove only those
+  proved unused by supported providers and workflows. No dependency was
+  removed: PySide6/PyQt are not declared, and the broad pinned runtime set
+  supports lazily imported provider/model integrations, so static absence from
+  a direct import scan is not sufficient proof of safe removal.
+
+Phase 3 documentation and code cleanup is implemented. The no-Qt guard, full
+Python suite, React production build, lockfile check, and diff check passed.
+Phase 3 dependency review found no safely removable package without weakening
+provider coverage. The user reports a passing configured browser workflow;
+clean-checkout/Docker execution context is the remaining unverified completion
+gate. During follow-up inspection, removed the
+unreferenced Whisper.NET setup guide and configuration helper: Whisper.NET is
+not in the active recognition registry, `pythonnet` is not declared, and the
+guide's `webui`/`dotnet` extras do not exist. A dry run confirmed
+`uv sync --extra webui` fails because that extra is undefined.
 
 ## Verification gates
 
 Each phase requires a clean React build, focused API/workflow tests, the full
 Python suite, no-Qt import proof, and `git diff --check`. Phase 2 also requires
 a clean-checkout/Docker smoke test that loads React and a configured Stage
-1-through-Stage 4 browser workflow.
+1-through-Stage 4 browser workflow. Browser workflow success is user-reported;
+clean-checkout/Docker execution remains unverified unless that was the context
+of the reported run.
 
 ## Recovery
 

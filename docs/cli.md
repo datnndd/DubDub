@@ -254,7 +254,7 @@ uv run cli.py --task tts --name "zw.srt" --tts_type <渠道编号> --voice_role 
 | `en-US-EmmaNeural` | 女 | 英文 | Emma — 温暖女声 |
 | `en-US-BrianNeural` | 男 | 英文 | Brian — 沉稳男声 |
 
-> 完整音色列表请运行 `uv run cli.py --list providers` 或在软件 GUI 的 TTS 设置中查看。
+> 完整音色列表请运行 `uv run cli.py --list providers` 或在 WebUI 的 TTS 设置中查看。
 
 ---
 
@@ -579,7 +579,7 @@ Get-ChildItem *.mp4 | ForEach-Object {
 uv run cli.py --list providers
 ```
 
-或者在软件 GUI 中，选择配音渠道后查看音色下拉列表。
+或者在 WebUI 中，选择配音渠道后查看音色列表。
 
 ### Q: 如何查看所有支持的语言代码？
 
@@ -613,7 +613,7 @@ uv run cli.py --task vtv --name "60.mp4" --source_language_code zh-cn --target_l
 uv run cli.py --task vtv --name "60.mp4" --source_language_code zh-cn --target_language_code en --translate_type <兼容AI渠道编号> --cuda
 ```
 
-> 翻译渠道的 API 地址需要在软件 GUI 的翻译设置中预先配置。
+> 翻译渠道的 API 地址需要在 WebUI 的翻译设置中预先配置。
 
 ### Q: 处理速度太慢怎么办？
 

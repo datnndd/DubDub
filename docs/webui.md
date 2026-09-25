@@ -5,15 +5,22 @@ video translation and dubbing workflow.
 
 ## Start
 
+### Development Mode (with hot-reload)
 ```powershell
-uv run webui.py
+bun run dev
+```
+
+### Production Mode (single-port serving)
+```powershell
+bun run build
+uv run python webui.py
 ```
 
 The default address is `http://127.0.0.1:7860`. Use `--host` and `--port`
 to change the listener:
 
 ```powershell
-uv run webui.py --host 0.0.0.0 --port 8080
+uv run python webui.py --host 0.0.0.0 --port 7860
 ```
 
 ## Supported workflow

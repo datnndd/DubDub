@@ -6,7 +6,7 @@ from videotrans.configure.config import app_cfg, params, tr
 from videotrans.recognition._base import BaseRecogn
 from videotrans.task.taskcfg import SrtItem
 
-# Provider IDs are contiguous because the desktop UI stores QComboBox indexes.
+# Provider IDs are contiguous for stable persisted settings and API contracts.
 QWENASR = 0
 Deepgram = 1
 GEMINI_SPEECH = 2
@@ -77,6 +77,7 @@ def run(
     max_speakers=-1,
     llm_post=False,
     recogn2pass=False,
+    deepgram_options=None,
     event_sink=None,
     cancellation_token=None,
 ) -> Union[List[SrtItem], None]:
@@ -94,6 +95,7 @@ def run(
         "max_speakers": max_speakers,
         "llm_post": llm_post,
         "recogn2pass": recogn2pass,
+        "deepgram_options": deepgram_options,
         "event_sink": event_sink,
         "cancellation_token": cancellation_token,
     }

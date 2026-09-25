@@ -143,6 +143,7 @@ class TaskCfgSTT(TaskCfgBase):
     nums_diariz: int = 0  # 是否进行说话人识别
     rephrase: int = 0  # 0 默认断句不处理 1=LLM重新断句
     fix_punc: int = 0  # 0=默认，1=恢复标点符号，2=移除所有标点
+    deepgram_options: Optional[Union[dict, str]] = None
 
 
 # 配音

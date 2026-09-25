@@ -17,8 +17,17 @@ export interface TranscriptSlice {
     message: string;
     error: string | null;
   };
+  transcriptOptions: {
+    utterances?: Segment[];
+    paragraphs?: Segment[];
+  } | null;
+  selectedSegmentOption: 'utterances' | 'paragraphs';
+  showSegmentationModal: boolean;
 
   setSegments: (segments: Segment[]) => void;
+  setTranscriptOptions: (options: { utterances?: Segment[]; paragraphs?: Segment[] } | null) => void;
+  selectSegmentationOption: (option: 'utterances' | 'paragraphs') => void;
+  setShowSegmentationModal: (show: boolean) => void;
   setActiveSegmentId: (id: number) => void;
   setSearchQuery: (query: string) => void;
   updateSegmentText: (id: number, text: string, isTarget?: boolean) => void;
@@ -57,11 +66,50 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
     message: 'Translating transcript...',
     error: null,
   },
+  transcriptOptions: null,
+  selectedSegmentOption: 'utterances',
+  showSegmentationModal: false,
 
   setSegments: (segments: Segment[]) => {
     set({ segments });
     get().triggerAutosave();
   },
+
+  setTranscriptOptions: (options) => {
+    if (!options) {
+      set({ transcriptOptions: null, showSegmentationModal: false });
+      return;
+    }
+    const hasBoth = Boolean(options.utterances?.length && options.paragraphs?.length);
+    const curSelected = get().selectedSegmentOption || 'utterances';
+    const chosen = curSelected === 'paragraphs' && options.paragraphs?.length
+      ? options.paragraphs
+      : (options.utterances?.length ? options.utterances : options.paragraphs || []);
+
+    set({
+      transcriptOptions: options,
+      showSegmentationModal: hasBoth,
+      ...(chosen.length > 0 && get().segments.length === 0 ? { segments: chosen, activeSegmentId: chosen[0]?.id || 1 } : {}),
+    });
+    get().triggerAutosave();
+  },
+
+  selectSegmentationOption: (option) => {
+    const opts = get().transcriptOptions;
+    if (!opts) return;
+    const chosen = option === 'paragraphs' ? opts.paragraphs : opts.utterances;
+    if (Array.isArray(chosen) && chosen.length > 0) {
+      set({
+        selectedSegmentOption: option,
+        segments: chosen,
+        activeSegmentId: chosen[0]?.id || 1,
+        showSegmentationModal: false,
+      });
+      get().triggerAutosave();
+    }
+  },
+
+  setShowSegmentationModal: (show: boolean) => set({ showSegmentationModal: show }),
 
   setActiveSegmentId: (id: number) => set({ activeSegmentId: id }),
 
@@ -77,10 +125,14 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
         if (isTarget) {
           return { ...s, targetText: text, cps, cpsStatus };
         } else {
-          return { ...s, sourceText: text, cps, cpsStatus };
+          return { ...s, sourceText: text, text, cps, cpsStatus };
         }
       });
-      return { segments: next };
+      const nextOptions = state.transcriptOptions ? {
+        ...state.transcriptOptions,
+        [state.selectedSegmentOption]: next,
+      } : state.transcriptOptions;
+      return { segments: next, transcriptOptions: nextOptions };
     });
     get().triggerAutosave();
   },
@@ -104,7 +156,11 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
           cpsStatus,
         };
       });
-      return { segments: next };
+      const nextOptions = state.transcriptOptions ? {
+        ...state.transcriptOptions,
+        [state.selectedSegmentOption]: next,
+      } : state.transcriptOptions;
+      return { segments: next, transcriptOptions: nextOptions };
     });
     get().triggerAutosave();
   },

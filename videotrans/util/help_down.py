@@ -61,7 +61,7 @@ def check_and_down_hf(model_id, repo_id, local_dir, callback=None, allow_list=No
     _state = {"completed": 0, "total_files": 0}
 
     # ── 总进度 ──
-    class QtAwareTqdm(tqdm.tqdm):
+    class ProgressTqdm(tqdm.tqdm):
         def update(self, n=1):
             super().update(n)
             if not callback or not self.total or self.total <= 0:
@@ -137,7 +137,7 @@ def check_and_down_hf(model_id, repo_id, local_dir, callback=None, allow_list=No
                     local_dir=local_dir,
                     # local_dir_use_symlinks=False,
                     endpoint=os.environ.get('HF_ENDPOINT'),
-                    tqdm_class=QtAwareTqdm if callback else None,
+                    tqdm_class=ProgressTqdm if callback else None,
                     local_files_only=False,
                     # max_workers=1,
                     ignore_patterns=["*.msgpack", "*.h5", ".git*", "*.md"],

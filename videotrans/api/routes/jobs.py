@@ -5,14 +5,17 @@ import asyncio
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-from aiohttp import web
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from videotrans.configure import config as runtime_config
 from videotrans.configure.config import TEMP_DIR
-from videotrans.core.job_manager import ActiveJobError
-from videotrans.core.media_store import MediaRecord
+from videotrans.core.edit_asset_store import EDIT_ASSET_STORE
+from videotrans.core.job_manager import ActiveJobError, JOBS
+from videotrans.core.media_store import MEDIA, MediaRecord
 from videotrans.core.job_store import (
     get_job as db_get_job,
     list_jobs as db_list_jobs,
@@ -20,31 +23,47 @@ from videotrans.core.job_store import (
 )
 from videotrans.core.project_store import update_project
 
-
-async def list_jobs_handler(request: web.Request) -> web.Response:
-    status = request.query.get("status")
-    project_id = request.query.get("project_id") or request.query.get("projectId")
-    try:
-        limit = int(request.query.get("limit", 100))
-    except (ValueError, TypeError):
-        limit = 100
-    jobs = db_list_jobs(status=status, project_id=project_id, limit=limit)
-    return web.json_response({"jobs": jobs})
+router = APIRouter()
 
 
-async def create_job_handler(request: web.Request) -> web.Response:
-    try:
-        payload = await request.json()
-    except Exception as exc:
-        raise web.HTTPBadRequest(text="A JSON job request is required") from exc
-    media_id = str(payload.get("mediaId") or "")
-    options = payload.get("options")
+class JobCreateRequest(BaseModel):
+    mediaId: Optional[str] = Field(None, alias="media_id")
+    options: Optional[dict[str, Any]] = None
+    jobType: Optional[str] = Field(None, alias="job_type")
+    projectId: Optional[str] = Field(None, alias="project_id")
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+@router.get("/api/jobs")
+async def list_jobs_handler(
+    request: Request,
+    status: Optional[str] = None,
+    project_id: Optional[str] = None,
+    projectId: Optional[str] = None,
+    limit: int = 100,
+) -> JSONResponse:
+    pid = project_id or projectId or request.query_params.get("project_id") or request.query_params.get("projectId")
+    jobs = db_list_jobs(status=status, project_id=pid, limit=limit)
+    return JSONResponse({"jobs": jobs})
+
+
+@router.post("/api/jobs", status_code=202)
+@router.post("/api/render", status_code=202)
+@router.post("/api/export", status_code=202)
+async def create_job_handler(
+    payload: JobCreateRequest,
+    request: Request,
+) -> JSONResponse:
+    media_id = str(payload.mediaId or "")
+    options = payload.options
     if not isinstance(options, dict):
-        raise web.HTTPBadRequest(text="Job options are required")
-    media_store = request.app["media_store"]
+        raise HTTPException(status_code=400, detail="Job options are required")
+
+    media_store = getattr(request.app.state, "media_store", None) or MEDIA
     media = media_store.get(media_id)
-    default_job_type = "render" if request.path in {"/api/render", "/api/export"} else "full"
-    job_type = str(payload.get("jobType") or options.get("jobType") or default_job_type).lower()
+    default_job_type = "render" if request.url.path in {"/api/render", "/api/export"} else "full"
+    job_type = str(payload.jobType or options.get("jobType") or default_job_type).lower()
 
     if job_type == "translation" and (media is None or not media.path.is_file()):
         fallback_path = Path(TEMP_DIR) / f"webui-trans-{uuid.uuid4().hex}.mp4"
@@ -52,28 +71,41 @@ async def create_job_handler(request: web.Request) -> web.Response:
         media_id = media_id or f"trans-mock-{uuid.uuid4().hex}"
         media = MediaRecord(media_id, fallback_path, fallback_path.name, 0, {"time": 1000})
     elif media is None or not media.path.is_file():
-        raise web.HTTPBadRequest(text="Select and inspect a media file before starting")
+        raise HTTPException(status_code=400, detail="Select and inspect a media file before starting")
 
+    edit_asset_store = getattr(request.app.state, "edit_asset_store", None) or EDIT_ASSET_STORE
     for option_key, path_key in (("backgroundAudioId", "backgroundMusicPath"), ("thumbnailId", "thumbnailPath")):
         asset_id = str(options.get(option_key) or "")
         if not asset_id:
             continue
-        asset_path = request.app["edit_asset_store"].get(asset_id)
+        asset_path = edit_asset_store.get(asset_id)
         if asset_path is None or not asset_path.is_file():
-            raise web.HTTPBadRequest(text=f"Unknown or expired {option_key}")
+            raise HTTPException(status_code=400, detail=f"Unknown or expired {option_key}")
         options[path_key] = asset_path.resolve().as_posix()
 
-    project_id = str(payload.get("projectId") or payload.get("project_id") or options.get("projectId") or options.get("project_id") or "") or None
+    project_id = str(payload.projectId or options.get("projectId") or options.get("project_id") or "") or None
     if project_id:
         options["projectId"] = project_id
+
     try:
-        params = request.app["task_params_builder"](media.path, options, job_type=job_type, project_id=project_id)
+        task_params_builder = getattr(request.app.state, "task_params_builder", None)
+        params = task_params_builder(media.path, options, job_type=job_type, project_id=project_id)
+
         if job_type not in {"render", "translation"}:
-            request.app["asr_validator"](params["recogn_type"], request.app["settings_store"])
+            asr_validator = getattr(request.app.state, "asr_validator", None)
+            if asr_validator:
+                asr_validator(params["recogn_type"], getattr(request.app.state, "settings_store", None))
+
         if job_type not in {"asr", "render"}:
-            request.app["translation_validator"](params["translate_type"], request.app["settings_store"])
-        request.app["gpu_initializer"]()
-        manager = request.app["job_manager"]
+            translation_validator = getattr(request.app.state, "translation_validator", None)
+            if translation_validator:
+                translation_validator(params["translate_type"], getattr(request.app.state, "settings_store", None))
+
+        gpu_initializer = getattr(request.app.state, "gpu_initializer", None)
+        if gpu_initializer:
+            gpu_initializer()
+
+        manager = getattr(request.app.state, "job_manager", None) or JOBS
         job = manager.submit(params, media_id=media.id, job_type=job_type, project_id=project_id)
         if project_id:
             try:
@@ -81,131 +113,139 @@ async def create_job_handler(request: web.Request) -> web.Response:
             except Exception:
                 pass
     except ActiveJobError as exc:
-        raise web.HTTPConflict(text=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (ValueError, TypeError, OverflowError) as exc:
-        raise web.HTTPBadRequest(text=str(exc)) from exc
-    return web.json_response(job.snapshot(), status=202)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return JSONResponse(job.snapshot(), status_code=202)
 
 
-async def job_handler(request: web.Request) -> web.Response:
-    job = request.app["job_manager"].get(request.match_info["job_id"])
+@router.get("/api/jobs/{job_id}")
+async def job_handler(job_id: str, request: Request) -> JSONResponse:
+    manager = getattr(request.app.state, "job_manager", None) or JOBS
+    job = manager.get(job_id)
     if not job:
-        raise web.HTTPNotFound(text="Job not found")
-    return web.json_response(job.snapshot())
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JSONResponse(job.snapshot())
 
 
-async def job_transcript_handler(request: web.Request) -> web.Response:
-    job = request.app["job_manager"].get(request.match_info["job_id"])
+@router.get("/api/jobs/{job_id}/transcript")
+@router.get("/api/jobs/{job_id}/segments")
+async def job_transcript_handler(job_id: str, request: Request) -> JSONResponse:
+    manager = getattr(request.app.state, "job_manager", None) or JOBS
+    job = manager.get(job_id)
     if not job:
-        raise web.HTTPNotFound(text="Job not found")
-    return web.json_response({"segments": list(job.segments)})
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JSONResponse({
+        "segments": list(job.segments),
+        "transcriptOptions": getattr(job, "transcript_options", None),
+    })
 
 
-async def cancel_job_handler(request: web.Request) -> web.Response:
-    job = request.app["job_manager"].cancel(request.match_info["job_id"])
+@router.post("/api/jobs/{job_id}/cancel")
+async def cancel_job_handler(job_id: str, request: Request) -> JSONResponse:
+    manager = getattr(request.app.state, "job_manager", None) or JOBS
+    job = manager.cancel(job_id)
     if not job:
-        raise web.HTTPNotFound(text="Job not found")
-    return web.json_response(job.snapshot())
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JSONResponse(job.snapshot())
 
 
-async def output_handler(request: web.Request) -> web.StreamResponse:
-    job = request.app["job_manager"].get(request.match_info["job_id"])
+@router.get("/api/jobs/{job_id}/outputs/{index}")
+async def output_handler(job_id: str, index: int, request: Request) -> FileResponse:
+    manager = getattr(request.app.state, "job_manager", None) or JOBS
+    job = manager.get(job_id)
     if not job:
-        raise web.HTTPNotFound(text="Job not found")
+        raise HTTPException(status_code=404, detail="Job not found")
     try:
-        output = job.outputs[int(request.match_info["index"])]
+        output = job.outputs[index]
     except (ValueError, IndexError):
-        raise web.HTTPNotFound(text="Output not found")
+        raise HTTPException(status_code=404, detail="Output not found")
     if not output.is_file():
-        raise web.HTTPNotFound(text="Output no longer exists")
-    return web.FileResponse(output, headers={"Content-Disposition": f'attachment; filename="{output.name}"'})
+        raise HTTPException(status_code=404, detail="Output no longer exists")
+    return FileResponse(output, filename=output.name)
 
 
-async def job_stream_handler(request: web.Request) -> web.StreamResponse:
-    job_id = request.match_info["job_id"]
-    try:
-        after_seq = int(request.query.get("after_seq", 0))
-    except (ValueError, TypeError):
-        after_seq = 0
-
-    response = web.StreamResponse(
-        status=200,
-        reason="OK",
-        headers={
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-    await response.prepare(request)
-
-    past_events = events_since(job_id, after_seq=after_seq)
-    last_seq = after_seq
-    for ev in past_events:
-        seq = ev["seq"]
-        payload = ev["payload"]
-        raw = payload if isinstance(payload, str) else json.dumps(payload)
-        line = f"id: {seq}\nevent: message\ndata: {raw}\n\n"
-        await response.write(line.encode("utf-8"))
-        last_seq = max(last_seq, seq)
-
-    manager = request.app["job_manager"]
+@router.get("/api/jobs/{job_id}/stream")
+async def job_stream_handler(
+    job_id: str,
+    request: Request,
+    after_seq: int = Query(0),
+) -> StreamingResponse:
+    manager = getattr(request.app.state, "job_manager", None) or JOBS
     job = manager.get(job_id)
     db_job = db_get_job(job_id)
-    status = (job.status if job else (db_job.get("status") if db_job else None)) or "unknown"
+    if not job and not db_job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    if status in {"succeeded", "failed", "cancelled"}:
-        close_payload = json.dumps({"status": status, "terminal": True, "seq": last_seq})
-        await response.write(f"id: {last_seq + 1}\nevent: done\ndata: {close_payload}\n\n".encode("utf-8"))
+    async def event_generator():
+        past_events = events_since(job_id, after_seq=after_seq)
+        last_seq = after_seq
+        for ev in past_events:
+            seq = ev["seq"]
+            payload = ev["payload"]
+            raw = payload if isinstance(payload, str) else json.dumps(payload)
+            yield f"id: {seq}\nevent: message\ndata: {raw}\n\n"
+            last_seq = max(last_seq, seq)
+
+        cur_job_mem = manager.get(job_id)
+        cur_job_db = db_get_job(job_id)
+        status = (cur_job_mem.status if cur_job_mem else (cur_job_db.get("status") if cur_job_db else None)) or "unknown"
+
+        if status in {"succeeded", "failed", "cancelled"}:
+            close_payload = json.dumps({"status": status, "terminal": True, "seq": last_seq})
+            yield f"id: {last_seq + 1}\nevent: done\ndata: {close_payload}\n\n"
+            return
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        if cur_job_mem:
+            cur_job_mem.subscribe(queue, loop)
+
         try:
-            await response.write_eof()
-        except Exception:
-            pass
-        return response
-
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue = asyncio.Queue()
-    if job:
-        job.subscribe(queue, loop)
-
-    try:
-        while True:
-            try:
-                seq, payload = await asyncio.wait_for(queue.get(), timeout=15.0)
-                if seq > last_seq:
-                    raw_data = json.dumps(payload) if isinstance(payload, dict) else str(payload)
-                    line = f"id: {seq}\nevent: message\ndata: {raw_data}\n\n"
-                    await response.write(line.encode("utf-8"))
-                    last_seq = seq
-                    if isinstance(payload, dict) and payload.get("status") in {"succeeded", "failed", "cancelled"}:
-                        break
-            except asyncio.TimeoutError:
-                await response.write(b": keep-alive\n\n")
-                cur_job = db_get_job(job_id)
-                if cur_job and cur_job.get("status") in {"succeeded", "failed", "cancelled"}:
+            while True:
+                if await request.is_disconnected():
                     break
-    except (ConnectionResetError, asyncio.CancelledError):
-        pass
-    finally:
-        if job:
-            job.unsubscribe(queue)
+                try:
+                    seq, payload = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    is_terminal = isinstance(payload, dict) and payload.get("status") in {"succeeded", "failed", "cancelled"}
+                    if seq > last_seq or (last_seq == 0 and seq >= 0):
+                        raw_data = json.dumps(payload) if isinstance(payload, dict) else str(payload)
+                        yield f"id: {seq}\nevent: message\ndata: {raw_data}\n\n"
+                        last_seq = max(last_seq, seq)
+                    if is_terminal:
+                        break
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+                    check_db = db_get_job(job_id)
+                    check_mem = manager.get(job_id)
+                    check_status = (check_mem.status if check_mem else (check_db.get("status") if check_db else None))
+                    if check_status in {"succeeded", "failed", "cancelled"}:
+                        break
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        finally:
+            if cur_job_mem:
+                cur_job_mem.unsubscribe(queue)
 
-    try:
-        await response.write_eof()
-    except Exception:
-        pass
-    return response
+        check_done_db = db_get_job(job_id)
+        final_mem = manager.get(job_id)
+        final_status = (final_mem.status if final_mem else (check_done_db.get("status") if check_done_db else None)) or status
+        if final_status in {"succeeded", "failed", "cancelled"}:
+            close_payload = json.dumps({"status": final_status, "terminal": True, "seq": last_seq})
+            yield f"id: {last_seq + 1}\nevent: done\ndata: {close_payload}\n\n"
+
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
 
 
-def register_routes(app: web.Application) -> None:
-    app.router.add_get("/api/jobs", list_jobs_handler)
-    app.router.add_post("/api/jobs", create_job_handler)
-    app.router.add_post("/api/render", create_job_handler)
-    app.router.add_post("/api/export", create_job_handler)
-    app.router.add_get("/api/jobs/{job_id}", job_handler)
-    app.router.add_get("/api/jobs/{job_id}/stream", job_stream_handler)
-    app.router.add_get("/api/jobs/{job_id}/transcript", job_transcript_handler)
-    app.router.add_get("/api/jobs/{job_id}/segments", job_transcript_handler)
-    app.router.add_post("/api/jobs/{job_id}/cancel", cancel_job_handler)
-    app.router.add_get("/api/jobs/{job_id}/outputs/{index}", output_handler)
+def register_routes(app) -> None:
+    app.include_router(router)

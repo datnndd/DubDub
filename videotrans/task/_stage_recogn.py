@@ -97,6 +97,7 @@ class RecognMixin:
             subtitle_type=self.cfg.subtitle_type,
             max_speakers=self.max_speakers,
             llm_post=self.cfg.rephrase==1,
+            deepgram_options=getattr(self.cfg, "deepgram_options", None),
             event_sink=self.event_sink,
         )
         if self._exit(): return

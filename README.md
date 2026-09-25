@@ -24,12 +24,12 @@ A powerful, full-stack video translation, speech recognition, subtitle editing, 
 
 - **Python**: 3.10+
 - **FFmpeg**: Installed and accessible in your system `PATH` (or place `ffmpeg.exe` / `ffprobe.exe` in the project root).
-- **uv** (Recommended package manager):
+- **uv** (Fast Python package manager):
   ```powershell
   # Windows PowerShell
   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
   ```
-- **Bun** (for frontend builds, optional if using pre-built `frontend/dist/`):
+- **Bun** (Fast JavaScript/TypeScript runtime & package manager):
   ```powershell
   powershell -c "irm bun.sh/install.ps1 | iex"
   ```
@@ -37,30 +37,53 @@ A powerful, full-stack video translation, speech recognition, subtitle editing, 
 ### 2. Install Dependencies
 
 ```bash
-# Sync Python dependencies
+# 1. Sync Python backend dependencies
 uv sync
-```
 
-### 3. Build Frontend (Optional - pre-built in `frontend/dist`)
-
-If you modify files inside `frontend/src/`:
-```bash
-cd frontend
+# 2. Install dependencies (root workspace & frontend)
 bun install
-bun run build
-cd ..
+cd frontend && bun install && cd ..
 ```
 
-### 4. Run the Web Application
+### 3. Run the Web Application
 
-Launch the WebUI server:
+The application supports two running modes:
+
+#### Option A: Development Mode (Recommended for development)
+
+Runs both the **FastAPI backend** and **Vite frontend dev server** concurrently with hot-reloading:
+
 ```bash
+bun run dev
+```
+
+- **Web UI (Hot-Reload)**: [http://localhost:3000](http://localhost:3000)
+- **Backend API (FastAPI + Uvicorn)**: [http://127.0.0.1:7860](http://127.0.0.1:7860)
+- **Interactive OpenAPI Documentation**: [http://127.0.0.1:7860/docs](http://127.0.0.1:7860/docs)
+
+*(Note: Visiting `http://127.0.0.1:7860/` will automatically redirect to `http://localhost:3000` when running in dev mode).*
+
+---
+
+#### Option B: Production Mode (Single-Port Serving)
+
+Compiles the React frontend into static bundles and serves everything through a single FastAPI port:
+
+```bash
+# 1. Build the frontend
+bun run build
+
+# 2. Launch the FastAPI server
 uv run python webui.py
 ```
 
-Once started, open your browser and navigate to:
-```
-http://127.0.0.1:7860
+Once started, open your browser at:
+- **Web Application**: [http://127.0.0.1:7860](http://127.0.0.1:7860)
+- **OpenAPI / Swagger UI**: [http://127.0.0.1:7860/docs](http://127.0.0.1:7860/docs)
+
+You can also customize the host and port:
+```bash
+uv run python webui.py --host 0.0.0.0 --port 7860
 ```
 
 ---
@@ -88,20 +111,21 @@ uv run cli.py --task vtv --name "./video.mp4" --source_language_code zh-cn --tar
 ## 📂 Project Structure
 
 ```
-├── videotrans/             # Backend Python engine & API
-│   ├── api/                # Aiohttp REST API routes & SSE stream handlers
-│   ├── core/               # SQLite database, project store, job store, proc registry
-│   ├── recognition/        # ASR engines (Faster-Whisper, Deepgram, etc.)
-│   ├── translator/         # Translation engines (DeepSeek, ChatGPT, Gemini, etc.)
-│   ├── tts/                # Speech synthesis providers (Edge-TTS, Azure, OpenAI, etc.)
+├── videotrans/             # Backend Python engine & FastAPI application
+│   ├── api/                # FastAPI REST API routes, OpenAPI schemas & unbuffered SSE streaming
+│   ├── core/               # SQLite WAL database, project store, job store, process registry
+│   ├── recognition/        # ASR engines (Whisper, Deepgram, Gemini, ElevenLabs, Qwen)
+│   ├── translator/         # Translation engines (Google, DeepSeek, ChatGPT, Gemini)
+│   ├── tts/                # Speech synthesis providers (VieNeu-TTS, OmniVoice, ElevenLabs, Gemini)
 │   └── util/               # Media probing, FFmpeg runners, audio processing
 ├── frontend/               # Modern React + Vite frontend
 │   ├── src/
 │   │   ├── screens/        # Stage 1 to Stage 4 workflow screens
-│   │   ├── components/     # Header, Drawer, Video player, Timeline, etc.
-│   │   └── store/          # Zustand reactive stores (project, jobs, timeline)
+│   │   ├── components/     # Header, Drawer, Settings, Video player, Timeline
+│   │   └── store/          # Zustand reactive state stores (project, jobs, settings)
 │   └── dist/               # Compiled production frontend assets
-├── webui.py                # Web server entry point
+├── package.json            # Root workspace scripts (bun run dev, bun run build)
+├── webui.py                # FastAPI web server entry point (Uvicorn)
 ├── cli.py                  # CLI entry point
-└── pyproject.toml          # Project configuration & dependencies
+└── pyproject.toml          # Python project configuration & dependencies
 ```

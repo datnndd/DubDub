@@ -15,12 +15,28 @@ from videotrans.core.db import db_conn
 
 logger = logging.getLogger("videotrans.project_store")
 
-PROJECTS_OUTPUT_DIR = Path(ROOT_DIR) / "output" / "projects"
+DEFAULT_PROJECTS_DIR = Path(ROOT_DIR) / "output" / "projects"
+PROJECTS_OUTPUT_DIR = DEFAULT_PROJECTS_DIR
+
+
+def get_projects_root() -> Path:
+    """Return configured output directory for projects."""
+    try:
+        from videotrans.core.storage_config import get_storage_path
+        return get_storage_path("output_dir") / "projects"
+    except Exception:
+        return DEFAULT_PROJECTS_DIR
 
 
 def get_project_dir(project_id: str) -> Path:
-    """Return the base artifact directory for a project."""
-    return PROJECTS_OUTPUT_DIR / project_id
+    """Return the base artifact directory for a project with fallback continuity."""
+    configured_dir = get_projects_root() / project_id
+    if configured_dir.exists():
+        return configured_dir
+    legacy_dir = DEFAULT_PROJECTS_DIR / project_id
+    if legacy_dir.exists():
+        return legacy_dir
+    return configured_dir
 
 
 def init_project_dirs(project_id: str) -> dict[str, Path]:
@@ -147,6 +163,34 @@ def update_project_state(
     status: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """Update state snapshot and optionally advance the workflow stage."""
+    if isinstance(state_dict, dict):
+        try:
+            dirs = init_project_dirs(project_id)
+            if "segments" in state_dict and isinstance(state_dict["segments"], list):
+                (dirs["transcripts"] / "segments.json").write_text(
+                    json.dumps(state_dict["segments"], ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                from videotrans.util.help_srt import ms_to_time_string
+                srt_lines = []
+                for idx, seg in enumerate(state_dict["segments"]):
+                    line_num = seg.get("id") or seg.get("line") or (idx + 1)
+                    start_ms = int(round(float(seg.get("startSec", 0)) * 1000)) if "startSec" in seg else 0
+                    end_ms = int(round(float(seg.get("endSec", 0)) * 1000)) if "endSec" in seg else 0
+                    st_raw = seg.get("startTime") or ms_to_time_string(ms=start_ms)
+                    et_raw = seg.get("endTime") or ms_to_time_string(ms=end_ms)
+                    text = seg.get("sourceText") or seg.get("text") or ""
+                    srt_lines.append(f"{line_num}\n{st_raw} --> {et_raw}\n{text}\n")
+                if srt_lines:
+                    (dirs["transcripts"] / "source.srt").write_text("\n".join(srt_lines), encoding="utf-8")
+            if "transcript_options" in state_dict and state_dict["transcript_options"]:
+                (dirs["transcripts"] / "transcript_options.json").write_text(
+                    json.dumps(state_dict["transcript_options"], ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+        except Exception as e:
+            logger.warning("Failed to persist transcript artifacts for project %s: %s", project_id, e)
+
     kwargs: dict[str, Any] = {"state": state_dict}
     if stage is not None:
         kwargs["stage"] = stage

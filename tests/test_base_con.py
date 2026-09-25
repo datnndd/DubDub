@@ -1,10 +1,10 @@
 from videotrans.configure import base
 
 
-def test_signal_without_consumer_logs_without_desktop_dispatch(monkeypatch):
+def test_signal_without_consumer_logs_without_event_sink(monkeypatch):
     logged = []
 
-    monkeypatch.setattr(base.app_cfg, "exec_mode", "gui")
+    monkeypatch.setattr(base.app_cfg, "exec_mode", "web")
     monkeypatch.setattr(base.logger, "info", lambda message: logged.append(message))
     base.BaseCon().signal(text="provider progress")
 

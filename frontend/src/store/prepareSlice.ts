@@ -12,6 +12,16 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
+export interface DeepgramConfigOptions {
+  utt_split?: number;
+  diarize_model?: string;
+  smart_format?: boolean;
+  punctuate?: boolean;
+  paragraphs?: boolean;
+  utterances?: boolean;
+  extra?: string;
+}
+
 export interface PrepareSlice {
   selectedFile: File | null;
   mediaSelectionVersion: number;
@@ -42,6 +52,7 @@ export interface PrepareSlice {
       modelName: string;
       voiceRole: string;
       useCuda: boolean;
+      deepgramOptions: DeepgramConfigOptions;
     };
   };
   ocrCrop: OcrCropState;
@@ -51,6 +62,11 @@ export interface PrepareSlice {
   updateSourceLanguage: (code: string, name: string) => void;
   updateTargetLanguage: (code: string, name: string) => void;
   updateAsrProvider: (recognType: number, modelName: string) => void;
+  updateTranslationProvider: (translateType: number) => void;
+  updateTranslationMode: (mode: string) => void;
+  updateDeepgramOptions: (opts: Partial<DeepgramConfigOptions>) => void;
+  updateUseCuda: (useCuda: boolean) => void;
+  updateTimingMode: (timingMode: string) => void;
   updateEngineConfig: (key: 'speakerDiarization' | 'speakerCount' | 'removeNoise' | 'ocrSlideEngine', value: any) => void;
   setOcrCropRoi: (roi: [number, number, number, number]) => void;
   setOcrCropActive: (active: boolean, segmentId?: number | null) => void;
@@ -107,6 +123,15 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
       modelName: 'nova-3',
       voiceRole: '',
       useCuda: false,
+      deepgramOptions: {
+        utt_split: 0.8,
+        diarize_model: 'latest',
+        smart_format: true,
+        punctuate: true,
+        paragraphs: true,
+        utterances: true,
+        extra: '',
+      },
     },
   },
   ocrCrop: {
@@ -129,6 +154,8 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
             ...state.backend.config,
             recognType: opts.defaults?.recognType ?? state.backend.config.recognType,
             modelName: opts.defaults?.modelName ?? state.backend.config.modelName,
+            translateType: opts.defaults?.translateType ?? state.backend.config.translateType,
+            translationMode: opts.defaults?.translationMode ?? state.backend.config.translationMode,
           },
         },
       }));
@@ -207,9 +234,11 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
         },
       }));
 
-      // If no active project, create one or link it
-      if (!get().activeProjectId) {
-        await get().createNewProject(media.filename);
+      // If no active project, or if current active project already has segments / was past step 1, create a new one
+      const curProjId = get().activeProjectId;
+      const hasExistingProgress = (get().segments?.length || 0) > 0 || get().currentStep > 1;
+      if (!curProjId || hasExistingProgress) {
+        await get().createNewProject(media.filename, media.id, durSec);
       }
       get().triggerAutosave();
     } catch (err: any) {
@@ -258,6 +287,71 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
       },
     }));
     get().triggerAutosave();
+  },
+
+  updateTranslationProvider: (translateType: number) => {
+    set((state: any) => ({
+      backend: {
+        ...state.backend,
+        config: {
+          ...state.backend.config,
+          translateType,
+        },
+      },
+    }));
+    get().triggerAutosave?.();
+  },
+
+  updateTranslationMode: (translationMode: string) => {
+    set((state: any) => ({
+      backend: {
+        ...state.backend,
+        config: {
+          ...state.backend.config,
+          translationMode,
+        },
+      },
+    }));
+    get().triggerAutosave?.();
+  },
+
+  updateDeepgramOptions: (opts: Partial<DeepgramConfigOptions>) => {
+    set((state: any) => ({
+      backend: {
+        ...state.backend,
+        config: {
+          ...state.backend.config,
+          deepgramOptions: {
+            ...state.backend.config.deepgramOptions,
+            ...opts,
+          },
+        },
+      },
+    }));
+    get().triggerAutosave?.();
+  },
+
+  updateUseCuda: (useCuda: boolean) => {
+    set((state: any) => ({
+      backend: {
+        ...state.backend,
+        config: {
+          ...state.backend.config,
+          useCuda,
+        },
+      },
+    }));
+    get().triggerAutosave?.();
+  },
+
+  updateTimingMode: (timingMode: string) => {
+    set((state: any) => ({
+      languages: {
+        ...state.languages,
+        timingMode,
+      },
+    }));
+    get().triggerAutosave?.();
   },
 
   updateEngineConfig: (key: 'speakerDiarization' | 'speakerCount' | 'removeNoise' | 'ocrSlideEngine', value: any) => {

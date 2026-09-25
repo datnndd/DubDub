@@ -12,8 +12,19 @@ from typing import Any, Callable
 from videotrans.configure.config import ROOT_DIR, TEMP_DIR
 from videotrans.util._ffprobe import get_video_info
 
-UPLOAD_DIR = Path(TEMP_DIR) / "webui_uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+def get_upload_dir() -> Path:
+    try:
+        from videotrans.core.storage_config import get_storage_path
+        p = get_storage_path("uploads_dir")
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    except Exception:
+        p = Path(TEMP_DIR) / "webui_uploads"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+
+UPLOAD_DIR = get_upload_dir()
 
 
 @dataclass(frozen=True)
@@ -46,12 +57,20 @@ class MediaRecord:
 
 
 class MediaStore:
-    def __init__(self, upload_dir: Path, probe: Callable[[str | Path], dict[str, Any]]) -> None:
-        self.upload_dir = Path(upload_dir)
-        self.upload_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, upload_dir: Path | None = None, probe: Callable[[str | Path], dict[str, Any]] = get_video_info) -> None:
+        self._custom_upload_dir = Path(upload_dir) if upload_dir is not None else None
+        if self._custom_upload_dir is not None:
+            self._custom_upload_dir.mkdir(parents=True, exist_ok=True)
         self._probe = probe
         self._records: dict[str, MediaRecord] = {}
         self._lock = threading.Lock()
+
+    @property
+    def upload_dir(self) -> Path:
+        if self._custom_upload_dir is not None:
+            self._custom_upload_dir.mkdir(parents=True, exist_ok=True)
+            return self._custom_upload_dir
+        return get_upload_dir()
 
     def inspect(self, path: Path, filename: str) -> MediaRecord:
         info = dict(self._probe(path))

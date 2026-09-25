@@ -49,6 +49,7 @@ class JobRecord:
     outputs: tuple[Path, ...] = ()
     segments: tuple[dict[str, Any], ...] = ()
     asr_duration: float | None = None
+    transcript_options: dict[str, Any] | None = None
     error: str | None = None
     media_id: str | None = None
     job_type: str = "full"
@@ -106,6 +107,8 @@ class JobRecord:
                     raw_segs = event.details["segments"]
                     if isinstance(raw_segs, (list, tuple)):
                         self.segments = tuple(raw_segs)
+                if "transcript_options" in event.details and event.details.get("transcript_options") is not None:
+                    self.transcript_options = event.details["transcript_options"]
 
             payload = {
                 "kind": event.kind.value,
@@ -116,6 +119,58 @@ class JobRecord:
                 "error": self.error,
                 "details": dict(event.details),
             }
+            try:
+                seq = append_event(self.id, payload)
+                db_update_job(
+                    self.id,
+                    status=self.status,
+                    stage=self.stage,
+                    progress=self.progress,
+                    message=self.message,
+                    error=self.error,
+                )
+            except Exception:
+                seq = len(self.events)
+
+            subs = list(self._subscribers)
+
+        for q, loop in subs:
+            try:
+                loop.call_soon_threadsafe(q.put_nowait, (seq, payload))
+            except Exception:
+                pass
+
+    def update(
+        self,
+        status: str | None = None,
+        progress: float | None = None,
+        message: str | None = None,
+        error: str | None = None,
+        stage: str | None = None,
+    ) -> None:
+        with self._lock:
+            if status is not None:
+                self.status = status
+            if progress is not None:
+                self.progress = progress
+            if message is not None:
+                self.message = message
+            if error is not None:
+                self.error = error
+            if stage is not None:
+                self.stage = stage
+
+            payload = {
+                "kind": "update",
+                "stage": self.stage,
+                "message": self.message,
+                "progress": self.progress,
+                "status": self.status,
+                "error": self.error,
+                "details": {},
+            }
+            self.events.append(payload)
+            self.events[:] = self.events[-200:]
             try:
                 seq = append_event(self.id, payload)
                 db_update_job(
@@ -154,6 +209,7 @@ class JobRecord:
                     for index, path in enumerate(self.outputs)
                 ],
                 "segments": list(self.segments),
+                "transcriptOptions": self.transcript_options,
                 "asrDuration": self.asr_duration,
             }
 
