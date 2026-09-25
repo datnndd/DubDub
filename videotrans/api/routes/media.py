@@ -51,7 +51,8 @@ async def media_handler(
     if extension not in {*VIDEO_EXTS, *AUDIO_EXITS}:
         raise HTTPException(status_code=400, detail=f"Unsupported media type: .{extension or 'unknown'}")
 
-    upload_path = store.upload_dir / f"{uuid.uuid4().hex}-{filename}"
+    media_id = uuid.uuid4().hex
+    upload_path = store.upload_dir / f"{media_id}-{filename}"
     try:
         with upload_path.open("wb") as output:
             while chunk := await file.read(4 * 1024 * 1024):
@@ -65,7 +66,7 @@ async def media_handler(
         raise HTTPException(status_code=400, detail="A video or audio file is required")
 
     try:
-        media = store.inspect(upload_path, filename)
+        media = store.inspect(upload_path, filename, media_id=media_id)
     except Exception as exc:
         upload_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"Unable to read media: {exc}") from exc

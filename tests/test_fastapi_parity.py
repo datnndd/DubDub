@@ -253,3 +253,64 @@ async def test_api_translate_production_handler(tmp_path):
         assert body["segments"][0]["id"] == 1
 
 
+@pytest.mark.asyncio
+async def test_project_media_persistence_and_server_restart_recovery(tmp_path):
+    uploads = tmp_path / "uploads"
+    uploads.mkdir(parents=True, exist_ok=True)
+    app = create_app(
+        upload_dir=uploads,
+        media_probe=lambda p: {"time": 5000.0, "width": 1920, "height": 1080, "video_streams": 1, "streams_audio": 1},
+    )
+    dummy_data = b"persisted video content for dubdub"
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        # 1. Upload media
+        upload_res = await client.post(
+            "/api/media",
+            files={"file": ("interview.mp4", io.BytesIO(dummy_data), "video/mp4")},
+        )
+        assert upload_res.status_code == 201
+        media_id = upload_res.json()["id"]
+        assert media_id
+
+        # 2. Create an empty draft project
+        create_res = await client.post("/api/projects", json={"name": "Persistent Project"})
+        assert create_res.status_code == 201
+        proj_id = create_res.json()["id"]
+
+        # 3. Associate media with project via PUT /api/projects/{proj_id}
+        update_res = await client.put(
+            f"/api/projects/{proj_id}",
+            json={
+                "media_id": media_id,
+                "state": {
+                    "backend": {"mediaId": media_id},
+                    "project": {"filename": "interview.mp4", "previewUrl": f"/api/media/{media_id}/file"},
+                },
+            },
+        )
+        assert update_res.status_code == 200
+        updated = update_res.json()
+        assert updated["media_id"] == media_id
+        assert updated["media_path"]
+        assert Path(updated["media_path"]).is_file()
+
+        # 4. Fetch project via GET
+        get_res = await client.get(f"/api/projects/{proj_id}")
+        assert get_res.status_code == 200
+        proj_data = get_res.json()
+        assert proj_data["media_id"] == media_id
+
+        # 5. Simulate backend server restart by clearing in-memory records
+        app.state.media_store._records.clear()
+        assert media_id not in app.state.media_store._records
+
+        # 6. Verify self-healing lookup restores media and serves file
+        file_res = await client.get(f"/api/media/{media_id}/file")
+        assert file_res.status_code == 200
+        assert file_res.content == dummy_data
+
+        # 7. Record is now rehydrated in memory
+        assert media_id in app.state.media_store._records
+
+

@@ -27,10 +27,10 @@ export async function createProject(payload: {
   return data?.project || data;
 }
 
-export async function updateProjectState(id: string, state: any, stage?: number): Promise<void> {
+export async function updateProjectState(id: string, state: any, stage?: number, mediaId?: string): Promise<void> {
   await apiRequest(`/api/projects/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify({ state, stage }),
+    body: JSON.stringify({ state, stage, media_id: mediaId }),
   });
 }
 

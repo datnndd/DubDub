@@ -72,7 +72,7 @@ class MediaStore:
             return self._custom_upload_dir
         return get_upload_dir()
 
-    def inspect(self, path: Path, filename: str) -> MediaRecord:
+    def inspect(self, path: Path, filename: str, media_id: str | None = None) -> MediaRecord:
         info = dict(self._probe(path))
         has_media = bool(
             info.get("video_streams")
@@ -85,14 +85,44 @@ class MediaStore:
             raise ValueError("The selected file contains no readable media streams")
         if (info.get("width") and info.get("height")) and not info.get("video_streams"):
             info["video_streams"] = 1
-        record = MediaRecord(uuid.uuid4().hex, path, filename, path.stat().st_size, info)
+        rec_id = media_id or uuid.uuid4().hex
+        record = MediaRecord(rec_id, path, filename, path.stat().st_size, info)
         with self._lock:
             self._records[record.id] = record
         return record
 
     def get(self, media_id: str) -> MediaRecord | None:
+        if not media_id:
+            return None
         with self._lock:
-            return self._records.get(media_id)
+            rec = self._records.get(media_id)
+            if rec is not None and rec.path.is_file():
+                return rec
+
+        # Self-healing lookup across server restarts
+        try:
+            # 1. Search in upload_dir for files matching media_id prefix
+            candidates = list(self.upload_dir.glob(f"{media_id}-*")) + list(self.upload_dir.glob(f"{media_id}.*"))
+            for cand in candidates:
+                if cand.is_file() and cand.stat().st_size > 0:
+                    cand_filename = cand.name.split("-", 1)[1] if "-" in cand.name else cand.name
+                    return self.inspect(cand, cand_filename, media_id=media_id)
+
+            # 2. Check SQLite projects table for media_path
+            from videotrans.core.project_store import db_conn
+            with db_conn() as conn:
+                row = conn.execute(
+                    "SELECT media_path, name FROM projects WHERE media_id = ? AND media_path IS NOT NULL LIMIT 1",
+                    (media_id,),
+                ).fetchone()
+                if row and row["media_path"]:
+                    p = Path(row["media_path"])
+                    if p.is_file() and p.stat().st_size > 0:
+                        return self.inspect(p, row["name"] or p.name, media_id=media_id)
+        except Exception:
+            pass
+
+        return None
 
 
 MEDIA = MediaStore(UPLOAD_DIR, get_video_info)

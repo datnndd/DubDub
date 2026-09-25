@@ -52,9 +52,13 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       const stateData = (project as any).state || (project.state_json ? JSON.parse(project.state_json) : null);
       const targetStep = stateData?.currentStep || project.stage || 1;
       const mediaId = (project as any).media_id || stateData?.backend?.mediaId || null;
-      const resolvedPreviewUrl = mediaId
-        ? (stateData?.project?.previewUrl || `/api/media/${mediaId}/file`)
-        : undefined;
+      let resolvedPreviewUrl: string | undefined = undefined;
+      if (mediaId) {
+        const candidateUrl = stateData?.project?.previewUrl;
+        resolvedPreviewUrl = (candidateUrl && !candidateUrl.startsWith('blob:'))
+          ? candidateUrl
+          : `/api/media/${mediaId}/file`;
+      }
       const isVerified = Boolean(mediaId && (stateData?.project?.verified ?? true));
 
       set((state: any) => ({
@@ -151,9 +155,16 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
     const id = get().activeProjectId;
     if (!id) return;
     const currentState = get();
-    // Exclude transient file objects from autosave JSON
+    const mediaId = currentState.backend?.mediaId || null;
+    // Exclude transient file objects and dead blob URLs from autosave JSON
     const snapshot = {
-      project: currentState.project,
+      backend: {
+        mediaId,
+      },
+      project: {
+        ...currentState.project,
+        previewUrl: mediaId ? `/api/media/${mediaId}/file` : undefined,
+      },
       languages: currentState.languages,
       engines: currentState.engines,
       speakers: currentState.speakers,
@@ -169,7 +180,7 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       },
       currentStep: currentState.currentStep,
     };
-    updateProjectState(id, snapshot, currentState.currentStep)
+    updateProjectState(id, snapshot, currentState.currentStep, mediaId || undefined)
       .then(() => {
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         set((s: any) => ({

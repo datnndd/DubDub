@@ -36,6 +36,8 @@ class ProjectCreateRequest(BaseModel):
 
 class ProjectUpdateRequest(BaseModel):
     name: Optional[str] = None
+    mediaId: Optional[str] = Field(None, alias="media_id")
+    mediaPath: Optional[str] = Field(None, alias="media_path")
     duration: Optional[float] = None
     stage: Optional[int] = None
     status: Optional[str] = None
@@ -144,6 +146,24 @@ async def update_project_handler(
         except (ValueError, TypeError):
             pass
 
+    media_store = getattr(request.app.state, "media_store", None) or MEDIA
+    media_id = str(payload.mediaId or "") or None
+    if not media_id and isinstance(payload.state, dict):
+        media_id = str(payload.state.get("backend", {}).get("mediaId") or "") or None
+
+    if media_id:
+        kwargs["media_id"] = media_id
+        media = media_store.get(media_id)
+        if media:
+            kwargs["media_path"] = str(media.path)
+            if payload.duration is None and media.info.get("time"):
+                try:
+                    kwargs["duration"] = float(media.info["time"]) / 1000.0
+                except (ValueError, TypeError):
+                    pass
+    elif payload.mediaPath:
+        kwargs["media_path"] = str(payload.mediaPath)
+
     if payload.state is not None and isinstance(payload.state, dict):
         project = update_project_state(
             project_id,
@@ -151,8 +171,9 @@ async def update_project_handler(
             stage=kwargs.get("stage"),
             status=kwargs.get("status"),
         )
-        if project and any(k in kwargs for k in ("name", "duration")):
-            extra = {k: kwargs[k] for k in ("name", "duration") if k in kwargs}
+        extra_keys = ("name", "duration", "media_id", "media_path")
+        if project and any(k in kwargs for k in extra_keys):
+            extra = {k: kwargs[k] for k in extra_keys if k in kwargs}
             project = update_project(project_id, **extra)
     else:
         project = update_project(project_id, **kwargs)

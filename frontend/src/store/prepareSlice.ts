@@ -205,6 +205,7 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
       if (get().mediaSelectionVersion !== version) return;
 
       const durSec = media.durationMs ? media.durationMs / 1000 : 0;
+      const persistentPreviewUrl = `/api/media/${media.id}/file`;
       set((state: any) => ({
         backend: {
           ...state.backend,
@@ -227,6 +228,7 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
           hasAudio: media.hasAudio,
           hasVideo: media.hasVideo,
           verified: true,
+          previewUrl: persistentPreviewUrl,
         },
         playback: {
           ...state.playback,

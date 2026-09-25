@@ -470,4 +470,78 @@ describe('React four-stage workflow', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('reopening an old project restores video preview URL, cleanses legacy blob URLs, and renders player', async () => {
+    const originalFetch = globalThis.fetch;
+    let savedPutBody: any = null;
+
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (url.includes('/api/projects/proj-saved-456') && init?.method === 'PUT') {
+        savedPutBody = JSON.parse(init.body as string);
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/api/projects/proj-saved-456')) {
+        return new Response(
+          JSON.stringify({
+            project: {
+              id: 'proj-saved-456',
+              name: 'Interview Video Project',
+              media_id: 'media-777',
+              stage: 1,
+              state: {
+                currentStep: 1,
+                project: {
+                  filename: 'interview_clip.mp4',
+                  // Legacy dead blob URL saved by old version
+                  previewUrl: 'blob:http://localhost:5173/revoked-blob-uuid',
+                  verified: true,
+                },
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+
+    try {
+      // Reopen the saved project
+      await useDubDubStore.getState().selectProject('proj-saved-456');
+
+      const state = useDubDubStore.getState();
+      expect(state.activeProjectId).toBe('proj-saved-456');
+      expect(state.backend.mediaId).toBe('media-777');
+      expect(state.project.verified).toBe(true);
+      // Must be cleansed from dead blob URL to persistent backend endpoint
+      expect(state.project.previewUrl).toBe('/api/media/media-777/file');
+
+      // Video player in Stage 1 must be rendered with source pointing to media file
+      const html = renderToStaticMarkup(<Stage1Prepare />);
+      expect(html).toContain('data-source-preview="true"');
+      expect(html).toContain('src="/api/media/media-777/file"');
+      expect(html).toContain('Stream Verified');
+
+      // Trigger autosave and verify payload has clean mediaId and previewUrl
+      useDubDubStore.getState().triggerAutosave();
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(savedPutBody).toBeTruthy();
+      expect(savedPutBody.media_id).toBe('media-777');
+      expect(savedPutBody.state.backend.mediaId).toBe('media-777');
+      expect(savedPutBody.state.project.previewUrl).toBe('/api/media/media-777/file');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
+
