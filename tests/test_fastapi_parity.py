@@ -224,3 +224,32 @@ async def test_project_update_and_artifact_persistence(tmp_path):
         assert (pdir / "transcripts" / "source.srt").exists()
         assert (pdir / "transcripts" / "transcript_options.json").exists()
 
+
+@pytest.mark.asyncio
+async def test_api_translate_production_handler(tmp_path):
+    app = create_app(upload_dir=tmp_path / "uploads")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post(
+            "/api/translate",
+            json={
+                "sourceLanguage": "en",
+                "targetLanguage": "en",
+                "translateType": 0,
+                "segments": [
+                    {
+                        "id": 1,
+                        "sourceText": "Welcome to DubDub",
+                        "startSec": 0.0,
+                        "endSec": 2.0,
+                    }
+                ],
+            },
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is True
+        assert len(body["segments"]) == 1
+        assert body["segments"][0]["targetText"] == "Welcome to DubDub"
+        assert body["segments"][0]["id"] == 1
+
+

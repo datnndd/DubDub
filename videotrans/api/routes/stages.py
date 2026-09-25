@@ -72,21 +72,45 @@ async def translate_handler(
         if isinstance(s, dict):
             text = str(s.get("sourceText") or s.get("text") or "").strip()
             if text:
-                segments.append({
-                    "line": s.get("line", len(segments) + 1),
-                    "time": s.get("time", "00:00:00,000 --> 00:00:01,000"),
-                    "text": text,
-                })
+                item = dict(s)
+                item["sourceText"] = text
+                segments.append(item)
 
     if not segments:
         return JSONResponse({"ok": True, "segments": []})
 
+    import uuid
+    from pathlib import Path
+    from videotrans.configure.config import TEMP_DIR
+
+    media_store = getattr(request.app.state, "media_store", None) or MEDIA
+    media_id = getattr(payload, "mediaId", None) or (payload.model_dump().get("mediaId") if hasattr(payload, "model_dump") else None)
+    media = media_store.get(str(media_id)) if media_id else None
+    if media is None or not media.path.is_file():
+        fallback_path = Path(TEMP_DIR) / f"webui-trans-{uuid.uuid4().hex}.mp4"
+        fallback_path.touch(exist_ok=True)
+        media_file = fallback_path
+    else:
+        media_file = media.path
+
+    job_uuid = uuid.uuid4().hex
+    cache_dir = Path(TEMP_DIR) / f"cache-{job_uuid}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    target_dir = Path(TEMP_DIR) / f"target-{job_uuid}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
     task_params = {
-        "source_code": source_lang,
-        "target_code": target_lang,
+        "name": media_file.resolve().as_posix(),
+        "target_dir": target_dir.resolve().as_posix(),
+        "cache_folder": cache_dir.resolve().as_posix(),
+        "source_language_code": source_lang,
+        "target_language_code": target_lang,
+        "source_language": source_lang,
+        "target_language": target_lang,
         "translate_type": translate_type,
         "aisendsrt": aisendsrt,
         "segments": segments,
+        "uuid": job_uuid,
     }
     job_manager = getattr(request.app.state, "job_manager", None)
     runner = getattr(job_manager, "_translation_runner", None) or run_staged_translation

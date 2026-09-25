@@ -83,6 +83,15 @@ class TaskRequest:
 
     def normalize(self) -> dict:
         values = dict(self.params)
+        if "source_code" in values and "source_language_code" not in values:
+            values["source_language_code"] = values.pop("source_code")
+        elif "source_code" in values:
+            values.pop("source_code")
+        if "target_code" in values and "target_language_code" not in values:
+            values["target_language_code"] = values.pop("target_code")
+        elif "target_code" in values:
+            values.pop("target_code")
+
         unknown = set(values) - {item.name for item in fields(TaskCfgVTT)}
         if unknown:
             raise ValueError(f"Unsupported task parameters: {', '.join(sorted(unknown))}")
