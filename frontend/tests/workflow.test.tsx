@@ -401,4 +401,73 @@ describe('React four-stage workflow', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('createNewProject and selectProject on empty project resets media state and renders upload button without F5', async () => {
+    const originalFetch = globalThis.fetch;
+    const emptyNewProject = {
+      id: 'proj-new-001',
+      name: 'Brand New Blank Project',
+      stage: 1,
+      status: 'pending' as const,
+      media_id: null,
+      state: null,
+    };
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.endsWith('/api/projects') && init?.method === 'POST') {
+        return new Response(JSON.stringify(emptyNewProject), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (urlStr.includes('/api/projects/proj-new-001')) {
+        return new Response(JSON.stringify(emptyNewProject), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ projects: [emptyNewProject] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+
+    try {
+      // Suppose user previously had an active project with a video loaded
+      useDubDubStore.setState({
+        activeProjectId: 'proj-old',
+        currentStep: 2,
+        backend: {
+          ...useDubDubStore.getState().backend,
+          mediaId: 'media-old-999',
+        },
+        project: {
+          ...useDubDubStore.getState().project,
+          filename: 'old-video.mp4',
+          previewUrl: '/api/media/media-old-999/file',
+          verified: true,
+        },
+      });
+
+      // User creates and activates new project
+      const newId = await useDubDubStore.getState().createNewProject('Brand New Blank Project');
+      expect(newId).toBe('proj-new-001');
+
+      const state = useDubDubStore.getState();
+      expect(state.activeProjectId).toBe('proj-new-001');
+      expect(state.currentStep).toBe(1);
+      expect(state.backend.mediaId).toBeNull();
+      expect(state.project.previewUrl).toBeUndefined();
+      expect(state.project.verified).toBe(false);
+
+      // Render Stage 1: upload button/dropzone must be present, video preview must NOT be present
+      const html = renderToStaticMarkup(<Stage1Prepare />);
+      expect(html).toContain('Select Media File');
+      expect(html).toContain('Drop video here, or click to browse');
+      expect(html).not.toContain('data-source-preview="true"');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -51,20 +51,65 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       }
       const stateData = (project as any).state || (project.state_json ? JSON.parse(project.state_json) : null);
       const targetStep = stateData?.currentStep || project.stage || 1;
-      const mediaId = (project as any).media_id || stateData?.backend?.mediaId;
+      const mediaId = (project as any).media_id || stateData?.backend?.mediaId || null;
+      const resolvedPreviewUrl = mediaId
+        ? (stateData?.project?.previewUrl || `/api/media/${mediaId}/file`)
+        : undefined;
+      const isVerified = Boolean(mediaId && (stateData?.project?.verified ?? true));
 
       set((state: any) => ({
         ...state,
-        ...(stateData || {}),
+        selectedFile: null,
         activeProjectId: id,
         currentStep: targetStep,
-        maxUnlockedStep: Math.max(state.maxUnlockedStep || 1, project.stage || 1, targetStep),
+        maxUnlockedStep: Math.max(project.stage || 1, targetStep),
         drawerOpen: false,
+        segments: stateData?.segments || [],
+        transcriptOptions: stateData?.transcriptOptions || null,
+        selectedSegmentOption: stateData?.selectedSegmentOption || 'utterances',
+        speakers: stateData?.speakers || [],
+        speakerVoiceMap: stateData?.speakerVoiceMap || {},
+        segmentVoiceOverrides: stateData?.segmentVoiceOverrides || {},
+        jobStatus: 'idle',
+        jobProgress: null,
+        jobStage: null,
+        jobMessage: 'Ready to process',
+        backend: {
+          ...state.backend,
+          mediaId: mediaId,
+          status: mediaId ? 'ready' : 'idle',
+          error: null,
+          message: '',
+          config: {
+            ...state.backend.config,
+            ...(stateData?.backend?.config || {}),
+          },
+        },
+        languages: {
+          ...state.languages,
+          ...(stateData?.languages || {}),
+        },
+        engines: {
+          ...state.engines,
+          ...(stateData?.engines || {}),
+        },
         project: {
-          ...(state.project || {}),
+          filename: project.name || 'Untitled Video Project',
+          format: '—',
+          resolution: '—',
+          fps: '—',
+          duration: '00:00.000',
+          durationSec: 0,
+          fileSize: '—',
+          videoCodec: '—',
+          audioCodec: '—',
+          bitrate: 'Not reported',
+          hasAudio: isVerified,
+          hasVideo: isVerified,
+          lastSaved: 'Just now',
           ...(stateData?.project || {}),
-          filename: project.name || stateData?.project?.filename || state.project.filename,
-          previewUrl: stateData?.project?.previewUrl || (mediaId ? `/api/media/${mediaId}/file` : state.project.previewUrl),
+          previewUrl: resolvedPreviewUrl,
+          verified: isVerified,
         },
       }));
     } catch (err) {
@@ -77,10 +122,7 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       const proj = await createProject({ name, mediaId, duration });
       const newId = proj?.id;
       if (newId) {
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('dubdub_active_project_id', newId);
-        }
-        set({ activeProjectId: newId, currentStep: 1 });
+        await get().selectProject(newId);
       }
       await get().loadProjects();
       return newId || '';

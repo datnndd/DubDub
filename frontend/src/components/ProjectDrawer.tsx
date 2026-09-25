@@ -70,7 +70,10 @@ export const ProjectDrawer: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => createNewProject()}
+              onClick={async () => {
+                await createNewProject();
+                setDrawerOpen(false);
+              }}
               className="px-2.5 py-1 text-xs font-semibold rounded-md bg-[#8D4B00] text-white hover:bg-[#743D00] flex items-center gap-1 shadow-2xs cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -123,14 +126,17 @@ export const ProjectDrawer: React.FC = () => {
                       {getStatusBadge(p.status)}
                       <div className="flex items-center gap-1 mt-1">
                         <button
-                          onClick={() => selectProject(p.id)}
+                          onClick={async () => {
+                            await selectProject(p.id);
+                            setDrawerOpen(false);
+                          }}
                           className={`px-2 py-1 text-[11px] font-semibold rounded cursor-pointer ${
                             isActive
                               ? 'bg-[#8D4B00] text-white'
                               : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
                           }`}
                         >
-                          {isActive ? 'Active' : 'Switch'}
+                          {isActive ? 'Active' : 'Activate'}
                         </button>
                         <button
                           onClick={() => {
