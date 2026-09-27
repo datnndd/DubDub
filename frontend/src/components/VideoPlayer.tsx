@@ -29,6 +29,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const currentStep = useDubDubStore((s) => s.currentStep);
   const updatePlaybackTime = useDubDubStore((s) => s.updatePlaybackTime);
   const setAudioChannel = useDubDubStore((s) => s.setAudioChannel);
+  const setPlaying = useDubDubStore((s) => s.setPlaying);
+  const setStopAtTime = useDubDubStore((s) => s.setStopAtTime);
+  const seekRequest = useDubDubStore((s) => s.playback.seekRequest);
+  const playbackSpeed = useDubDubStore((s) => s.playback.playbackSpeed);
 
   const currentSegment = segments.find((s) => s.id === activeSegmentId) || segments[0];
   const previewUrl = project.previewUrl || '';
@@ -43,9 +47,49 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [currentStep, editVideo?.audioMix]);
 
+  // Synchronize seek & play commands from store
+  useEffect(() => {
+    if (!videoRef.current || !seekRequest) return;
+    const video = videoRef.current;
+    video.currentTime = seekRequest.time;
+    if (seekRequest.play) {
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('Playback error or user gesture required:', err);
+        });
+      }
+    }
+  }, [seekRequest]);
+
+  // Synchronize playback speed
+  useEffect(() => {
+    if (!videoRef.current) return;
+    videoRef.current.playbackRate = playbackSpeed || 1.0;
+  }, [playbackSpeed]);
+
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
-    updatePlaybackTime(videoRef.current.currentTime, videoRef.current.duration);
+    const curTime = videoRef.current.currentTime;
+    const dur = videoRef.current.duration;
+
+    // Check if playback should stop at the block's end boundary
+    const currentStopAt = useDubDubStore.getState().playback.stopAtTime;
+    if (currentStopAt !== null && currentStopAt !== undefined && curTime >= currentStopAt) {
+      videoRef.current.pause();
+      setPlaying(false);
+      setStopAtTime(null);
+    }
+
+    updatePlaybackTime(curTime, dur);
+  };
+
+  const handlePlay = () => {
+    setPlaying(true);
+  };
+
+  const handlePause = () => {
+    setPlaying(false);
   };
 
   // Subtitle dynamic styles for CapCut canvas
@@ -135,6 +179,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             preload="metadata"
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleTimeUpdate}
+            onPlay={handlePlay}
+            onPause={handlePause}
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-stone-900 text-stone-400 p-6 text-center">

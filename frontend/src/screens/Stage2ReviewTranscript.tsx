@@ -53,6 +53,7 @@ export const Stage2ReviewTranscript: React.FC = () => {
   const segments = useDubDubStore((s) => s.segments);
   const activeSegmentId = useDubDubStore((s) => s.activeSegmentId);
   const setActiveSegmentId = useDubDubStore((s) => s.setActiveSegmentId);
+  const seekAndPlay = useDubDubStore((s) => s.seekAndPlay);
   const searchQuery = useDubDubStore((s) => s.searchQuery);
   const setSearchQuery = useDubDubStore((s) => s.setSearchQuery);
   const updateSegmentText = useDubDubStore((s) => s.updateSegmentText);
@@ -310,8 +311,12 @@ export const Stage2ReviewTranscript: React.FC = () => {
               <div
                 key={seg.id}
                 data-segment-card={seg.id}
-                onClick={() => setActiveSegmentId(seg.id)}
-                className={`p-3 rounded-xl border transition-all ${
+                onClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest('button, select, textarea, input, label, a')) return;
+                  seekAndPlay(seg.startSec, seg.endSec, seg.id);
+                }}
+                className={`p-3 rounded-xl border transition-all cursor-pointer ${
                   isActive
                     ? 'border-[#8D4B00] bg-amber-50/25 ring-1 ring-[#8D4B00]/20 shadow-xs'
                     : 'border-stone-200 hover:border-stone-300 bg-white'

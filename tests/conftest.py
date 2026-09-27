@@ -255,7 +255,7 @@ class _TestClient:
 
     async def delete(self, path, **kwargs):
         kwargs = self._prepare_kwargs(kwargs)
-        resp = await self._client.delete(path, **kwargs)
+        resp = await self._client.request("DELETE", path, **kwargs)
         return _WrappedResponse(resp)
 
 

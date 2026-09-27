@@ -21,6 +21,7 @@ export interface ProjectRecord {
   stage: number;
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'paused';
   media_path?: string;
+  duration?: number;
   created_at?: string;
   updated_at?: string;
   state_json?: string;

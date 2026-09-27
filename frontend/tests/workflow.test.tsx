@@ -12,6 +12,7 @@ import { VideoPlayer } from '../src/components/VideoPlayer';
 import { WorkflowStepper } from '../src/components/WorkflowStepper';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { StatusFooter } from '../src/components/StatusFooter';
+import { ProjectDrawer } from '../src/components/ProjectDrawer';
 
 const segment = {
   id: 1,
@@ -1098,6 +1099,212 @@ describe('React four-stage workflow', () => {
     // Since activeVoice is NewVoice and previewVoice is OldVoice, the button should offer Generate Voice Preview
     expect(html).toContain('Generate Voice Preview');
     expect(html).toContain('Audition (OldVoice)');
+  });
+
+  test('clicking a block plays video from that block start time until its end time', () => {
+    useDubDubStore.setState({
+      segments: [
+        {
+          id: 1,
+          startSec: 2.5,
+          endSec: 5.0,
+          startTime: '00:02.500',
+          endTime: '00:05.000',
+          sourceText: 'Hello world',
+          targetText: 'Xin chao the gioi',
+          speakerId: 'spk_1',
+        },
+        {
+          id: 2,
+          startSec: 6.0,
+          endSec: 9.5,
+          startTime: '00:06.000',
+          endTime: '00:09.500',
+          sourceText: 'Second segment',
+          targetText: 'Doan thu hai',
+          speakerId: 'spk_2',
+        },
+      ],
+      playback: {
+        currentTime: 0,
+        formattedTime: '00:00.000',
+        duration: 20,
+        isPlaying: false,
+        playbackSpeed: 1.0,
+        audioChannel: 'dub',
+        stopAtTime: null,
+        seekRequest: null,
+      },
+    });
+
+    const store = useDubDubStore.getState();
+
+    // Trigger seekAndPlay for block 1 (start 2.5 -> end 5.0)
+    store.seekAndPlay(2.5, 5.0, 1);
+
+    const afterSeek = useDubDubStore.getState();
+    expect(afterSeek.playback.currentTime).toBe(2.5);
+    expect(afterSeek.playback.isPlaying).toBe(true);
+    expect(afterSeek.playback.stopAtTime).toBe(5.0);
+    expect(afterSeek.activeSegmentId).toBe(1);
+    expect(afterSeek.playback.seekRequest?.play).toBe(true);
+    expect(afterSeek.playback.seekRequest?.time).toBe(2.5);
+    expect(afterSeek.playback.seekRequest?.stopAt).toBe(5.0);
+
+    // Progress time while playing inside segment duration
+    store.updatePlaybackTime(3.8);
+    const midPlayback = useDubDubStore.getState();
+    expect(midPlayback.playback.currentTime).toBe(3.8);
+    expect(midPlayback.playback.isPlaying).toBe(true);
+    expect(midPlayback.playback.stopAtTime).toBe(5.0);
+
+    // Reaching segment endSec must automatically pause video and clear stopAtTime
+    store.updatePlaybackTime(5.0);
+    const endPlayback = useDubDubStore.getState();
+    expect(endPlayback.playback.currentTime).toBe(5.0);
+    expect(endPlayback.playback.isPlaying).toBe(false);
+    expect(endPlayback.playback.stopAtTime).toBe(null);
+
+    // Now clicking block 2 (start 6.0 -> end 9.5)
+    store.seekAndPlay(6.0, 9.5, 2);
+    const seg2Play = useDubDubStore.getState();
+    expect(seg2Play.playback.currentTime).toBe(6.0);
+    expect(seg2Play.playback.isPlaying).toBe(true);
+    expect(seg2Play.playback.stopAtTime).toBe(9.5);
+    expect(seg2Play.activeSegmentId).toBe(2);
+
+    // Exceeding block 2 endSec also pauses
+    store.updatePlaybackTime(9.6);
+    const seg2End = useDubDubStore.getState();
+    expect(seg2End.playback.isPlaying).toBe(false);
+    expect(seg2End.playback.stopAtTime).toBe(null);
+  });
+
+  test('ProjectDrawer renders Project Manager interface with Search, Select All, and items when open', () => {
+    useDubDubStore.setState({
+      drawerOpen: true,
+      activeProjectId: 'proj_alpha',
+      projectsList: [
+        {
+          id: 'proj_alpha',
+          name: 'Alpha Dubbing Video',
+          stage: 1,
+          status: 'pending',
+          duration: 12.5,
+          createdAt: '2026-09-27T10:00:00Z',
+          updatedAt: '2026-09-27T10:00:00Z',
+        },
+        {
+          id: 'proj_beta',
+          name: 'Beta Review Project',
+          stage: 2,
+          status: 'completed',
+          duration: 45.0,
+          createdAt: '2026-09-27T11:00:00Z',
+          updatedAt: '2026-09-27T11:00:00Z',
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(<ProjectDrawer />);
+
+    // Header & Search
+    expect(html).toContain('Project Manager');
+    expect(html).toContain('Search projects by name, stage, or status');
+
+    // Select All button and cards
+    expect(html).toContain('data-testid="select-all-projects-btn"');
+    expect(html).toContain('Select All (2)');
+    expect(html).toContain('Alpha Dubbing Video');
+    expect(html).toContain('Beta Review Project');
+    expect(html).toContain('data-testid="checkbox-project-proj_alpha"');
+    expect(html).toContain('data-testid="checkbox-project-proj_beta"');
+    expect(html).toContain('data-testid="activate-project-proj_alpha"');
+    expect(html).toContain('data-testid="delete-project-proj_alpha"');
+    expect(html).toContain('Active');
+    expect(html).toContain('Completed');
+  });
+
+  test('ProjectDrawer returns null when drawerOpen is false', () => {
+    useDubDubStore.setState({
+      drawerOpen: false,
+      projectsList: [
+        {
+          id: 'p1',
+          name: 'Hidden Project',
+          stage: 1,
+          status: 'pending',
+          duration: 10,
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(<ProjectDrawer />);
+    expect(html).toBe('');
+  });
+
+  test('deleteProjectsByIds successfully performs bulk deletion and cleans activeProjectId', async () => {
+    const originalFetch = globalThis.fetch;
+    let bulkDeletePayload: any = null;
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/api/projects/bulk-delete')) {
+        bulkDeletePayload = JSON.parse((init?.body as string) || '{}');
+        return new Response(JSON.stringify({ ok: true, deleted: bulkDeletePayload.ids, count: bulkDeletePayload.ids.length }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (urlStr.endsWith('/api/projects') && (!init?.method || init.method === 'GET')) {
+        return new Response(JSON.stringify({
+          projects: [
+            {
+              id: 'proj_gamma',
+              name: 'Remaining Gamma Project',
+              stage: 3,
+              status: 'pending',
+              duration: 30,
+              createdAt: '',
+              updatedAt: '',
+            },
+          ],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    try {
+      useDubDubStore.setState({
+        activeProjectId: 'proj_alpha',
+        projectsList: [
+          { id: 'proj_alpha', name: 'Alpha', stage: 1, status: 'pending', duration: 10, createdAt: '', updatedAt: '' },
+          { id: 'proj_beta', name: 'Beta', stage: 2, status: 'completed', duration: 20, createdAt: '', updatedAt: '' },
+          { id: 'proj_gamma', name: 'Gamma', stage: 3, status: 'pending', duration: 30, createdAt: '', updatedAt: '' },
+        ],
+      });
+
+      // Bulk delete proj_alpha and proj_beta
+      await useDubDubStore.getState().deleteProjectsByIds(['proj_alpha', 'proj_beta']);
+
+      // Verify payload sent
+      expect(bulkDeletePayload).toEqual({ ids: ['proj_alpha', 'proj_beta'] });
+
+      // Verify activeProjectId was cleared since active project was among deleted
+      const updatedStore = useDubDubStore.getState();
+      expect(updatedStore.activeProjectId).toBeNull();
+
+      // Verify project list was reloaded
+      expect(updatedStore.projectsList.length).toBe(1);
+      expect(updatedStore.projectsList[0].id).toBe('proj_gamma');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

@@ -16,11 +16,15 @@ export interface PlaybackSlice {
     isPlaying: boolean;
     playbackSpeed: number;
     audioChannel: 'orig' | 'dub';
+    stopAtTime: number | null;
+    seekRequest: { time: number; play?: boolean; stopAt?: number | null; timestamp: number } | null;
   };
   seek: (seconds: number) => void;
+  seekAndPlay: (startSec: number, endSec?: number, segmentId?: number | string) => void;
   setPlaying: (playing: boolean) => void;
   setPlaybackSpeed: (speed: number) => void;
   setAudioChannel: (channel: 'orig' | 'dub') => void;
+  setStopAtTime: (stopAtTime: number | null) => void;
   updatePlaybackTime: (currentTime: number, duration?: number) => void;
 }
 
@@ -32,6 +36,8 @@ export const createPlaybackSlice: StateCreator<any, [], [], PlaybackSlice> = (se
     isPlaying: false,
     playbackSpeed: 1.0,
     audioChannel: 'dub',
+    stopAtTime: null,
+    seekRequest: null,
   },
 
   seek: (seconds: number) => {
@@ -42,6 +48,13 @@ export const createPlaybackSlice: StateCreator<any, [], [], PlaybackSlice> = (se
         ...state.playback,
         currentTime: clamped,
         formattedTime: formatTimecode(clamped),
+        stopAtTime: null,
+        seekRequest: {
+          time: clamped,
+          play: false,
+          stopAt: null,
+          timestamp: Date.now(),
+        },
       },
     }));
 
@@ -51,6 +64,29 @@ export const createPlaybackSlice: StateCreator<any, [], [], PlaybackSlice> = (se
     if (active && active.id !== get().activeSegmentId) {
       set({ activeSegmentId: active.id });
     }
+  },
+
+  seekAndPlay: (startSec: number, endSec?: number, segmentId?: number | string) => {
+    const dur = get().playback.duration || get().project?.durationSec || 0;
+    const clampedStart = Math.max(0, dur > 0 ? Math.min(startSec, dur) : startSec);
+    const stopAt = typeof endSec === 'number' && endSec > clampedStart ? endSec : null;
+
+    set((state: any) => ({
+      activeSegmentId: segmentId !== undefined ? segmentId : state.activeSegmentId,
+      playback: {
+        ...state.playback,
+        currentTime: clampedStart,
+        formattedTime: formatTimecode(clampedStart),
+        isPlaying: true,
+        stopAtTime: stopAt,
+        seekRequest: {
+          time: clampedStart,
+          play: true,
+          stopAt: stopAt,
+          timestamp: Date.now(),
+        },
+      },
+    }));
   },
 
   setPlaying: (isPlaying: boolean) => {
@@ -71,7 +107,19 @@ export const createPlaybackSlice: StateCreator<any, [], [], PlaybackSlice> = (se
     }));
   },
 
+  setStopAtTime: (stopAtTime: number | null) => {
+    set((state: any) => ({
+      playback: {
+        ...state.playback,
+        stopAtTime,
+      },
+    }));
+  },
+
   updatePlaybackTime: (currentTime: number, duration?: number) => {
+    const stopAt = get().playback.stopAtTime;
+    const shouldStop = stopAt !== null && stopAt !== undefined && currentTime >= stopAt;
+
     set((state: any) => {
       const dur = duration !== undefined ? duration : state.playback.duration;
       return {
@@ -80,6 +128,8 @@ export const createPlaybackSlice: StateCreator<any, [], [], PlaybackSlice> = (se
           currentTime,
           formattedTime: formatTimecode(currentTime),
           duration: dur,
+          isPlaying: shouldStop ? false : state.playback.isPlaying,
+          stopAtTime: shouldStop ? null : state.playback.stopAtTime,
         },
       };
     });

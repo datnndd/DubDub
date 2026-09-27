@@ -40,6 +40,13 @@ export async function deleteProject(id: string): Promise<void> {
   });
 }
 
+export async function bulkDeleteProjects(ids: string[]): Promise<{ ok: boolean; deleted: string[]; count: number }> {
+  return apiRequest('/api/projects/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+}
+
 export async function resumeProject(id: string): Promise<{ job_id: string }> {
   return apiRequest(`/api/projects/${encodeURIComponent(id)}/resume`, {
     method: 'POST',

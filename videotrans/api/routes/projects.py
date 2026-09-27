@@ -185,6 +185,23 @@ async def update_project_handler(
     return JSONResponse(project)
 
 
+class BulkDeleteProjectsRequest(BaseModel):
+    ids: list[str]
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+@router.post("/api/projects/bulk-delete")
+@router.delete("/api/projects/bulk-delete")
+async def bulk_delete_projects_handler(payload: BulkDeleteProjectsRequest) -> JSONResponse:
+    raw_ids = payload.ids or []
+    deleted_ids = []
+    for pid in raw_ids:
+        if delete_project(str(pid), delete_files=True):
+            deleted_ids.append(str(pid))
+    return JSONResponse({"ok": True, "deleted": deleted_ids, "count": len(deleted_ids)})
+
+
 @router.delete("/api/projects/{project_id}")
 async def delete_project_handler(project_id: str) -> JSONResponse:
     deleted = delete_project(project_id, delete_files=True)

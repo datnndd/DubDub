@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand';
 import type { ProjectRecord } from '../types/project';
-import { fetchProjects, fetchProject, createProject, deleteProject as apiDeleteProject, updateProjectState } from '../api/projects';
+import { fetchProjects, fetchProject, createProject, deleteProject as apiDeleteProject, bulkDeleteProjects, updateProjectState } from '../api/projects';
 
 export interface ProjectSlice {
   activeProjectId: string | null;
@@ -15,6 +15,7 @@ export interface ProjectSlice {
   selectProject: (id: string) => Promise<void>;
   createNewProject: (name?: string, mediaId?: string, duration?: number) => Promise<string>;
   deleteProjectById: (id: string) => Promise<void>;
+  deleteProjectsByIds: (ids: string[]) => Promise<void>;
   triggerAutosave: () => void;
 }
 
@@ -262,6 +263,29 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       await get().loadProjects();
     } catch (err) {
       console.error('Failed to delete project:', err);
+    }
+  },
+
+  deleteProjectsByIds: async (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    try {
+      await bulkDeleteProjects(ids);
+      const activeId = get().activeProjectId;
+      if (activeId && ids.includes(activeId)) {
+        set({ activeProjectId: null });
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem('dubdub_active_project_id');
+        }
+      }
+      await get().loadProjects();
+    } catch (err) {
+      console.error('Failed to bulk delete projects:', err);
+      for (const id of ids) {
+        try {
+          await apiDeleteProject(id);
+        } catch (_) {}
+      }
+      await get().loadProjects();
     }
   },
 

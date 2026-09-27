@@ -84,6 +84,46 @@ async def test_projects_crud_endpoints():
 
 
 @pytest.mark.asyncio
+async def test_bulk_delete_projects_endpoint():
+    app = create_app()
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        # Create 3 projects
+        p1 = create_project(project_id="bulk_p1", name="Bulk P1")
+        p2 = create_project(project_id="bulk_p2", name="Bulk P2")
+        p3 = create_project(project_id="bulk_p3", name="Bulk P3")
+
+        # 1. Bulk delete p1 and p3 via POST
+        res_bulk_post = await client.post("/api/projects/bulk-delete", json={
+            "ids": ["bulk_p1", "bulk_p3", "non_existent_id"]
+        })
+        assert res_bulk_post.status == 200
+        data_post = await res_bulk_post.json()
+        assert data_post["ok"] is True
+        assert set(data_post["deleted"]) == {"bulk_p1", "bulk_p3"}
+        assert data_post["count"] == 2
+
+        # Verify p1 and p3 are deleted, p2 remains
+        assert (await client.get("/api/projects/bulk_p1")).status == 404
+        assert (await client.get("/api/projects/bulk_p3")).status == 404
+        assert (await client.get("/api/projects/bulk_p2")).status == 200
+
+        # 2. Bulk delete p2 via DELETE
+        res_bulk_del = await client.delete("/api/projects/bulk-delete", json={
+            "ids": ["bulk_p2"]
+        })
+        assert res_bulk_del.status == 200
+        data_del = await res_bulk_del.json()
+        assert data_del["ok"] is True
+        assert data_del["deleted"] == ["bulk_p2"]
+        assert data_del["count"] == 1
+        assert (await client.get("/api/projects/bulk_p2")).status == 404
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_job_sse_stream_replay():
     app = create_app()
     client = TestClient(TestServer(app))

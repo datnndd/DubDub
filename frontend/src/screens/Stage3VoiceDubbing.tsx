@@ -58,6 +58,8 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const backend = useDubDubStore((s) => s.backend);
   const languages = useDubDubStore((s) => s.languages);
   const seek = useDubDubStore((s) => s.seek);
+  const seekAndPlay = useDubDubStore((s) => s.seekAndPlay);
+  const activeSegmentId = useDubDubStore((s) => s.activeSegmentId);
   const setStep = useDubDubStore((s) => s.setStep);
   const triggerAutosave = useDubDubStore((s) => s.triggerAutosave);
   const setSpeakerVoice = useDubDubStore((s) => s.setSpeakerVoice);
@@ -336,7 +338,16 @@ export const Stage3VoiceDubbing: React.FC = () => {
                 <div
                   key={seg.id}
                   data-segment-card={`stage3-${seg.id}`}
-                  className="p-3 rounded-xl border border-stone-200 bg-white space-y-2.5 shadow-2xs hover:border-stone-300 transition-colors"
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.closest('button, select, textarea, input, label, a')) return;
+                    seekAndPlay(seg.startSec, seg.endSec, seg.id);
+                  }}
+                  className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                    activeSegmentId === seg.id
+                      ? 'border-[#8D4B00] bg-amber-50/20 ring-1 ring-[#8D4B00]/20 shadow-xs'
+                      : 'border-stone-200 bg-white hover:border-stone-300 shadow-2xs'
+                  } space-y-2.5`}
                 >
                   {/* Block Header: Speaker Badge, Timestamp, Voice Selector */}
                   <div className="flex items-center justify-between gap-2">
@@ -357,10 +368,14 @@ export const Stage3VoiceDubbing: React.FC = () => {
                       {/* Seekable Timestamp */}
                       <button
                         data-action="seek-segment"
-                        onClick={() => seek(seg.startSec)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          seekAndPlay(seg.startSec, seg.endSec, seg.id);
+                        }}
                         className="font-mono text-[10px] text-stone-500 font-semibold hover:text-[#8D4B00] transition-colors flex items-center gap-1 cursor-pointer"
-                        title="Seek video playback to this dialogue cue"
+                        title="Play video for this dialogue cue"
                       >
+                        <Play className="w-2.5 h-2.5 fill-current text-[#8D4B00]" />
                         <span>{seg.startTime}</span>
                         {seg.endTime && <span className="opacity-60">➔ {seg.endTime}</span>}
                       </button>
