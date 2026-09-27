@@ -223,6 +223,8 @@ def test_options_expose_only_supported_asr_providers_and_safe_configuration_stat
     class FakeSettings:
         def __init__(self):
             self.values = {
+                "source_language": "zh-cn",
+                "target_language": "vi",
                 "deepgram_apikey": "configured-secret",
                 "elevenlabstts_key": "",
                 "chatgpt_api": "https://api.openai.com/v1",

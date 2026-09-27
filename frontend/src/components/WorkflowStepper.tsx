@@ -1,8 +1,9 @@
 import React from 'react';
 import { useDubDubStore } from '../store';
-import { Film, Sliders, FileText, AudioWaveform, Layers } from 'lucide-react';
+import { Film, Sliders, FileText, AudioWaveform, Layers, ArrowLeft } from 'lucide-react';
 
 export const WorkflowStepper: React.FC = () => {
+  const setActiveView = useDubDubStore((s) => s.setActiveView);
   const currentStep = useDubDubStore((s) => s.currentStep);
   const setStep = useDubDubStore((s) => s.setStep);
   const project = useDubDubStore((s) => s.project);
@@ -47,8 +48,18 @@ export const WorkflowStepper: React.FC = () => {
 
   return (
     <div className="h-9 flex-shrink-0 bg-[#FAF8F5] border-b border-[#E7E4DC] px-4 flex items-center justify-between z-20">
-      {/* Media Identity Pill */}
+      {/* Media Identity Pill & Back to Projects Button */}
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          data-testid="workflow-back-to-projects-btn"
+          onClick={() => setActiveView('projects')}
+          className="flex items-center gap-1 text-[11px] font-semibold text-stone-600 hover:text-[#8D4B00] bg-white px-2 py-0.5 rounded-lg border border-stone-200 hover:border-amber-300 shadow-2xs transition-colors cursor-pointer"
+          title="Back to Projects"
+        >
+          <ArrowLeft className="w-3.5 h-3.5 text-stone-400" />
+          <span>Projects</span>
+        </button>
         <div className="flex items-center gap-1.5 bg-white px-2.5 py-0.5 rounded-lg border border-stone-200 text-stone-700 shadow-2xs">
           <Film className="w-3.5 h-3.5 text-stone-400" />
           <span className="font-mono text-[11px] font-medium truncate max-w-[190px]">

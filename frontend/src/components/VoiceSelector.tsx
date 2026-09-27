@@ -68,7 +68,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
   const storeProvider = useDubDubStore((s) => s.backend?.config?.ttsType ?? 2);
   const storeLanguage = useDubDubStore((s) => s.languages?.target?.code || 'vi');
   const setCreateVoiceModalOpen = useDubDubStore((s) => s.setCreateVoiceModalOpen);
-  const setVoiceManagerDrawerOpen = useDubDubStore((s) => s.setVoiceManagerDrawerOpen);
+  const setActiveView = useDubDubStore((s) => s.setActiveView);
 
   const activeProvider = provider !== undefined ? provider : storeProvider;
   const activeLanguage = language || storeLanguage;
@@ -523,7 +523,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
               type="button"
               onClick={() => {
                 closeDropdown();
-                setVoiceManagerDrawerOpen(true);
+                setActiveView('voices');
               }}
               className="w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 transition-colors cursor-pointer"
             >

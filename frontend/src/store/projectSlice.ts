@@ -2,17 +2,21 @@ import { StateCreator } from 'zustand';
 import type { ProjectRecord } from '../types/project';
 import { fetchProjects, fetchProject, createProject, deleteProject as apiDeleteProject, bulkDeleteProjects, updateProjectState } from '../api/projects';
 
+export type MainView = 'projects' | 'dubbing' | 'voices';
+
 export interface ProjectSlice {
   activeProjectId: string | null;
+  activeView: MainView;
   drawerOpen: boolean;
   projectsList: ProjectRecord[];
   currentStep: number;
   maxUnlockedStep: number;
   
+  setActiveView: (view: MainView) => void;
   setStep: (step: number) => void;
   setDrawerOpen: (open: boolean) => void;
   loadProjects: () => Promise<void>;
-  selectProject: (id: string) => Promise<void>;
+  selectProject: (id: string, autoNavigate?: boolean) => Promise<void>;
   createNewProject: (name?: string, mediaId?: string, duration?: number) => Promise<string>;
   deleteProjectById: (id: string) => Promise<void>;
   deleteProjectsByIds: (ids: string[]) => Promise<void>;
@@ -89,10 +93,13 @@ export function normalizeLanguages(incoming: any, fallback?: any) {
 
 export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set, get) => ({
   activeProjectId: typeof localStorage !== 'undefined' ? localStorage.getItem('dubdub_active_project_id') : null,
+  activeView: 'projects',
   drawerOpen: false,
   projectsList: [],
   currentStep: 1,
   maxUnlockedStep: 4,
+
+  setActiveView: (view: MainView) => set({ activeView: view }),
 
   setStep: (step: number) => {
     if (step < 1 || step > 4) return;
@@ -114,7 +121,7 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
     }
   },
 
-  selectProject: async (id: string) => {
+  selectProject: async (id: string, autoNavigate: boolean = true) => {
     try {
       const project = await fetchProject(id);
       if (!project) {
@@ -177,6 +184,7 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
         ...state,
         selectedFile: null,
         activeProjectId: id,
+        ...(autoNavigate ? { activeView: 'dubbing' as MainView } : {}),
         currentStep: targetStep,
         maxUnlockedStep: Math.max(project.stage || 1, targetStep),
         drawerOpen: false,
@@ -241,8 +249,13 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       const proj = await createProject({ name, mediaId, duration });
       const newId = proj?.id;
       if (newId) {
-        await get().selectProject(newId);
+        await get().selectProject(newId, true);
       }
+      set((state: any) => ({
+        ...state,
+        activeView: 'dubbing' as MainView,
+        currentStep: 1,
+      }));
       await get().loadProjects();
       return newId || '';
     } catch (err) {
@@ -255,7 +268,7 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
     try {
       await apiDeleteProject(id);
       if (get().activeProjectId === id) {
-        set({ activeProjectId: null });
+        set({ activeProjectId: null, activeView: 'projects' as MainView });
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem('dubdub_active_project_id');
         }
@@ -272,7 +285,7 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       await bulkDeleteProjects(ids);
       const activeId = get().activeProjectId;
       if (activeId && ids.includes(activeId)) {
-        set({ activeProjectId: null });
+        set({ activeProjectId: null, activeView: 'projects' as MainView });
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem('dubdub_active_project_id');
         }

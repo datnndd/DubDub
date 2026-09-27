@@ -72,7 +72,7 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const updateSegmentVoicePreview = useDubDubStore((s) => s.updateSegmentVoicePreview);
   const updateSegmentText = useDubDubStore((s) => s.updateSegmentText);
   const setCreateVoiceModalOpen = useDubDubStore((s) => s.setCreateVoiceModalOpen);
-  const setVoiceManagerDrawerOpen = useDubDubStore((s) => s.setVoiceManagerDrawerOpen);
+  const setActiveView = useDubDubStore((s) => s.setActiveView);
   const loadVoices = useDubDubStore((s) => s.loadVoices);
   const updateBackendConfig = useDubDubStore((s) => (s as any).updateBackendConfig);
 
@@ -244,9 +244,9 @@ export const Stage3VoiceDubbing: React.FC = () => {
               <span>Create Voice</span>
             </button>
             <button
-              onClick={() => setVoiceManagerDrawerOpen(true)}
+              onClick={() => setActiveView('voices')}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-stone-700 bg-white border border-stone-200 hover:bg-stone-50 hover:border-amber-400 transition-colors cursor-pointer shadow-2xs"
-              title="Open Voice Management Library"
+              title="Open Voice Management Studio"
             >
               <Sliders className="w-3.5 h-3.5 text-stone-500" />
               <span>Library</span>

@@ -1,24 +1,26 @@
 import React from 'react';
 import { useDubDubStore } from '../store';
-import { Waves, Video, Mic, BookOpen, FolderOpen, Sparkles, Settings as SettingsIcon } from 'lucide-react';
+import { Waves, Video, Mic, FolderOpen, Sparkles, Settings as SettingsIcon, ArrowLeft } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const currentStep = useDubDubStore((s) => s.currentStep);
+  const activeView = useDubDubStore((s) => s.activeView);
+  const setActiveView = useDubDubStore((s) => s.setActiveView);
   const setStep = useDubDubStore((s) => s.setStep);
   const project = useDubDubStore((s) => s.project);
   const projectsList = useDubDubStore((s) => s.projectsList);
-  const drawerOpen = useDubDubStore((s) => s.drawerOpen);
-  const setDrawerOpen = useDubDubStore((s) => s.setDrawerOpen);
-  const setVoiceManagerDrawerOpen = useDubDubStore((s) => s.setVoiceManagerDrawerOpen);
   const openSettings = useDubDubStore((s) => s.openSettings);
 
   return (
     <header className="h-[50px] flex-shrink-0 bg-white border-b border-[#E7E4DC] px-4 flex items-center justify-between gap-4 z-30 shadow-2xs">
-      {/* Left: DubDub Branding & Workspace Navigation */}
+      {/* Left: DubDub Branding & Primary Navigation Tabs */}
       <div className="flex items-center gap-3 min-w-0">
         <div
           className="flex items-center gap-2 cursor-pointer"
-          onClick={() => setStep(1)}
+          onClick={() => {
+            setActiveView('dubbing');
+            setStep(1);
+          }}
+          title="DubDub Home - Video Dubbing"
         >
           <div className="w-8 h-8 rounded-lg bg-amber-500/15 text-[#8D4B00] flex items-center justify-center border border-amber-500/25 shadow-2xs">
             <Waves className="w-4 h-4" />
@@ -31,36 +33,81 @@ export const Header: React.FC = () => {
 
         <div className="h-4 w-px bg-stone-200" />
 
-        {/* Navigation Tabs */}
-        <nav className="flex items-center gap-1 p-0.5 bg-stone-100/80 rounded-lg border border-stone-200/80 text-[11px]">
-          <button className="px-2.5 py-1 rounded-md font-bold bg-white text-[#8D4B00] shadow-2xs border border-amber-200/80 flex items-center gap-1 leading-none">
-            <Video className="w-3.5 h-3.5 text-[#8D4B00]" />
+        {/* Top-Level Navigation Tabs */}
+        <nav className="flex items-center gap-1 p-0.5 bg-stone-100/80 rounded-lg border border-stone-200/80 text-[11px]" aria-label="Main Navigation">
+          <button
+            data-tab="projects"
+            data-testid="nav-tab-projects"
+            onClick={() => setActiveView('projects')}
+            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 leading-none transition-colors cursor-pointer ${
+              activeView === 'projects'
+                ? 'bg-white text-[#8D4B00] font-bold shadow-2xs border border-amber-200/80'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/50'
+            }`}
+          >
+            <FolderOpen className={`w-3.5 h-3.5 ${activeView === 'projects' ? 'text-[#8D4B00]' : 'text-stone-400'}`} />
+            <span>Projects</span>
+            {projectsList?.length > 0 && (
+              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                activeView === 'projects' ? 'bg-amber-100 text-[#8D4B00]' : 'bg-stone-200 text-stone-600'
+              }`}>
+                {projectsList.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            data-tab="dubbing"
+            data-testid="nav-tab-dubbing"
+            onClick={() => setActiveView('dubbing')}
+            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 leading-none transition-colors cursor-pointer ${
+              activeView === 'dubbing'
+                ? 'bg-white text-[#8D4B00] font-bold shadow-2xs border border-amber-200/80'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/50'
+            }`}
+          >
+            <Video className={`w-3.5 h-3.5 ${activeView === 'dubbing' ? 'text-[#8D4B00]' : 'text-stone-400'}`} />
             <span>Video Dub</span>
           </button>
+
           <button
-            onClick={() => setVoiceManagerDrawerOpen(true)}
-            className="px-2.5 py-1 rounded-md font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center gap-1 leading-none cursor-pointer"
+            data-tab="voices"
+            data-testid="nav-tab-voices"
+            onClick={() => setActiveView('voices')}
+            className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1.5 leading-none transition-colors cursor-pointer ${
+              activeView === 'voices'
+                ? 'bg-white text-[#8D4B00] font-bold shadow-2xs border border-amber-200/80'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/50'
+            }`}
           >
-            <Mic className="w-3.5 h-3.5 text-stone-400" />
-            <span>Manage Voice</span>
-          </button>
-          <button className="px-2.5 py-1 rounded-md font-medium text-stone-600 hover:text-stone-900 transition-colors flex items-center gap-1 leading-none">
-            <BookOpen className="w-3.5 h-3.5 text-stone-400" />
-            <span>Audio Book</span>
+            <Mic className={`w-3.5 h-3.5 ${activeView === 'voices' ? 'text-[#8D4B00]' : 'text-stone-400'}`} />
+            <span>Voice Management</span>
           </button>
         </nav>
       </div>
 
       {/* Center-Right: Active Project Indicator */}
-      <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-stone-600">
-        <span className="w-2 h-2 rounded-full bg-[#8D4B00]" />
-        <span className="font-medium text-stone-700">
-          Project: <strong className="text-stone-900">{project.filename}</strong>
+      <div className="hidden lg:flex items-center gap-2 text-[11px] text-stone-600 min-w-0">
+        <span className="w-2 h-2 rounded-full bg-[#8D4B00] shrink-0" />
+        <span className="font-medium text-stone-700 truncate max-w-xs">
+          Project: <strong className="text-stone-900">{project?.filename || 'Untitled'}</strong>
         </span>
       </div>
 
-      {/* Right: Projects Drawer, Auto-save status */}
-      <div className="flex items-center gap-3 flex-shrink-0">
+      {/* Right: Back to Projects, Settings, Auto-save status */}
+      <div className="flex items-center gap-2.5 flex-shrink-0">
+        {activeView !== 'projects' && (
+          <button
+            onClick={() => setActiveView('projects')}
+            data-testid="header-back-to-projects-btn"
+            className="px-2.5 py-1 text-xs font-semibold text-stone-700 hover:text-[#8D4B00] bg-stone-100/90 hover:bg-amber-50 border border-stone-200 hover:border-amber-300 rounded-md transition-colors flex items-center gap-1.5 leading-none cursor-pointer shadow-2xs"
+            title="Back to Projects"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-stone-500" />
+            <span>Back to Projects</span>
+          </button>
+        )}
+
         <button
           onClick={() => openSettings()}
           className="px-2.5 py-1 rounded-md font-semibold text-stone-700 hover:text-stone-900 bg-stone-100/90 hover:bg-stone-200/80 border border-stone-200 transition-colors flex items-center gap-1.5 leading-none cursor-pointer shadow-2xs"
@@ -70,24 +117,9 @@ export const Header: React.FC = () => {
           <span>Settings</span>
         </button>
 
-        <button
-          onClick={() => setDrawerOpen(!drawerOpen)}
-          data-project-drawer-trigger="true"
-          className="px-2.5 py-1 rounded-md font-semibold text-stone-700 hover:text-stone-900 bg-stone-100/90 hover:bg-stone-200/80 border border-stone-200 transition-colors flex items-center gap-1.5 leading-none cursor-pointer shadow-2xs"
-          title="Open Projects Drawer"
-        >
-          <FolderOpen className="w-3.5 h-3.5 text-[#8D4B00]" />
-          <span>Projects</span>
-          {projectsList?.length > 0 && (
-            <span className="px-1.5 py-0.2 bg-amber-100 text-[#8D4B00] rounded-full text-[9px] font-bold">
-              {projectsList.length}
-            </span>
-          )}
-        </button>
-
         <div className="hidden sm:flex items-center gap-1 text-[11px] text-stone-500 font-medium">
           <Sparkles className="w-3 h-3 text-stone-400" />
-          <span>Auto-saved {project.lastSaved || 'Just now'}</span>
+          <span>Auto-saved {project?.lastSaved || 'Just now'}</span>
         </div>
 
         <div className="flex items-center gap-2 px-2.5 py-1 bg-stone-50 rounded-lg border border-stone-200 shadow-2xs">
