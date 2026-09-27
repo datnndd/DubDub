@@ -47,6 +47,14 @@ from videotrans import tts
 # Test Doubles & Fixtures
 # ============================================================================
 
+@pytest.fixture(autouse=True)
+def clean_preview_synthesizer():
+    """Ensure preview synthesizer test double is strictly cleaned up after each test."""
+    yield
+    from videotrans.services import voice_preview
+    voice_preview.set_preview_synthesizer(None)
+
+
 @pytest.fixture
 def mock_tts_catalogs(monkeypatch):
     """
@@ -649,3 +657,291 @@ def test_e2e_multi_speaker_dubbing_scenario(tmp_path, mock_tts_catalogs):
             await client.close()
 
     asyncio.run(scenario())
+
+
+# ============================================================================
+# Section 6: Unified Voice Preview & Progress Persistence Tests
+# ============================================================================
+
+def test_unified_tts_preview_all_four_providers(tmp_path, mock_tts_catalogs):
+    """
+    Verify POST /api/tts/preview and GET /api/tts/preview/{id}/audio support
+    all 4 contiguous TTS providers:
+    0: ElevenLabs, 1: OmniVoice, 2: VieNeu-TTS, 3: Gemini TTS
+    """
+    from videotrans.services import voice_preview
+
+    def fake_synthesizer(voice, preview_path, sample_text):
+        voice_preview.generate_fallback_preview_wav(preview_path, duration_sec=1.0)
+
+    voice_preview.set_preview_synthesizer(fake_synthesizer)
+    try:
+        app = create_app(upload_dir=tmp_path / "uploads")
+
+        async def scenario():
+            client = TestClient(TestServer(app))
+            await client.start_server()
+            try:
+                providers_to_test = [
+                    (tts.ELEVENLABS_TTS, "Rachel", "Hello from ElevenLabs"),
+                    (tts.OMNIVOICE_TTS, "Omni-Speaker-1", "Hello from OmniVoice"),
+                    (tts.VIENEU_TTS, "Phạm Tuyên", "Xin chào từ VieNeu TTS"),
+                    (tts.GEMINI_TTS, "Zephyr", "Hello from Gemini TTS"),
+                ]
+
+                for provider_idx, voice_name, text_sample in providers_to_test:
+                    res = await client.post(
+                        "/api/tts/preview",
+                        json={
+                            "provider": provider_idx,
+                            "voice": voice_name,
+                            "text": text_sample,
+                            "language": "vi" if provider_idx == 2 else "en",
+                        },
+                    )
+                    assert res.status == 200, f"Provider {provider_idx} preview failed: {await res.text()}"
+                    data = await res.json()
+                    assert data["ok"] is True
+                    assert data["provider"] == provider_idx
+                    assert data["voice"] == voice_name
+                    preview_id = data["id"]
+                    assert preview_id
+                    preview_url = data["preview_url"]
+                    assert f"/api/tts/preview/{preview_id}/audio" in preview_url
+
+                    # Stream and verify audio file format
+                    audio_res = await client.get(preview_url)
+                    assert audio_res.status == 200
+                    assert "audio/wav" in audio_res.headers.get("Content-Type", "")
+                    content = await audio_res.read()
+                    assert len(content) > 44
+                    assert content.startswith(b"RIFF")
+                    assert b"WAVE" in content[:16]
+            finally:
+                await client.close()
+
+        asyncio.run(scenario())
+    finally:
+        voice_preview.set_preview_synthesizer(None)
+
+
+def test_unified_tts_preview_custom_voice(tmp_path, monkeypatch):
+    """Verify POST /api/tts/preview works seamlessly when referencing a custom voice."""
+    from videotrans.core import voice_store
+    from videotrans.core.db import init_db
+    from videotrans.services import voice_preview
+    import wave
+    import struct
+
+    db_path = tmp_path / "test_stage3_voices.db"
+    init_db(db_path)
+    monkeypatch.setattr("videotrans.core.db._current_db_path", db_path)
+
+    v_dir = tmp_path / "voices"
+    p_dir = tmp_path / "previews"
+    monkeypatch.setattr(voice_store, "VOICES_DIR", v_dir)
+    monkeypatch.setattr(voice_store, "PREVIEWS_DIR", p_dir)
+    voice_store.init_voice_dirs()
+
+    def fake_synthesizer(voice, preview_path, sample_text):
+        voice_preview.generate_fallback_preview_wav(preview_path, duration_sec=1.0)
+
+    voice_preview.set_preview_synthesizer(fake_synthesizer)
+    try:
+        # Create dummy reference wav
+        ref_wav = v_dir / "sample_voice_custom.wav"
+        with wave.open(str(ref_wav), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(24000)
+            wf.writeframes(struct.pack("<24000h", *([1000] * 24000)))
+
+        import uuid
+        dynamic_vid = f"voice_thuhuong_{uuid.uuid4().hex[:6]}"
+        created_voice = voice_store.create_voice(
+            name="Thu Hường",
+            provider=tts.VIENEU_TTS,
+            voice_id=dynamic_vid,
+            ref_audio_path="sample_voice_custom.wav",
+            language="vi",
+            db_path=db_path,
+        )
+        voice_id = created_voice["id"]
+
+        app = create_app(upload_dir=tmp_path / "uploads")
+
+        async def scenario():
+            client = TestClient(TestServer(app))
+            await client.start_server()
+            try:
+                res = await client.post(
+                    "/api/tts/preview",
+                    json={
+                        "voice": voice_id,
+                        "provider": tts.VIENEU_TTS,
+                        "text": "Bản nghe thử giọng lồng tiếng tùy chỉnh.",
+                    },
+                )
+                assert res.status == 200
+                data = await res.json()
+                assert data["ok"] is True
+                assert data["id"] == voice_id
+
+                audio_res = await client.get(data["preview_url"])
+                assert audio_res.status == 200
+                content = await audio_res.read()
+                assert len(content) > 0
+                assert content.startswith(b"RIFF")
+            finally:
+                await client.close()
+
+        asyncio.run(scenario())
+    finally:
+        voice_preview.set_preview_synthesizer(None)
+
+
+def test_unified_tts_preview_404_not_found(tmp_path):
+    """Verify GET /api/tts/preview/{id}/audio returns 404 for nonexistent preview IDs."""
+    app = create_app(upload_dir=tmp_path / "uploads")
+
+    async def scenario():
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            res = await client.get("/api/tts/preview/non_existent_prev_9999/audio")
+            assert res.status == 404
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_project_state_snapshot_persists_segment_voice_overrides(tmp_path):
+    """
+    Verify triggerAutosave persistence contract:
+    POST /api/projects/{id}/state persists segmentVoiceOverrides and dubbingStatus,
+    and GET /api/projects/{id} reliably returns them in state_json.
+    """
+    app = create_app(upload_dir=tmp_path / "uploads")
+
+    async def scenario():
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            # 1. Create new project
+            create_res = await client.post("/api/projects", json={"name": "Stage 3 Dubbing Project"})
+            assert create_res.status in (200, 201)
+            proj = await create_res.json()
+            project_id = proj["id"]
+
+            # 2. Save snapshot containing segmentVoiceOverrides and preview metadata
+            overrides = {"1": "Rachel", "3": "Special Voice"}
+            snapshot = {
+                "currentStep": 3,
+                "dubbingStatus": "completed",
+                "segmentVoiceOverrides": overrides,
+                "speakerVoiceMap": {"spk_1": "Voice-Main", "spk_2": "Voice-Guest"},
+                "segments": [
+                    {
+                        "id": 1,
+                        "speakerId": "spk_1",
+                        "speakerName": "Alex",
+                        "speakerCode": "AL",
+                        "speakerColor": "amber",
+                        "sourceText": "Original source",
+                        "targetText": "Van ban dich",
+                        "previewAudioUrl": "/api/tts/preview/prev_1/audio",
+                        "previewAudioId": "prev_1",
+                    }
+                ],
+            }
+
+            save_res = await client.put(
+                f"/api/projects/{project_id}/state",
+                json={
+                    "state": snapshot,
+                    "stage": 3,
+                },
+            )
+            assert save_res.status == 200
+
+            # 3. Retrieve project and verify state persistence
+            get_res = await client.get(f"/api/projects/{project_id}")
+            assert get_res.status == 200
+            retrieved = await get_res.json()
+            retrieved_state = retrieved.get("state") or retrieved.get("state_json")
+            if isinstance(retrieved_state, str):
+                import json
+                retrieved_state = json.loads(retrieved_state)
+
+            assert retrieved_state["segmentVoiceOverrides"] == overrides
+            assert retrieved_state["dubbingStatus"] == "completed"
+            assert retrieved_state["segments"][0]["previewAudioUrl"] == "/api/tts/preview/prev_1/audio"
+            assert retrieved_state["segments"][0]["speakerCode"] == "AL"
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_unified_tts_preview_path_traversal_protection(tmp_path):
+    """Verify GET /api/tts/preview/{id}/audio defends against CWE-22 path traversal attempts."""
+    app = create_app(upload_dir=tmp_path / "uploads")
+
+    async def scenario():
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            # Traversal attempt with encoded dots and slashes
+            res = await client.get("/api/tts/preview/..%2f..%2f..%2fetc%2fpasswd/audio")
+            assert res.status == 404
+
+            res2 = await client.get("/api/tts/preview/%2e%2e%5c%2e%2e%5csecret.txt/audio")
+            assert res2.status == 404
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_project_state_snapshot_post_alias(tmp_path):
+    """Verify POST /api/projects/{id}/state works identically to PUT for persisting snapshots."""
+    app = create_app(upload_dir=tmp_path / "uploads")
+
+    async def scenario():
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            create_res = await client.post("/api/projects", json={"name": "Post Alias Project"})
+            assert create_res.status in (200, 201)
+            project_id = (await create_res.json())["id"]
+
+            post_res = await client.post(
+                f"/api/projects/{project_id}/state",
+                json={
+                    "state": {
+                        "currentStep": 3,
+                        "dubbingStatus": "running",
+                        "segmentVoiceOverrides": {"10": "Voice-X"},
+                    },
+                    "stage": 3,
+                },
+            )
+            assert post_res.status == 200
+
+            get_res = await client.get(f"/api/projects/{project_id}")
+            assert get_res.status == 200
+            retrieved = await get_res.json()
+            retrieved_state = retrieved.get("state") or retrieved.get("state_json")
+            if isinstance(retrieved_state, str):
+                import json
+                retrieved_state = json.loads(retrieved_state)
+
+            assert retrieved_state["segmentVoiceOverrides"] == {"10": "Voice-X"}
+            assert retrieved_state["dubbingStatus"] == "running"
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+

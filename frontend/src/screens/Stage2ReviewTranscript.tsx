@@ -16,6 +16,8 @@ import {
   Layers,
   Clock,
   AlignLeft,
+  Globe,
+  ArrowRight,
 } from 'lucide-react';
 
 const FALLBACK_TRANSLATION_PROVIDERS = [
@@ -30,6 +32,23 @@ const FALLBACK_TRANSLATION_MODES = [
   { id: 'text', label: 'Batch Text', description: 'Send plain subtitle text in batches.' },
 ];
 
+const FALLBACK_LANGUAGES = [
+  { code: 'zh-cn', name: 'Simplified Chinese' },
+  { code: 'zh-tw', name: 'Traditional Chinese' },
+  { code: 'en', name: 'English' },
+  { code: 'vi', name: 'Vietnamese' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'it', name: 'Italian' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'th', name: 'Thai' },
+  { code: 'id', name: 'Indonesian' },
+];
+
 export const Stage2ReviewTranscript: React.FC = () => {
   const segments = useDubDubStore((s) => s.segments);
   const activeSegmentId = useDubDubStore((s) => s.activeSegmentId);
@@ -42,9 +61,13 @@ export const Stage2ReviewTranscript: React.FC = () => {
   const mergeWithNextSegment = useDubDubStore((s) => s.mergeWithNextSegment);
   const extractOcrForSegment = useDubDubStore((s) => s.extractOcrForSegment);
   const runBatchTranslation = useDubDubStore((s) => s.runBatchTranslation);
+  const translateSingleSegment = useDubDubStore((s) => s.translateSingleSegment);
   const translationModal = useDubDubStore((s) => s.translationModal);
   const closeTranslationModal = useDubDubStore((s) => s.closeTranslationModal);
   const backend = useDubDubStore((s) => s.backend);
+  const languages = useDubDubStore((s) => s.languages);
+  const updateSourceLanguage = useDubDubStore((s) => s.updateSourceLanguage);
+  const updateTargetLanguage = useDubDubStore((s) => s.updateTargetLanguage);
   const updateTranslationProvider = useDubDubStore((s) => s.updateTranslationProvider);
   const updateTranslationMode = useDubDubStore((s) => s.updateTranslationMode);
   const openSettings = useDubDubStore((s) => s.openSettings);
@@ -66,18 +89,24 @@ export const Stage2ReviewTranscript: React.FC = () => {
 
   const selectedProvider =
     translationProviders.find(
-      (p: any) => p.translateType === Number(backend.config.translateType)
+      (p: any) => p.translateType === Number(backend?.config?.translateType)
     ) || translationProviders[0];
 
-  const selectedMode = backend.config.translationMode || 'srt';
+  const selectedMode = backend?.config?.translationMode || 'srt';
 
-  const filteredSegments = segments.filter((seg) => {
+  const availableLanguages =
+    backend?.options?.languages?.length
+      ? backend.options.languages
+      : FALLBACK_LANGUAGES;
+
+  const filteredSegments = (segments || []).filter((seg) => {
+    if (!seg) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      seg.sourceText.toLowerCase().includes(q) ||
-      seg.targetText.toLowerCase().includes(q) ||
-      (seg.speakerName && seg.speakerName.toLowerCase().includes(q))
+      (seg.sourceText || '').toLowerCase().includes(q) ||
+      (seg.targetText || '').toLowerCase().includes(q) ||
+      (seg.speakerName && String(seg.speakerName).toLowerCase().includes(q))
     );
   });
 
@@ -90,76 +119,131 @@ export const Stage2ReviewTranscript: React.FC = () => {
 
       {/* RIGHT: Segment Cue Cards (5-6 cols) */}
       <div className="col-span-12 lg:col-span-6 xl:col-span-5 h-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
-        {/* Tier 1: Translation Toolbar */}
-        <div className="px-3 py-2 border-b border-[#E7E4DC] flex flex-wrap items-center justify-between bg-[#FAF9F6] shrink-0 gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1 font-bold text-xs text-stone-900">
-              <Languages className="w-3.5 h-3.5 text-[#8D4B00]" />
-              <span>LLM Translation:</span>
-            </div>
+        {/* Tier 1: Translation Toolbar & Language Routing */}
+        <div className="px-3 py-2 border-b border-[#E7E4DC] flex flex-col gap-2 bg-[#FAF9F6] shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 font-bold text-xs text-stone-900">
+                <Languages className="w-3.5 h-3.5 text-[#8D4B00]" />
+                <span>LLM Translation:</span>
+              </div>
 
-            <select
-              data-testid="translation-provider-select"
-              value={backend.config.translateType}
-              onChange={(e) => updateTranslationProvider(Number(e.target.value))}
-              className="text-xs font-semibold py-1 px-2 bg-white rounded-md border border-stone-200 text-stone-800 focus:outline-none focus:border-amber-400"
-            >
-              {translationProviders.map((p: any) => (
-                <option key={p.translateType ?? p.id} value={p.translateType}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+              <select
+                data-testid="translation-provider-select"
+                value={backend.config.translateType}
+                onChange={(e) => updateTranslationProvider(Number(e.target.value))}
+                className="text-xs font-semibold py-1 px-2 bg-white rounded-md border border-stone-200 text-stone-800 focus:outline-none focus:border-amber-400"
+              >
+                {translationProviders.map((p: any) => (
+                  <option key={p.translateType ?? p.id} value={p.translateType}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
 
-            {selectedProvider.requiresSettings && (
+              {selectedProvider.requiresSettings && (
+                <button
+                  type="button"
+                  onClick={() => openSettings('providers', String(selectedProvider.id || ''))}
+                  className={`px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                    selectedProvider.configured
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-amber-100 text-[#8D4B00] border border-amber-300 animate-pulse'
+                  }`}
+                  title={selectedProvider.configured ? 'API Key configured' : 'API Key required'}
+                >
+                  <Key className="w-2.5 h-2.5" />
+                  <span>{selectedProvider.configured ? 'Key Set' : 'Key Needed'}</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => openSettings('providers', String(selectedProvider.id || ''))}
-                className={`px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
-                  selectedProvider.configured
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-amber-100 text-[#8D4B00] border border-amber-300 animate-pulse'
-                }`}
-                title={selectedProvider.configured ? 'API Key configured' : 'API Key required'}
+                className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+                title="Configure Translation Provider Settings"
               >
-                <Key className="w-2.5 h-2.5" />
-                <span>{selectedProvider.configured ? 'Key Set' : 'Key Needed'}</span>
+                <Settings2 className="w-3.5 h-3.5 text-[#8D4B00]" />
               </button>
-            )}
+
+              <div className="flex items-center gap-1 ml-1">
+                <span className="text-[10px] text-stone-500 font-semibold">Method:</span>
+                <select
+                  data-testid="translation-method-select"
+                  value={selectedMode}
+                  onChange={(e) => updateTranslationMode(e.target.value)}
+                  className="text-xs font-semibold py-1 px-2 bg-white rounded-md border border-stone-200 text-stone-800 focus:outline-none focus:border-amber-400"
+                >
+                  {translationModes.map((m: any) => (
+                    <option key={m.id} value={m.id} title={m.description}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <button
-              type="button"
-              onClick={() => openSettings('providers', String(selectedProvider.id || ''))}
-              className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
-              title="Configure Translation Provider Settings"
+              data-testid="batch-translate-btn"
+              onClick={() => runBatchTranslation()}
+              className="px-3 py-1.5 rounded-md bg-[#8D4B00] hover:bg-[#743D00] text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors shrink-0"
             >
-              <Settings2 className="w-3.5 h-3.5 text-[#8D4B00]" />
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Batch Translate</span>
             </button>
+          </div>
 
-            <div className="flex items-center gap-1 ml-1">
-              <span className="text-[10px] text-stone-500 font-semibold">Method:</span>
+          {/* Language Pair Routing Strip */}
+          <div className="flex items-center gap-2 pt-1 border-t border-stone-200/70 flex-wrap text-xs">
+            <div className="flex items-center gap-1 font-semibold text-stone-600">
+              <Globe className="w-3.5 h-3.5 text-[#8D4B00]" />
+              <span className="text-[11px] font-bold text-stone-700">Language Route:</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded-md border border-stone-200 shadow-2xs">
+              <span className="text-[10px] text-stone-400 font-bold uppercase">From</span>
               <select
-                data-testid="translation-method-select"
-                value={selectedMode}
-                onChange={(e) => updateTranslationMode(e.target.value)}
-                className="text-xs font-semibold py-1 px-2 bg-white rounded-md border border-stone-200 text-stone-800 focus:outline-none focus:border-amber-400"
+                data-testid="translation-source-lang-select"
+                value={languages?.source?.code || 'zh-cn'}
+                onChange={(e) => {
+                  const opt = availableLanguages.find((l: any) => l.code === e.target.value);
+                  updateSourceLanguage(e.target.value, opt?.name || e.target.value);
+                }}
+                className="text-xs font-semibold py-0.5 bg-transparent border-0 text-stone-800 focus:outline-none cursor-pointer"
               >
-                {translationModes.map((m: any) => (
-                  <option key={m.id} value={m.id} title={m.description}>
-                    {m.label}
+                {availableLanguages.map((l: any) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name} ({l.code})
                   </option>
                 ))}
               </select>
             </div>
-          </div>
 
-          <button
-            onClick={() => runBatchTranslation()}
-            className="px-3 py-1.5 rounded-md bg-[#8D4B00] hover:bg-[#743D00] text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Batch Translate</span>
-          </button>
+            <ArrowRight className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+
+            <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded-md border border-stone-200 shadow-2xs">
+              <span className="text-[10px] text-stone-400 font-bold uppercase">To</span>
+              <select
+                data-testid="translation-target-lang-select"
+                value={languages?.target?.code || 'vi'}
+                onChange={(e) => {
+                  const opt = availableLanguages.find((l: any) => l.code === e.target.value);
+                  updateTargetLanguage(e.target.value, opt?.name || e.target.value);
+                }}
+                className="text-xs font-semibold py-0.5 bg-transparent border-0 text-stone-800 focus:outline-none cursor-pointer"
+              >
+                {availableLanguages.map((l: any) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name} ({l.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <span className="text-[10px] text-stone-400 font-medium ml-auto hidden sm:inline">
+              Source &amp; target languages applied on translate
+            </span>
+          </div>
         </div>
 
         {/* Tier 2: Search, Segmentation Switcher, & Filter Strip */}
@@ -294,7 +378,7 @@ export const Stage2ReviewTranscript: React.FC = () => {
                   <label className="text-[10px] text-stone-400 font-medium block mb-0.5">Source Text</label>
                   <textarea
                     data-segment-input={seg.id}
-                    value={seg.sourceText}
+                    value={seg.sourceText ?? seg.text ?? ''}
                     onChange={(e) => updateSegmentText(seg.id, e.target.value, false)}
                     rows={2}
                     className="w-full text-xs p-2 rounded-lg bg-stone-50 border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
@@ -305,20 +389,33 @@ export const Stage2ReviewTranscript: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-0.5">
                     <label className="text-[10px] text-stone-400 font-medium">Translated Text</label>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        extractOcrForSegment(seg.id);
-                      }}
-                      className="text-[9px] text-[#8D4B00] font-semibold hover:underline flex items-center gap-0.5"
-                    >
-                      <Sparkles className="w-2.5 h-2.5" />
-                      <span>OCR Extract</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          translateSingleSegment(seg.id);
+                        }}
+                        className="text-[9px] text-[#8D4B00] font-semibold hover:underline flex items-center gap-0.5 cursor-pointer"
+                        title="Translate only this segment"
+                      >
+                        <Languages className="w-2.5 h-2.5" />
+                        <span>Translate</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          extractOcrForSegment(seg.id);
+                        }}
+                        className="text-[9px] text-stone-500 hover:text-stone-800 font-semibold hover:underline flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-2.5 h-2.5" />
+                        <span>OCR Extract</span>
+                      </button>
+                    </div>
                   </div>
                   <textarea
                     data-segment-input={`stage2-target-${seg.id}`}
-                    value={seg.targetText}
+                    value={seg.targetText ?? ''}
                     onChange={(e) => updateSegmentText(seg.id, e.target.value, true)}
                     rows={2}
                     className="w-full text-xs p-2 rounded-lg bg-amber-50/40 border border-amber-200/60 focus:bg-white focus:outline-none focus:border-amber-400 font-medium text-stone-900"
@@ -345,6 +442,13 @@ export const Stage2ReviewTranscript: React.FC = () => {
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs text-stone-600 bg-stone-50 p-2 rounded-lg border border-stone-200">
+              <span className="font-semibold text-stone-800">{languages.source.name || languages.source.code}</span>
+              <ArrowRight className="w-3 h-3 text-stone-400 shrink-0" />
+              <span className="font-semibold text-[#8D4B00]">{languages.target.name || languages.target.code}</span>
+              <span className="text-[10px] text-stone-400 ml-auto font-mono">({selectedProvider.label})</span>
             </div>
 
             <p className="text-xs text-stone-600">{translationModal.message}</p>

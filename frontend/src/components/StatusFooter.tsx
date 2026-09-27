@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDubDubStore } from '../store';
-import { Play, ArrowRight, Video, CheckCircle2, AlertCircle, Loader2, StopCircle } from 'lucide-react';
+import { Play, ArrowRight, Video, CheckCircle2, AlertCircle, Loader2, StopCircle, Sparkles } from 'lucide-react';
 
 export const StatusFooter: React.FC = () => {
   const currentStep = useDubDubStore((s) => s.currentStep);
@@ -13,8 +13,10 @@ export const StatusFooter: React.FC = () => {
   const startPrepareJob = useDubDubStore((s) => s.startPrepareJob);
   const cancelActiveJob = useDubDubStore((s) => s.cancelActiveJob);
   const exportEditedVideo = useDubDubStore((s) => s.exportEditedVideo);
+  const dubbingStatus = useDubDubStore((s) => s.dubbingStatus);
+  const runFullDubbing = useDubDubStore((s) => s.runFullDubbing);
 
-  const isBusy = jobStatus === 'running' || backend.status === 'analyzing';
+  const isBusy = jobStatus === 'running' || backend.status === 'analyzing' || dubbingStatus === 'running';
   const isCancellable = jobStatus === 'running';
 
   const handleAction = () => {
@@ -27,7 +29,11 @@ export const StatusFooter: React.FC = () => {
     } else if (currentStep === 2) {
       setStep(3);
     } else if (currentStep === 3) {
-      setStep(4);
+      if (dubbingStatus === 'completed') {
+        setStep(4);
+      } else {
+        runFullDubbing();
+      }
     } else if (currentStep === 4) {
       exportEditedVideo();
     }
@@ -54,7 +60,7 @@ export const StatusFooter: React.FC = () => {
       return {
         text: 'Start Dub',
         icon: <Play className="w-3.5 h-3.5 fill-current" />,
-        disabled: !project.verified,
+        disabled: !project?.verified,
         color: 'bg-[#8D4B00] hover:bg-[#743D00] text-white',
       };
     }
@@ -67,9 +73,25 @@ export const StatusFooter: React.FC = () => {
       };
     }
     if (currentStep === 3) {
+      if (dubbingStatus === 'running') {
+        return {
+          text: 'Generating Dubbing…',
+          icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
+          disabled: true,
+          color: 'bg-stone-300 text-stone-600',
+        };
+      }
+      if (dubbingStatus === 'completed') {
+        return {
+          text: 'Proceed to Edit Video',
+          icon: <ArrowRight className="w-3.5 h-3.5" />,
+          disabled: false,
+          color: 'bg-[#8D4B00] hover:bg-[#743D00] text-white',
+        };
+      }
       return {
-        text: 'Proceed to Edit Video',
-        icon: <ArrowRight className="w-3.5 h-3.5" />,
+        text: 'Generate Dubbing',
+        icon: <Sparkles className="w-3.5 h-3.5" />,
         disabled: false,
         color: 'bg-[#8D4B00] hover:bg-[#743D00] text-white',
       };
@@ -111,12 +133,12 @@ export const StatusFooter: React.FC = () => {
 
         <div className="flex flex-col min-w-0">
           <div className="font-bold text-xs text-stone-900 truncate">
-            {jobMessage || (project.verified ? 'Media verified — ready to process' : 'Choose a video to start')}
+            {jobMessage || (project?.verified ? 'Media verified — ready to process' : 'Choose a video to start')}
           </div>
           <div className="text-[10px] text-stone-500 font-medium">
             {isBusy && jobProgress != null
               ? `Progress: ${jobProgress.toFixed(1)}%`
-              : currentStep === 1 && !project.verified
+              : currentStep === 1 && !project?.verified
               ? 'Upload a video, then choose languages and backend engines.'
               : 'All engines ready'}
           </div>

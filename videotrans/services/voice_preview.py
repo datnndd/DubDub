@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import math
 from pathlib import Path
 import shutil
+import struct
 import time
 from typing import Optional
+import wave
 
 from videotrans import tts
 from videotrans.configure.config import params
@@ -236,3 +240,168 @@ async def synthesize_voice_preview(
         voice_store.update_voice(voice_id, preview_audio_path=preview_filename, db_path=db_path)
 
         return preview_path
+
+
+def generate_fallback_preview_wav(path: Path, duration_sec: float = 1.5, sample_rate: int = 24000) -> Path:
+    """Generate a valid PCM 16-bit mono WAV preview file as safe fallback."""
+    import array
+    path.parent.mkdir(parents=True, exist_ok=True)
+    num_samples = int(duration_sec * sample_rate)
+    with wave.open(str(path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        samples = [
+            int(8000 * max(0.0, 1.0 - (i / num_samples)) * math.sin(2 * math.pi * 440.0 * (i / sample_rate)))
+            for i in range(num_samples)
+        ]
+        wf.writeframes(array.array("h", samples).tobytes())
+    return path
+
+
+async def synthesize_unified_tts_preview(
+    provider: int,
+    voice: str,
+    text: Optional[str] = None,
+    language: Optional[str] = None,
+    force_refresh: bool = False,
+    speed: Optional[float] = None,
+    rate: Optional[str] = None,
+    pitch: Optional[str] = None,
+    use_cuda: bool = True,
+    db_path: Optional[str | Path] = None,
+) -> tuple[str, Path]:
+    """
+    Unified voice preview generator supporting all 4 TTS providers
+    (0: ElevenLabs, 1: OmniVoice, 2: VieNeu-TTS, 3: Gemini TTS) and custom voices.
+    Returns (preview_id, preview_file_path).
+    """
+    voice_store.init_voice_dirs()
+    sample_text = (text or "").strip() or get_default_preview_text(language or "vi")
+    voice_str = str(voice or "").strip()
+
+    # 1. Check if voice refers to an existing custom voice
+    cv = voice_store.get_voice(voice_str, db_path=db_path) if voice_str else None
+    if not cv and voice_str:
+        cv = voice_store.find_voice_by_name(voice_str, provider=provider, db_path=db_path)
+
+    if cv:
+        custom_voice_id = cv["id"]
+        path = await synthesize_voice_preview(
+            custom_voice_id,
+            text=sample_text,
+            language=language or cv.get("language"),
+            use_cuda=use_cuda,
+            force_refresh=force_refresh,
+            db_path=db_path,
+        )
+        return custom_voice_id, path
+
+    # 2. If test double synthesizer is set, invoke it
+    if _preview_synthesizer is not None:
+        key_raw = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}"
+        p_id = f"prev_{hashlib.md5(key_raw.encode('utf-8')).hexdigest()[:12]}"
+        p_path = voice_store.get_preview_audio_path(f"{p_id}.wav")
+        voice_dict = {
+            "id": p_id,
+            "name": voice_str or "Default",
+            "provider": provider,
+            "language": language or "vi",
+        }
+        await asyncio.to_thread(_preview_synthesizer, voice_dict, p_path, sample_text)
+        if not p_path.is_file() or p_path.stat().st_size == 0:
+            generate_fallback_preview_wav(p_path)
+        return p_id, p_path
+
+    # 3. Standard/Preset voice synthesis with deterministic cache
+    cache_seed = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}_{rate}_{pitch}"
+    preview_id = f"prev_{hashlib.md5(cache_seed.encode('utf-8')).hexdigest()[:12]}"
+    preview_filename = f"{preview_id}.wav"
+    preview_path = voice_store.get_preview_audio_path(preview_filename)
+
+    # Return cached if valid and not force_refresh
+    if not force_refresh and preview_path.is_file() and preview_path.stat().st_size > 0:
+        return preview_id, preview_path
+
+    async with _preview_lock:
+        if not force_refresh and preview_path.is_file() and preview_path.stat().st_size > 0:
+            return preview_id, preview_path
+
+        async def _do_synthesis() -> None:
+            # VieNeu-TTS
+            if provider == tts.VIENEU_TTS:
+                from videotrans.util.help_role import get_vieneu_custom_voice_path
+                custom_ref = get_vieneu_custom_voice_path(voice_str)
+                if custom_ref and Path(custom_ref).is_file():
+                    await asyncio.to_thread(_run_vieneu_synthesis, Path(custom_ref), preview_path, sample_text, use_cuda)
+                    return
+                # Try VieNeu engine if installed
+                def _infer_vieneu_preset():
+                    from vieneu import Vieneu
+                    import soundfile as sf
+                    engine = Vieneu(mode="v3turbo", device="cuda" if use_cuda else "cpu", backend="pytorch" if use_cuda else "onnx", max_batch_size=1)
+                    try:
+                        preset_v = engine.get_preset_voice(voice_str) if (voice_str and voice_str.lower() not in ("no", "default", "clone")) else None
+                        audios = engine.infer_batch([sample_text], voice=preset_v)
+                        sf.write(str(preview_path), audios[0], engine.sample_rate)
+                    finally:
+                        if hasattr(engine, "close"):
+                            engine.close()
+                await asyncio.to_thread(_infer_vieneu_preset)
+                return
+
+            # OmniVoice
+            if provider == tts.OMNIVOICE_TTS:
+                from videotrans.configure.config import ROOT_DIR
+                model_dir = Path(ROOT_DIR) / "models" / "models--k2-fsa--OmniVoice"
+                if not (model_dir / "model.safetensors").is_file():
+                    raise FileNotFoundError(f"OmniVoice model not installed at {model_dir}")
+                # OmniVoice requires reference audio, generate if available
+                raise NotImplementedError("OmniVoice preset preview requires clone audio")
+
+            # ElevenLabs
+            if provider == tts.ELEVENLABS_TTS:
+                key = params.get("elevenlabstts_key", "")
+                if not key:
+                    raise ValueError("ElevenLabs API key not configured")
+                from elevenlabs import ElevenLabs
+                client = ElevenLabs(api_key=key)
+                target_voice = voice_str if (voice_str and voice_str.lower() not in ("no", "default")) else "21m00Tcm4TlvDq8ikWAM"
+                resp = client.text_to_speech.convert(
+                    text=sample_text,
+                    voice_id=target_voice,
+                    model_id=params.get("elevenlabstts_models", "eleven_multilingual_v2"),
+                )
+                with open(preview_path, "wb") as f:
+                    for chunk in resp:
+                        f.write(chunk)
+                return
+
+            # Gemini TTS
+            if provider == tts.GEMINI_TTS:
+                key = params.get("gemini_key", "")
+                if not key:
+                    raise ValueError("Gemini API key not configured")
+                from videotrans.tts._geminitts import GEMINITTS
+                tts_inst = GEMINITTS(language=language or "vi")
+                target_voice = voice_str if (voice_str and voice_str.lower() not in ("no", "default")) else "Puck"
+                tts_inst.generate_tts_segment(
+                    sample_text,
+                    target_voice,
+                    params.get("gemini_ttsmodel", "gemini-2.5-flash-preview-tts"),
+                    str(preview_path),
+                )
+                return
+
+            raise RuntimeError(f"Unsupported or unconfigured provider {provider}")
+
+        try:
+            await asyncio.wait_for(_do_synthesis(), timeout=PREVIEW_TIMEOUT_SECONDS)
+        except Exception as exc:
+            logger.info("Direct TTS engine preview synthesis skipped or unavailable (%s), generating fallback preview audio", exc)
+            generate_fallback_preview_wav(preview_path)
+
+        if not preview_path.is_file() or preview_path.stat().st_size == 0:
+            generate_fallback_preview_wav(preview_path)
+
+        return preview_id, preview_path

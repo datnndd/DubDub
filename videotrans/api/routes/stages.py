@@ -30,6 +30,8 @@ class TranslationRequest(BaseModel):
     targetLanguage: Optional[str] = "en"
     translateType: Optional[int] = 0
     translationMode: Optional[Any] = None
+    projectId: Optional[str] = Field(None, alias="project_id")
+    mediaId: Optional[str] = Field(None, alias="media_id")
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -112,6 +114,8 @@ async def translate_handler(
         "segments": segments,
         "uuid": job_uuid,
     }
+    if payload.projectId:
+        task_params["project_id"] = str(payload.projectId)
     job_manager = getattr(request.app.state, "job_manager", None)
     runner = getattr(job_manager, "_translation_runner", None) or run_staged_translation
     token = CancellationToken()

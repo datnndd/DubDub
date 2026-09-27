@@ -139,3 +139,113 @@ class TestSettingsAPI(unittest.IsolatedAsyncioTestCase):
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
+
+    async def test_options_reflect_secret_and_model_updates(self):
+        # 1. Initially without key, deepgram is not configured
+        opt_resp1 = await self.client.get("/api/options")
+        assert opt_resp1.status_code == 200
+        opts1 = opt_resp1.json()
+        dg_opt1 = next(p for p in opts1["asrProviders"] if p["id"] == "deepgram")
+        qwen_opt = next(p for p in opts1["asrProviders"] if p["id"] == "qwen-asr")
+        google_trans = next(p for p in opts1["translationProviders"] if p["id"] == "google")
+        openai_trans = next(p for p in opts1["translationProviders"] if p["id"] == "openai")
+
+        assert dg_opt1["configured"] is False
+        assert qwen_opt["configured"] is True  # local model requires no key
+        assert google_trans["configured"] is True  # free google translate requires no key
+        assert openai_trans["configured"] is False
+
+        # 2. Save Deepgram key & custom model
+        save_dg = await self.client.put(
+            "/api/settings/providers/asr/deepgram",
+            json={"apiKey": "dg-test-key-999", "model": "nova-2"},
+        )
+        assert save_dg.status_code == 200
+
+        # 3. Save OpenAI key & custom model & custom base url
+        save_oa = await self.client.put(
+            "/api/settings/providers/llm/openai",
+            json={"apiKey": "sk-openai-custom-key", "model": "gpt-4o-mini", "baseUrl": "https://api.myproxy.com/v1"},
+        )
+        assert save_oa.status_code == 200
+
+        # 4. Save General defaults
+        save_gen = await self.client.put(
+            "/api/settings/general",
+            json={"defaultSourceLanguage": "ko", "defaultTargetLanguage": "vi"},
+        )
+        assert save_gen.status_code == 200
+
+        # 5. Fetch /api/options again - must reflect updated values
+        opt_resp2 = await self.client.get("/api/options")
+        assert opt_resp2.status_code == 200
+        opts2 = opt_resp2.json()
+
+        dg_opt2 = next(p for p in opts2["asrProviders"] if p["id"] == "deepgram")
+        assert dg_opt2["configured"] is True
+        assert "nova-2" in dg_opt2["models"]
+
+        openai_trans2 = next(p for p in opts2["translationProviders"] if p["id"] == "openai")
+        assert openai_trans2["configured"] is True
+        assert openai_trans2["model"] == "gpt-4o-mini"
+        assert openai_trans2["baseUrl"] == "https://api.myproxy.com/v1"
+
+        # 6. Fetch /api/settings - verify snapshot has new models and configured flags
+        settings_resp = await self.client.get("/api/settings")
+        assert settings_resp.status_code == 200
+        sdata = settings_resp.json()
+        assert sdata["providers"]["deepgram"]["configured"] is True
+        assert sdata["providers"]["deepgram"]["model"] == "nova-2"
+        assert sdata["providers"]["openai"]["configured"] is True
+        assert sdata["providers"]["openai"]["model"] == "gpt-4o-mini"
+        assert sdata["providers"]["openai"]["baseUrl"] == "https://api.myproxy.com/v1"
+        assert sdata["general"]["defaultSourceLanguage"] == "ko"
+        assert sdata["general"]["defaultTargetLanguage"] == "vi"
+
+    async def test_fetch_provider_models_endpoint_and_test_connection_returns_models(self):
+        # Mock provider_model_fetcher
+        async def mock_fetch_models(provider_id, api_key, base_url="", proxy=""):
+            if api_key == "bad-key":
+                return False, [], "Invalid API key"
+            return True, ["model-alpha", "model-beta", "model-gamma"], "Found 3 models"
+
+        self.app.state.provider_model_fetcher = mock_fetch_models
+
+        # 1. Error if no key configured and none passed
+        err_resp = await self.client.post("/api/settings/providers/llm/openai/models", json={})
+        assert err_resp.status_code == 400
+        assert "API key is not configured" in err_resp.text
+
+        # 2. Success with passed key
+        succ_resp = await self.client.post(
+            "/api/settings/providers/llm/openai/models",
+            json={"apiKey": "sk-test-live-key"},
+        )
+        assert succ_resp.status_code == 200
+        s_data = succ_resp.json()
+        assert s_data["ok"] is True
+        assert s_data["models"] == ["model-alpha", "model-beta", "model-gamma"]
+
+        # 3. Verify options and settings reflect the fetched models
+        opt_resp = await self.client.get("/api/options")
+        assert opt_resp.status_code == 200
+        opt_data = opt_resp.json()
+        oa_opt = next(p for p in opt_data["translationProviders"] if p["id"] == "openai")
+        assert "model-alpha" in oa_opt["models"]
+        assert "model-beta" in oa_opt["models"]
+
+        # 4. Connection test also returns models
+        async def mock_probe(provider_id, api_key, base_url="", proxy=""):
+            return True, "Connected successfully"
+
+        self.app.state.provider_probe = mock_probe
+        test_resp = await self.client.post(
+            "/api/settings/providers/llm/openai/test",
+            json={"apiKey": "sk-test-live-key"},
+        )
+        assert test_resp.status_code == 200
+        t_data = test_resp.json()
+        assert t_data["ok"] is True
+        assert t_data["models"] == ["model-alpha", "model-beta", "model-gamma"]
+
+

@@ -10,8 +10,10 @@ import {
   ExternalLink,
   ShieldCheck,
   Check,
+  RefreshCw,
 } from 'lucide-react';
-import { ProviderStatus, updateProviderSettings, testProviderConnection } from '../../../api/settingsApi';
+import { ProviderStatus, updateProviderSettings, testProviderConnection, fetchProviderModels } from '../../../api/settingsApi';
+import { useDubDubStore } from '../../../store';
 
 interface ApiProvidersTabProps {
   providers: Record<string, ProviderStatus>;
@@ -40,6 +42,8 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
 
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
   const [testingMap, setTestingMap] = useState<Record<string, boolean>>({});
+  const [loadingModelsMap, setLoadingModelsMap] = useState<Record<string, boolean>>({});
+  const [modelsMap, setModelsMap] = useState<Record<string, string[]>>({});
   const [feedbackMap, setFeedbackMap] = useState<
     Record<string, { type: 'success' | 'error'; message: string } | null>
   >({});
@@ -52,10 +56,11 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
   }, [targetProvider]);
 
   const getForm = (id: string, initial: ProviderStatus) => {
+    const availableModels = modelsMap[id] || initial.models || [];
     return (
       formState[id] || {
         apiKey: '',
-        model: initial.model || (initial.models && initial.models[0]) || '',
+        model: initial.model || (availableModels && availableModels[0]) || '',
         baseUrl: initial.baseUrl || '',
         mirrorUrl: initial.mirrorUrl || '',
         showKey: false,
@@ -94,9 +99,18 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
       }
 
       await updateProviderSettings(initial.category || 'general', id, payload);
+      // Clear entered secret key and reset local form dirty state for this provider
+      setFormState((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+
+      if (id === 'deepgram' && form.model) {
+        useDubDubStore.getState().updateAsrProvider(1, form.model);
+      }
+
       await onRefresh();
-      // Clear entered secret key from local state after saving (write-only)
-      updateForm(id, { apiKey: '' }, initial);
       setFeedbackMap((prev) => ({
         ...prev,
         [id]: { type: 'success', message: 'Settings saved securely' },
@@ -108,6 +122,42 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
       }));
     } finally {
       setSavingMap((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const handleLoadModels = async (id: string, initial: ProviderStatus) => {
+    const form = getForm(id, initial);
+    setLoadingModelsMap((prev) => ({ ...prev, [id]: true }));
+    setFeedbackMap((prev) => ({ ...prev, [id]: null }));
+
+    try {
+      const payload: { apiKey?: string; baseUrl?: string } = {};
+      if (form.apiKey.trim()) {
+        payload.apiKey = form.apiKey.trim();
+      }
+      if (form.baseUrl.trim()) {
+        payload.baseUrl = form.baseUrl.trim();
+      }
+
+      const res = await fetchProviderModels(initial.category || 'general', id, payload);
+      const models = res.models;
+      if (models && models.length > 0) {
+        setModelsMap((prev) => ({ ...prev, [id]: models }));
+        if (!form.model || !models.includes(form.model)) {
+          updateForm(id, { model: models[0] }, initial);
+        }
+      }
+      setFeedbackMap((prev) => ({
+        ...prev,
+        [id]: { type: 'success', message: res.message || `Loaded ${models?.length || 0} models successfully` },
+      }));
+    } catch (err: any) {
+      setFeedbackMap((prev) => ({
+        ...prev,
+        [id]: { type: 'error', message: err.message || 'Failed to load models from provider' },
+      }));
+    } finally {
+      setLoadingModelsMap((prev) => ({ ...prev, [id]: false }));
     }
   };
 
@@ -126,9 +176,22 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
       }
 
       const res = await testProviderConnection(initial.category || 'general', id, payload);
+      const testModels = res.models;
+      if (testModels && testModels.length > 0) {
+        setModelsMap((prev) => ({ ...prev, [id]: testModels }));
+        if (!form.model || !testModels.includes(form.model)) {
+          updateForm(id, { model: testModels[0] }, initial);
+        }
+      }
       setFeedbackMap((prev) => ({
         ...prev,
-        [id]: { type: 'success', message: res.message || 'Connection successful!' },
+        [id]: {
+          type: 'success',
+          message:
+            res.models && res.models.length > 0
+              ? `${res.message || 'Connection successful!'} (Loaded ${res.models.length} models)`
+              : (res.message || 'Connection successful!'),
+        },
       }));
     } catch (err: any) {
       setFeedbackMap((prev) => ({
@@ -242,19 +305,38 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
                   </div>
 
                   {/* Model Selector if available */}
-                  {p.models && p.models.length > 0 && (
+                  {((modelsMap[p.id] && modelsMap[p.id].length > 0) || (p.models && p.models.length > 0)) && (
                     <div>
-                      <label className="text-[10px] font-semibold text-stone-600 block mb-1">Model</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] font-semibold text-stone-600">Model</label>
+                        <button
+                          type="button"
+                          onClick={() => handleLoadModels(p.id, p)}
+                          disabled={loadingModelsMap[p.id] || (!p.configured && !form.apiKey.trim())}
+                          className="text-[10px] text-amber-700 hover:text-amber-800 font-medium flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                          title="Fetch available models from provider"
+                        >
+                          <RefreshCw className={`w-2.5 h-2.5 ${loadingModelsMap[p.id] ? 'animate-spin' : ''}`} />
+                          <span>{loadingModelsMap[p.id] ? 'Loading…' : 'Load Models'}</span>
+                        </button>
+                      </div>
                       <select
                         value={form.model}
                         onChange={(e) => updateForm(p.id, { model: e.target.value }, p)}
                         className="w-full text-xs p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
                       >
-                        {p.models.map((m) => (
-                          <option key={m} value={m}>
-                            {m}
-                          </option>
-                        ))}
+                        {(() => {
+                          const availableModels = modelsMap[p.id] || p.models || [];
+                          const displayedModels =
+                            form.model && !availableModels.includes(form.model)
+                              ? [form.model, ...availableModels]
+                              : availableModels;
+                          return displayedModels.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ));
+                        })()}
                       </select>
                     </div>
                   )}

@@ -63,8 +63,19 @@ export async function testProviderConnection(
   category: string,
   providerId: string,
   payload?: { apiKey?: string; baseUrl?: string; proxy?: string }
-): Promise<{ ok: boolean; message: string }> {
+): Promise<{ ok: boolean; message: string; models?: string[] }> {
   return apiRequest(`/api/settings/providers/${encodeURIComponent(category)}/${encodeURIComponent(providerId)}/test`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export async function fetchProviderModels(
+  category: string,
+  providerId: string,
+  payload?: { apiKey?: string; baseUrl?: string; proxy?: string }
+): Promise<{ ok: boolean; providerId: string; models: string[]; message: string }> {
+  return apiRequest(`/api/settings/providers/${encodeURIComponent(category)}/${encodeURIComponent(providerId)}/models`, {
     method: 'POST',
     body: JSON.stringify(payload || {}),
   });

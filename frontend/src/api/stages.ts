@@ -6,6 +6,8 @@ export async function requestTranslate(payload: {
   targetLanguage: string;
   translateType: number;
   translationMode?: string;
+  projectId?: string;
+  mediaId?: string;
 }): Promise<{ ok: boolean; segments: any[] }> {
   return apiRequest('/api/translate', {
     method: 'POST',

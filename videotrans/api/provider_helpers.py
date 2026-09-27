@@ -13,6 +13,7 @@ from videotrans import recognition, translator
 from videotrans.configure import config as runtime_config
 from videotrans.configure.config import ROOT_DIR, TEMP_DIR
 from videotrans.util.network import process_openai_api
+from videotrans.core import secret_store
 from videotrans.api.catalog import (
     ASR_BY_TYPE,
     TRANSLATION_BY_TYPE,
@@ -22,15 +23,27 @@ from videotrans.api.catalog import (
 def ensure_asr_configured(recogn_type: int, settings_store: Any) -> None:
     provider = ASR_BY_TYPE[recogn_type]
     settings_key = provider.get("settingsKey")
-    if settings_key and not settings_store.get(settings_key):
-        raise ValueError(f"Configure {provider['label']} API settings before starting")
+    if settings_key:
+        configured = (
+            bool(settings_store.get(settings_key))
+            if settings_store is not None
+            else secret_store.is_secret_configured(settings_key)
+        )
+        if not configured:
+            raise ValueError(f"Configure {provider['label']} API settings before starting")
 
 
 def ensure_translation_configured(translate_type: int, settings_store: Any) -> None:
     provider = TRANSLATION_BY_TYPE[translate_type]
     key_name = provider.get("keyKey")
-    if key_name and not settings_store.get(key_name):
-        raise ValueError(f"Configure {provider['label']} settings before starting")
+    if key_name:
+        configured = (
+            bool(settings_store.get(key_name))
+            if settings_store is not None
+            else secret_store.is_secret_configured(key_name)
+        )
+        if not configured:
+            raise ValueError(f"Configure {provider['label']} settings before starting")
 
 
 def _save_asr_settings(provider: dict[str, Any], payload: dict[str, Any], settings_store: Any) -> dict[str, bool]:
@@ -38,11 +51,14 @@ def _save_asr_settings(provider: dict[str, Any], payload: dict[str, Any], settin
     if not settings_key:
         raise ValueError("This ASR provider has no WebUI API settings")
     api_key = str(payload.get("apiKey") or "").strip()
-    if not api_key and not settings_store.get(settings_key):
+    if not api_key and not (settings_store.get(settings_key) if settings_store else False):
         raise ValueError("API key is required")
     if api_key:
-        settings_store[settings_key] = api_key
-        settings_store.save()
+        secret_store.set_secret(settings_key, api_key)
+        if settings_store is not None:
+            settings_store[settings_key] = api_key
+            if hasattr(settings_store, "save"):
+                settings_store.save()
     return {"configured": True}
 
 
@@ -51,7 +67,10 @@ def _translation_models(provider: dict[str, Any], settings_store: Any) -> list[s
     if not model_key:
         return []
     models = [item.strip() for item in str(runtime_config.settings.get(model_key, "")).split(",") if item.strip()]
-    current = str(settings_store.get(model_key, "")).strip()
+    current = str(
+        (settings_store.get(model_key, "") if settings_store else "")
+        or runtime_config.params.get(model_key, "")
+    ).strip()
     if current and current not in models:
         models.insert(0, current)
     return models
@@ -61,14 +80,28 @@ def _translation_snapshot(provider: dict[str, Any], settings_store: Any) -> dict
     key_name = provider.get("keyKey")
     model_key = provider.get("modelKey")
     base_url_key = provider.get("baseUrlKey")
+    is_conf = True
+    if key_name:
+        is_conf = (
+            bool(settings_store.get(key_name))
+            if settings_store is not None
+            else secret_store.is_secret_configured(key_name)
+        )
     return {
         "id": provider["id"],
         "label": provider["label"],
         "translateType": provider["translateType"],
         "requiresSettings": bool(key_name),
-        "configured": not key_name or bool(settings_store.get(key_name)),
-        "baseUrl": str(settings_store.get(base_url_key, provider.get("defaultBaseUrl", ""))) if base_url_key else "",
-        "model": str(settings_store.get(model_key, "")) if model_key else "",
+        "configured": is_conf,
+        "baseUrl": str(
+            (settings_store.get(base_url_key, "") if settings_store else "")
+            or runtime_config.params.get(base_url_key, "")
+            or provider.get("defaultBaseUrl", "")
+        ) if base_url_key else "",
+        "model": str(
+            (settings_store.get(model_key, "") if settings_store else "")
+            or runtime_config.params.get(model_key, "")
+        ) if model_key else "",
         "models": _translation_models(provider, settings_store),
     }
 
@@ -76,16 +109,25 @@ def _translation_snapshot(provider: dict[str, Any], settings_store: Any) -> dict
 def _save_translation_settings(provider: dict[str, Any], payload: dict[str, Any], settings_store: Any) -> dict[str, Any]:
     key_name = provider["keyKey"]
     api_key = str(payload.get("apiKey") or "").strip()
-    if not api_key and not settings_store.get(key_name):
+    if not api_key and not (settings_store.get(key_name) if settings_store else False):
         raise ValueError("API key is required")
 
     model_key = provider["modelKey"]
-    model = str(payload.get("model") or settings_store.get(model_key, "")).strip()
+    model = str(
+        payload.get("model")
+        or (settings_store.get(model_key, "") if settings_store else "")
+        or runtime_config.params.get(model_key, "")
+    ).strip()
     if not model:
         raise ValueError("Model is required")
 
     base_url_key = provider["baseUrlKey"]
-    base_url = str(payload.get("baseUrl") or settings_store.get(base_url_key, provider["defaultBaseUrl"])).strip()
+    base_url = str(
+        payload.get("baseUrl")
+        or (settings_store.get(base_url_key, "") if settings_store else "")
+        or runtime_config.params.get(base_url_key, "")
+        or provider["defaultBaseUrl"]
+    ).strip()
     if provider["id"] == "openai":
         base_url = process_openai_api(base_url)
     elif base_url:
@@ -94,10 +136,17 @@ def _save_translation_settings(provider: dict[str, Any], payload: dict[str, Any]
         base_url = base_url.rstrip("/")
 
     if api_key:
-        settings_store[key_name] = api_key
-    settings_store[model_key] = model
-    settings_store[base_url_key] = base_url
-    settings_store.save()
+        secret_store.set_secret(key_name, api_key)
+        if settings_store is not None:
+            settings_store[key_name] = api_key
+    if settings_store is not None:
+        settings_store[model_key] = model
+        settings_store[base_url_key] = base_url
+        if hasattr(settings_store, "save"):
+            settings_store.save()
+    runtime_config.params[model_key] = model
+    runtime_config.params[base_url_key] = base_url
+    runtime_config.params.save()
     return _translation_snapshot(provider, settings_store)
 
 

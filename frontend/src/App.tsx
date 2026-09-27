@@ -12,6 +12,7 @@ import { Stage2ReviewTranscript } from './screens/Stage2ReviewTranscript';
 import { Stage3VoiceDubbing } from './screens/Stage3VoiceDubbing';
 import { Stage4EditVideo } from './screens/Stage4EditVideo';
 import { SettingsModal } from './components/settings/SettingsModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export const App: React.FC = () => {
   const currentStep = useDubDubStore((s) => s.currentStep);
@@ -50,7 +51,9 @@ export const App: React.FC = () => {
       <Header />
       <WorkflowStepper />
       <main className="flex-1 min-h-0 w-full overflow-hidden flex flex-col">
-        {renderStage()}
+        <ErrorBoundary fallbackTitle="Workflow View Error">
+          {renderStage()}
+        </ErrorBoundary>
       </main>
       <StatusFooter />
       <ProjectDrawer />

@@ -34,6 +34,17 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({ general, onRefresh }) =>
     try {
       await updateGeneralSettings(form);
       await onRefresh();
+      const store = useDubDubStore.getState();
+      if (store.currentStep === 1 && !store.selectedFile) {
+        if (form.defaultSourceLanguage) {
+          const opt = store.backend.options.languages?.find((l: any) => l.code === form.defaultSourceLanguage);
+          store.updateSourceLanguage(form.defaultSourceLanguage, opt?.name || form.defaultSourceLanguage);
+        }
+        if (form.defaultTargetLanguage) {
+          const opt = store.backend.options.languages?.find((l: any) => l.code === form.defaultTargetLanguage);
+          store.updateTargetLanguage(form.defaultTargetLanguage, opt?.name || form.defaultTargetLanguage);
+        }
+      }
       setFeedback({ type: 'success', message: 'General settings updated successfully' });
     } catch (err: any) {
       setFeedback({ type: 'error', message: err.message || 'Failed to update general settings' });

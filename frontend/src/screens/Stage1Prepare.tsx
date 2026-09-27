@@ -326,7 +326,7 @@ export const Stage1Prepare: React.FC = () => {
                 Source Spoken Language
               </label>
               <select
-                value={languages.source.code}
+                value={languages?.source?.code || 'zh-cn'}
                 onChange={(e) => {
                   const opt = options.languages?.find((l: any) => l.code === e.target.value);
                   updateSourceLanguage(e.target.value, opt?.name || e.target.value);
@@ -346,7 +346,7 @@ export const Stage1Prepare: React.FC = () => {
                 Target Dubbing Language
               </label>
               <select
-                value={languages.target.code}
+                value={languages?.target?.code || 'vi'}
                 onChange={(e) => {
                   const opt = options.languages?.find((l: any) => l.code === e.target.value);
                   updateTargetLanguage(e.target.value, opt?.name || e.target.value);

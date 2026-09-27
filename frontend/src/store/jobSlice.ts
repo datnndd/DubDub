@@ -22,18 +22,18 @@ export interface JobSlice {
 
 export function buildPrepareJobRequest(state: any) {
   return {
-    mediaId: state.backend.mediaId,
+    mediaId: state.backend?.mediaId,
     projectId: state.activeProjectId,
     jobType: 'asr',
     options: {
-      ...state.backend.config,
+      ...(state.backend?.config || {}),
       projectId: state.activeProjectId,
-      sourceLanguage: state.languages.source.code,
-      targetLanguage: state.languages.target.code,
-      timingMode: state.languages.timingMode,
-      removeNoise: state.engines.removeNoise,
-      speakerDiarization: state.engines.speakerDiarization,
-      speakerCount: state.engines.speakerCount,
+      sourceLanguage: state.languages?.source?.code || 'zh-cn',
+      targetLanguage: state.languages?.target?.code || 'vi',
+      timingMode: state.languages?.timingMode || 'voice',
+      removeNoise: Boolean(state.engines?.removeNoise),
+      speakerDiarization: Boolean(state.engines?.speakerDiarization),
+      speakerCount: Number(state.engines?.speakerCount || 0),
     },
   };
 }
@@ -104,6 +104,14 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
         }
         if (Array.isArray(res.segments) && res.segments.length > 0) {
           get().setSegments(res.segments);
+        }
+        const detectedLang = res.details?.detected_language || (res as any)?.detected_language;
+        if (detectedLang) {
+          const avail = get().backend?.options?.languages || [];
+          const opt = avail.find((l: any) => l.code === detectedLang || l.code.startsWith(detectedLang));
+          if (opt && get().languages?.source?.code !== opt.code) {
+            get().updateSourceLanguage(opt.code, opt.name);
+          }
         }
         set({
           jobStatus: 'completed',
@@ -204,6 +212,15 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
         }
         if (payload.details?.segments && Array.isArray(payload.details.segments)) {
           get().setSegments(payload.details.segments);
+        }
+
+        const detectedLang = payload.details?.detected_language || (payload.details as any)?.source_language;
+        if (detectedLang) {
+          const avail = get().backend?.options?.languages || [];
+          const opt = avail.find((l: any) => l.code === detectedLang || l.code.startsWith(detectedLang));
+          if (opt && get().languages?.source?.code !== opt.code) {
+            get().updateSourceLanguage(opt.code, opt.name);
+          }
         }
 
         const isSuccess =

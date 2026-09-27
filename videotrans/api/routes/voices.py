@@ -20,7 +20,10 @@ from videotrans.core import voice_store
 from videotrans.services.audio_normalizer import (
     normalize_reference_audio,
 )
-from videotrans.services.voice_preview import synthesize_voice_preview
+from videotrans.services.voice_preview import (
+    synthesize_voice_preview,
+    synthesize_unified_tts_preview,
+)
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,6 +46,22 @@ class VoicePreviewRequest(BaseModel):
     text: Optional[str] = None
     language: Optional[str] = None
     force_refresh: Optional[bool] = False
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class UnifiedTTSPreviewRequest(BaseModel):
+    text: Optional[str] = None
+    voice: Optional[str] = None
+    voice_id: Optional[str] = Field(None, alias="voiceId")
+    provider: Optional[Any] = None
+    ttsType: Optional[Any] = Field(None, alias="tts_type")
+    language: Optional[str] = None
+    speed: Optional[float] = None
+    rate: Optional[str] = None
+    pitch: Optional[str] = None
+    segment_id: Optional[Any] = Field(None, alias="segmentId")
+    force_refresh: Optional[bool] = Field(False, alias="forceRefresh")
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -308,6 +327,83 @@ async def get_custom_voice_preview_audio_handler(id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Preview audio not generated yet")
 
     return FileResponse(preview_path, media_type="audio/wav")
+
+
+@router.post("/api/tts/preview")
+async def create_tts_preview_handler(
+    payload: Optional[UnifiedTTSPreviewRequest] = None,
+    request: Request = None,
+) -> JSONResponse:
+    payload_obj = payload or UnifiedTTSPreviewRequest()
+    voice = (payload_obj.voice or payload_obj.voice_id or "").strip()
+    provider = _parse_provider(payload_obj.provider if payload_obj.provider is not None else payload_obj.ttsType)
+    text = (payload_obj.text or "").strip()
+    language = (payload_obj.language or "").strip()
+    force_refresh = bool(payload_obj.force_refresh)
+
+    try:
+        preview_id, preview_path = await synthesize_unified_tts_preview(
+            provider=provider,
+            voice=voice,
+            text=text,
+            language=language,
+            force_refresh=force_refresh,
+            speed=payload_obj.speed,
+            rate=payload_obj.rate,
+            pitch=payload_obj.pitch,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unified TTS preview generation failed", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Preview generation failed: {exc}") from exc
+
+    preview_url = f"/api/tts/preview/{preview_id}/audio"
+    return JSONResponse({
+        "ok": True,
+        "id": preview_id,
+        "preview_id": preview_id,
+        "preview_url": preview_url,
+        "audio_url": preview_url,
+        "voice": voice,
+        "provider": provider,
+    })
+
+
+@router.get("/api/tts/preview/{id}/audio")
+async def get_tts_preview_audio_handler(id: str) -> FileResponse:
+    clean_id = Path(unquote(id)).name
+    candidates = [
+        clean_id if clean_id.endswith(".wav") else f"{clean_id}.wav",
+        clean_id,
+        f"{clean_id}_preview.wav",
+    ]
+    cv = voice_store.get_voice(clean_id)
+    if cv and cv.get("preview_audio_path"):
+        candidates.insert(0, cv["preview_audio_path"])
+
+    audio_path = None
+    for cand in candidates:
+        try:
+            p = voice_store.get_preview_audio_path(cand)
+            if p.is_file() and p.stat().st_size > 0:
+                audio_path = p
+                break
+        except ValueError:
+            continue
+
+    if not audio_path and cv and cv.get("ref_audio_path"):
+        try:
+            p = voice_store.get_voice_audio_path(cv["ref_audio_path"])
+            if p.is_file() and p.stat().st_size > 0:
+                audio_path = p
+        except ValueError:
+            pass
+
+    if not audio_path or not audio_path.is_file():
+        raise HTTPException(status_code=404, detail=f"Preview audio not found for ID: {id}")
+
+    return FileResponse(audio_path, media_type="audio/wav")
 
 
 def register_routes(app) -> None:

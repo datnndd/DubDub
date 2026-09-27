@@ -36,17 +36,18 @@ export interface TranscriptSlice {
   deleteSegment: (id: number) => void;
   mergeWithNextSegment: (id: number) => void;
   extractOcrForSegment: (segmentId: number) => Promise<void>;
-  runBatchTranslation: () => Promise<void>;
+  runBatchTranslation: (sourceLang?: string, targetLang?: string) => Promise<void>;
+  translateSingleSegment: (segmentId: number) => Promise<void>;
   closeTranslationModal: () => void;
 }
 
 export function buildTranslationRequest(state: any) {
   return {
     segments: state.segments,
-    sourceLanguage: state.languages.source.code,
-    targetLanguage: state.languages.target.code,
-    translateType: state.backend.config.translateType,
-    translationMode: state.backend.config.translationMode,
+    sourceLanguage: state.languages?.source?.code || 'zh-cn',
+    targetLanguage: state.languages?.target?.code || 'vi',
+    translateType: state.backend?.config?.translateType ?? 0,
+    translationMode: state.backend?.config?.translationMode || 'srt',
   };
 }
 
@@ -132,7 +133,11 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
         ...state.transcriptOptions,
         [state.selectedSegmentOption]: next,
       } : state.transcriptOptions;
-      return { segments: next, transcriptOptions: nextOptions };
+      return {
+        segments: next,
+        transcriptOptions: nextOptions,
+        dubbingStatus: isTarget && state.dubbingStatus === 'completed' ? 'idle' : state.dubbingStatus,
+      };
     });
     get().triggerAutosave();
   },
@@ -267,32 +272,97 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
     }
   },
 
-  runBatchTranslation: async () => {
+  runBatchTranslation: async (sourceLang?: string, targetLang?: string) => {
+    if (sourceLang && get().languages?.source?.code !== sourceLang) {
+      const avail = get().backend?.options?.languages || [];
+      const opt = avail.find((l: any) => l.code === sourceLang);
+      get().updateSourceLanguage(sourceLang, opt?.name || sourceLang);
+    }
+    if (targetLang && get().languages?.target?.code !== targetLang) {
+      const avail = get().backend?.options?.languages || [];
+      const opt = avail.find((l: any) => l.code === targetLang);
+      get().updateTargetLanguage(targetLang, opt?.name || targetLang);
+    }
+
+    const curSource = sourceLang || get().languages?.source?.code || 'zh-cn';
+    const curTarget = targetLang || get().languages?.target?.code || 'vi';
+
     set({
       translationModal: {
         active: true,
         status: 'translating',
         progress: 25,
-        message: 'Calling translation engine…',
+        message: `Translating transcript from ${curSource} to ${curTarget}…`,
         error: null,
       },
     });
 
     try {
-      const resp = await requestTranslate(buildTranslationRequest(get()));
+      const req: any = buildTranslationRequest(get());
+      if (sourceLang) req.sourceLanguage = sourceLang;
+      if (targetLang) req.targetLanguage = targetLang;
+      if (get().activeProjectId) req.projectId = get().activeProjectId;
+      if (get().backend?.mediaId) req.mediaId = get().backend.mediaId;
+      const resp = await requestTranslate(req);
 
       if (resp.ok && resp.segments) {
         const segMap = new Map<number, string>();
-        resp.segments.forEach((s: any) => {
-          segMap.set(s.line || s.id, s.text || s.targetText);
+        resp.segments.forEach((s: any, idx: number) => {
+          let trans = '';
+          if (typeof s.targetText === 'string' && s.targetText.trim()) {
+            trans = s.targetText;
+          } else if (typeof s.text === 'string' && s.text.trim()) {
+            if (!s.sourceText || s.text !== s.sourceText) {
+              trans = s.text;
+            }
+          }
+          if (!trans && (s.targetText || s.text)) {
+            trans = s.targetText || s.text;
+          }
+
+          if (s.id !== undefined && s.id !== null) {
+            segMap.set(Number(s.id), trans);
+          }
+          if (s.line !== undefined && s.line !== null) {
+            segMap.set(Number(s.line), trans);
+          }
+          segMap.set(idx + 1, trans);
+          segMap.set(idx, trans);
         });
 
-        set((state: any) => ({
-          segments: state.segments.map((s: Segment, index: number) => {
-            const translated = segMap.get(s.id) || segMap.get(index + 1);
-            if (!translated) return s;
-            return { ...s, targetText: translated };
-          }),
+        const nextSegments = get().segments.map((s: Segment, index: number) => {
+          const respSeg = resp.segments[index];
+          let translated = '';
+          if (respSeg && typeof respSeg.targetText === 'string' && respSeg.targetText.trim()) {
+            translated = respSeg.targetText;
+          } else if (respSeg && typeof respSeg.text === 'string' && respSeg.text.trim() && (!respSeg.sourceText || respSeg.text !== respSeg.sourceText)) {
+            translated = respSeg.text;
+          } else {
+            translated = segMap.get(Number(s.id)) ?? segMap.get(index + 1) ?? s.targetText ?? '';
+          }
+
+          const dur = Math.max(0.1, (s.endSec || 0) - (s.startSec || 0));
+          const cps = Number(((translated || '').trim().length / dur).toFixed(1));
+          const cpsStatus = cps <= 14.5 ? 'Optimal' : cps <= 18.0 ? 'Good' : 'Warning';
+
+          return {
+            ...s,
+            targetText: translated,
+            cps,
+            cpsStatus,
+          };
+        });
+
+        const curOptions = get().transcriptOptions;
+        const curOptionKey = get().selectedSegmentOption;
+        const nextOptions = curOptions ? {
+          ...curOptions,
+          [curOptionKey]: nextSegments,
+        } : curOptions;
+
+        set({
+          segments: nextSegments,
+          transcriptOptions: nextOptions,
           translationModal: {
             active: true,
             status: 'completed',
@@ -300,8 +370,14 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
             message: 'Translation completed successfully',
             error: null,
           },
-        }));
+        });
         get().triggerAutosave();
+
+        setTimeout(() => {
+          if (get().translationModal.status === 'completed') {
+            get().closeTranslationModal();
+          }
+        }, 1200);
       }
     } catch (err: any) {
       set({
@@ -313,6 +389,42 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
           error: err.message,
         },
       });
+    }
+  },
+
+  translateSingleSegment: async (segmentId: number) => {
+    const seg = get().segments.find((s: Segment) => s.id === segmentId);
+    if (!seg) return;
+    const text = seg.sourceText || seg.text || '';
+    if (!text.trim()) return;
+
+    try {
+      const curSource = get().languages?.source?.code || 'zh-cn';
+      const curTarget = get().languages?.target?.code || 'vi';
+      const req: any = {
+        segments: [{ ...seg, text, sourceText: text }],
+        sourceLanguage: curSource,
+        targetLanguage: curTarget,
+        translateType: get().backend?.config?.translateType ?? 0,
+        translationMode: get().backend?.config?.translationMode || 'srt',
+      };
+      if (get().activeProjectId) {
+        req.projectId = get().activeProjectId;
+      }
+      const resp = await requestTranslate(req);
+      if (resp.ok && resp.segments && resp.segments.length > 0) {
+        const item = resp.segments[0];
+        const trans = (item.targetText && item.targetText.trim())
+          ? item.targetText
+          : (item.text && (!item.sourceText || item.text !== item.sourceText))
+            ? item.text
+            : (item.targetText || item.text || '');
+        if (trans) {
+          get().updateSegmentText(segmentId, trans, true);
+        }
+      }
+    } catch (err) {
+      console.warn('Single segment translation failed:', err);
     }
   },
 

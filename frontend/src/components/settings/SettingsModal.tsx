@@ -36,11 +36,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ forceOpen }) => {
     try {
       const data = await fetchSettings();
       setSnapshot(data);
+      // Immediately sync Zustand store backend options so provider badges and validation update
+      await useDubDubStore.getState().initializeBackend();
     } catch (err: any) {
       setError(err.message || 'Failed to load application settings');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleClose = async () => {
+    setIsOpen(false);
+    await useDubDubStore.getState().initializeBackend();
   };
 
   useEffect(() => {
@@ -78,7 +85,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ forceOpen }) => {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#8D4B00]' : ''}`} />
             </button>
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={handleClose}
               className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-200/60 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />

@@ -98,3 +98,40 @@ export function getCustomVoiceAudioUrl(id: string): string {
 export function getCustomVoicePreviewAudioUrl(id: string): string {
   return `/api/custom-voices/${encodeURIComponent(id)}/preview/audio`;
 }
+
+export interface TTSPreviewPayload {
+  text?: string;
+  voice?: string;
+  voice_id?: string;
+  voiceId?: string;
+  provider?: number | string;
+  ttsType?: number | string;
+  language?: string;
+  speed?: number;
+  rate?: string;
+  pitch?: string;
+  segment_id?: number | string;
+  segmentId?: number | string;
+  force_refresh?: boolean;
+}
+
+export interface TTSPreviewResponse {
+  ok: boolean;
+  id: string;
+  preview_id: string;
+  preview_url: string;
+  audio_url: string;
+  voice?: string;
+  provider?: number;
+}
+
+export async function previewTTS(payload: TTSPreviewPayload): Promise<TTSPreviewResponse> {
+  return apiRequest<TTSPreviewResponse>('/api/tts/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getTTSPreviewAudioUrl(id: string): string {
+  return `/api/tts/preview/${encodeURIComponent(id)}/audio`;
+}

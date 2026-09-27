@@ -123,6 +123,8 @@ async def get_project_handler(project_id: str) -> JSONResponse:
 
 
 @router.put("/api/projects/{project_id}")
+@router.put("/api/projects/{project_id}/state")
+@router.post("/api/projects/{project_id}/state")
 async def update_project_handler(
     project_id: str,
     payload: ProjectUpdateRequest,

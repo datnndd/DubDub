@@ -42,6 +42,9 @@ export const WorkflowStepper: React.FC = () => {
     ),
   };
 
+  const sourceCode = (languages?.source?.code ? String(languages.source.code).split('-')[0] : 'ZH').toUpperCase();
+  const targetCode = (languages?.target?.code ? String(languages.target.code).split('-')[0] : 'VI').toUpperCase();
+
   return (
     <div className="h-9 flex-shrink-0 bg-[#FAF8F5] border-b border-[#E7E4DC] px-4 flex items-center justify-between z-20">
       {/* Media Identity Pill */}
@@ -49,10 +52,10 @@ export const WorkflowStepper: React.FC = () => {
         <div className="flex items-center gap-1.5 bg-white px-2.5 py-0.5 rounded-lg border border-stone-200 text-stone-700 shadow-2xs">
           <Film className="w-3.5 h-3.5 text-stone-400" />
           <span className="font-mono text-[11px] font-medium truncate max-w-[190px]">
-            {project.filename}
+            {project?.filename || 'Untitled Video Project'}
           </span>
           <span className="px-1.5 py-0.2 bg-amber-50 text-amber-900 border border-amber-200/80 rounded font-mono font-bold text-[9px] tracking-wide uppercase leading-none">
-            {languages.source.code.split('-')[0].toUpperCase()} ➔ {languages.target.code.split('-')[0].toUpperCase()}
+            {sourceCode} ➔ {targetCode}
           </span>
         </div>
       </div>

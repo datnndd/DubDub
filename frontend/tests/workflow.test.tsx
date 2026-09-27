@@ -9,6 +9,9 @@ import { useDubDubStore } from '../src/store';
 import { buildPrepareJobRequest } from '../src/store/jobSlice';
 import { buildTranslationRequest } from '../src/store/transcriptSlice';
 import { VideoPlayer } from '../src/components/VideoPlayer';
+import { WorkflowStepper } from '../src/components/WorkflowStepper';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
+import { StatusFooter } from '../src/components/StatusFooter';
 
 const segment = {
   id: 1,
@@ -28,6 +31,34 @@ beforeEach(() => {
     voices: [{ id: 'voice-a', name: 'Voice A' }],
     speakerVoiceMap: {},
     segmentVoiceOverrides: {},
+    backend: {
+      ready: true,
+      error: null,
+      mediaId: null,
+      status: 'idle',
+      message: '',
+      options: {
+        languages: [
+          { code: 'zh-cn', name: 'Simplified Chinese' },
+          { code: 'vi', name: 'Vietnamese' },
+          { code: 'en', name: 'English' },
+          { code: 'ja', name: 'Japanese' },
+        ],
+        asrProviders: [],
+        translationProviders: [],
+        translationModes: [],
+        voices: [],
+      },
+      config: {
+        recognType: 1,
+        translateType: 0,
+        translationMode: 'srt',
+        ttsType: 2,
+        modelName: 'nova-3',
+        voiceRole: '',
+        useCuda: false,
+      },
+    },
   });
 });
 
@@ -543,5 +574,533 @@ describe('React four-stage workflow', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('Stage 2 renders language selection options, allows changing source and target, and applies them to batch translation', async () => {
+    const originalFetch = globalThis.fetch;
+    let translatePayload: any = null;
+
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (url.includes('/api/translate') && init?.method === 'POST') {
+        translatePayload = JSON.parse(init.body as string);
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            segments: [
+              {
+                id: 1,
+                line: 1,
+                targetText: 'Hello world translated to English',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+
+    try {
+      useDubDubStore.setState({
+        segments: [segment],
+        languages: {
+          source: { code: 'zh-cn', name: 'Simplified Chinese', flag: '', autoDetected: false },
+          target: { code: 'vi', name: 'Vietnamese' },
+          timingMode: 'voice',
+        },
+      });
+
+      // 1. Verify Stage 2 markup renders language selector dropdowns
+      const html = renderToStaticMarkup(<Stage2ReviewTranscript />);
+      expect(html).toContain('data-testid="translation-source-lang-select"');
+      expect(html).toContain('data-testid="translation-target-lang-select"');
+      expect(html).toContain('Language Route:');
+      expect(html).toContain('Simplified Chinese');
+      expect(html).toContain('Vietnamese');
+
+      // 2. Change source to Japanese and target to English in Stage 2
+      useDubDubStore.getState().updateSourceLanguage('ja', 'Japanese');
+      useDubDubStore.getState().updateTargetLanguage('en', 'English');
+
+      const stateAfterUpdate = useDubDubStore.getState();
+      expect(stateAfterUpdate.languages.source.code).toBe('ja');
+      expect(stateAfterUpdate.languages.target.code).toBe('en');
+
+      // 3. Trigger batch translation and verify payload
+      await useDubDubStore.getState().runBatchTranslation();
+
+      expect(translatePayload).toBeTruthy();
+      expect(translatePayload.sourceLanguage).toBe('ja');
+      expect(translatePayload.targetLanguage).toBe('en');
+
+      // 4. Verify segment target text was updated from translation response
+      const updatedSegments = useDubDubStore.getState().segments;
+      expect(updatedSegments[0].targetText).toBe('Hello world translated to English');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('runBatchTranslation correctly applies targetText when response has original source in text property', async () => {
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (url.includes('/api/translate') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            segments: [
+              {
+                id: 1,
+                text: 'Xin chào mọi người',
+                sourceText: 'Hello world',
+                targetText: 'Xin chào mọi người',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+
+    try {
+      useDubDubStore.setState({
+        segments: [{
+          id: 1,
+          startTime: '00:00.000',
+          endTime: '00:02.000',
+          startSec: 0,
+          endSec: 2,
+          text: 'Hello world',
+          sourceText: 'Hello world',
+          targetText: '',
+          speakerId: 'spk-1',
+        }],
+      });
+
+      await useDubDubStore.getState().runBatchTranslation();
+
+      const segs = useDubDubStore.getState().segments;
+      expect(segs[0].targetText).toBe('Xin chào mọi người');
+      expect(segs[0].sourceText).toBe('Hello world');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('translateSingleSegment translates individual segment and applies targetText to transcript', async () => {
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (url.includes('/api/translate') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            segments: [
+              {
+                id: 1,
+                targetText: 'Đoạn văn được dịch riêng lẻ',
+                text: 'Đoạn văn được dịch riêng lẻ',
+                sourceText: 'Single translated paragraph',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+
+    try {
+      useDubDubStore.setState({
+        segments: [{
+          id: 1,
+          startTime: '00:00.000',
+          endTime: '00:02.000',
+          startSec: 0,
+          endSec: 2,
+          text: 'Single translated paragraph',
+          sourceText: 'Single translated paragraph',
+          targetText: '',
+          speakerId: 'spk-1',
+        }],
+      });
+
+      await useDubDubStore.getState().translateSingleSegment(1);
+
+      const segs = useDubDubStore.getState().segments;
+      expect(segs[0].targetText).toBe('Đoạn văn được dịch riêng lẻ');
+      expect(segs[0].sourceText).toBe('Single translated paragraph');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('ErrorBoundary renders fallback error UI when state hasError is true', () => {
+    const error = new Error('Test explosion');
+    const derived = ErrorBoundary.getDerivedStateFromError(error);
+    expect(derived.hasError).toBe(true);
+    expect(derived.error).toBe(error);
+
+    const boundary = new ErrorBoundary({ fallbackTitle: 'Critical Render Issue', children: null });
+    boundary.state = { hasError: true, error, errorInfo: null };
+    const html = renderToStaticMarkup(boundary.render() as any);
+    expect(html).toContain('Critical Render Issue');
+    expect(html).toContain('Test explosion');
+    expect(html).toContain('Return to Stage 1');
+  });
+
+  test('selectProject normalizes malformed project state and prevents render crashes', async () => {
+    const originalFetch = globalThis.fetch;
+    const malformedProject = {
+      id: 'proj-malformed-001',
+      name: 'Malformed State Project',
+      stage: 2,
+      status: 'completed' as const,
+      media_id: 'med-001',
+      state: {
+        currentStep: 2,
+        languages: {
+          source: 'zh-cn',
+          target: 'vi',
+        },
+        speakers: [
+          { id: 101, name: 'Numeric Speaker' },
+        ],
+        segments: [
+          { id: 1, text: 'Raw text only' },
+        ],
+      },
+    };
+
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/api/projects/proj-malformed-001')) {
+        return new Response(JSON.stringify(malformedProject), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as any;
+
+    try {
+      await useDubDubStore.getState().selectProject('proj-malformed-001');
+
+      const state = useDubDubStore.getState();
+      expect(state.languages.source.code).toBe('zh-cn');
+      expect(state.languages.target.code).toBe('vi');
+      expect(state.speakers[0].code).toBe('10');
+      expect(state.segments[0].sourceText).toBe('Raw text only');
+      expect(state.segments[0].targetText).toBe('');
+
+      const stepperHtml = renderToStaticMarkup(<WorkflowStepper />);
+      expect(stepperHtml).toContain('ZH ➔ VI');
+      expect(stepperHtml).toContain('Malformed State Project');
+
+      const stage2Html = renderToStaticMarkup(<Stage2ReviewTranscript />);
+      expect(stage2Html).toContain('Raw text only');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('selectProject on non-existent project (404) cleanses activeProjectId and avoids white screen', async () => {
+    const originalFetch = globalThis.fetch;
+    const originalLocalStorage = (globalThis as any).localStorage;
+    const storeMap = new Map<string, string>();
+    (globalThis as any).localStorage = {
+      getItem: (k: string) => storeMap.get(k) ?? null,
+      setItem: (k: string, v: string) => storeMap.set(k, v),
+      removeItem: (k: string) => storeMap.delete(k),
+      clear: () => storeMap.clear(),
+    };
+
+    globalThis.fetch = (async () => {
+      return new Response('Not Found', { status: 404 });
+    }) as any;
+
+    try {
+      (globalThis as any).localStorage.setItem('dubdub_active_project_id', 'proj-non-existent');
+      await useDubDubStore.getState().selectProject('proj-non-existent');
+
+      expect(useDubDubStore.getState().activeProjectId).toBeNull();
+      expect((globalThis as any).localStorage.getItem('dubdub_active_project_id')).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+      (globalThis as any).localStorage = originalLocalStorage;
+    }
+  });
+
+  test('Stage3VoiceDubbing renders multiple speakers and cue overrides cleanly without maximum update depth error', () => {
+    useDubDubStore.setState({
+      segments: [
+        {
+          id: 1,
+          startSec: 0,
+          endSec: 2,
+          startTime: '00:00.000',
+          endTime: '00:02.000',
+          sourceText: 'Hello world',
+          targetText: 'Xin chao',
+          speakerId: 'spk_1',
+          speakerName: 'Alice',
+        },
+        {
+          id: 2,
+          startSec: 2,
+          endSec: 4,
+          startTime: '00:02.000',
+          endTime: '00:04.000',
+          sourceText: 'Good morning',
+          targetText: 'Chao buoi sang',
+          speakerId: 'spk_2',
+          speakerName: 'Bob',
+        },
+      ],
+      speakers: [
+        { id: 'spk_1', name: 'Alice', code: 'AL' },
+        { id: 'spk_2', name: 'Bob', code: 'BO' },
+      ],
+      speakerVoiceMap: { spk_1: 'voice-a', spk_2: 'voice-b' },
+      segmentVoiceOverrides: { 2: 'voice-c' },
+      tuning: { pace: 1.1, timbreWarmth: 75, ducking: '85/15' },
+    });
+
+    const html = renderToStaticMarkup(<Stage3VoiceDubbing />);
+    expect(html).toContain('Alice');
+    expect(html).toContain('Bob');
+    expect(html).toContain('1.10x');
+    expect(html).toContain('75%');
+    expect(html).toContain('Dialogue Cue Overrides');
+  });
+
+  test('Stage 3 renders speaker badge with name, code, color, both source and target text, and voice preview audition controls', () => {
+    useDubDubStore.setState({
+      segments: [
+        {
+          id: 1,
+          startSec: 0,
+          endSec: 3.5,
+          startTime: '00:00.000',
+          endTime: '00:03.500',
+          sourceText: 'Welcome to Stage 3 AI dubbing.',
+          targetText: 'Chao mung den voi Stage 3 long tieng AI.',
+          speakerId: 'spk_1',
+          speakerName: 'Alex Carter',
+          speakerCode: 'AC',
+          speakerColor: 'amber',
+          previewAudioUrl: '/api/tts/preview/prev_sample123/audio',
+        },
+        {
+          id: 2,
+          startSec: 3.5,
+          endSec: 7.0,
+          startTime: '00:03.500',
+          endTime: '00:07.000',
+          sourceText: 'Let us test voice preview and speaker cast.',
+          targetText: 'Hay cung thu tinh nang nghe thu giong.',
+          speakerId: 'spk_2',
+          speakerName: 'Elena Rostova',
+          speakerCode: 'ER',
+          speakerColor: 'secondary',
+        },
+      ],
+      speakers: [
+        { id: 'spk_1', name: 'Alex Carter', code: 'AC', color: 'amber' },
+        { id: 'spk_2', name: 'Elena Rostova', code: 'ER', color: 'secondary' },
+      ],
+      speakerVoiceMap: { spk_1: 'Rachel', spk_2: 'Phạm Tuyên' },
+      segmentVoiceOverrides: { 2: 'Custom: Voice1' },
+      tuning: { pace: 1.0, timbreWarmth: 62, ducking: '85/15' },
+    });
+
+    const html = renderToStaticMarkup(<Stage3VoiceDubbing />);
+
+    // Speaker badges in blocks
+    expect(html).toContain('Alex Carter');
+    expect(html).toContain('AC');
+    expect(html).toContain('Elena Rostova');
+    expect(html).toContain('ER');
+
+    // Both source text and editable target text present
+    expect(html).toContain('Welcome to Stage 3 AI dubbing.');
+    expect(html).toContain('Chao mung den voi Stage 3 long tieng AI.');
+    expect(html).toContain('stage3-1');
+    expect(html).toContain('stage3-2');
+
+    // Voice preview and audition buttons
+    expect(html).toContain('data-action="generate-voice-preview"');
+    expect(html).toContain('data-action="play-voice-preview"');
+
+    // Seek buttons and dual-level selection buttons
+    expect(html).toContain('data-action="seek-segment"');
+    expect(html).toContain('data-action="reset-segment-voice"');
+    expect(html).toContain('data-action="set-speaker-default"');
+    expect(html).toContain('(Default)');
+    expect(html).toContain('data-action="proceed-to-edit-video"');
+  });
+
+  test('Stage 3 footer primary button renders Generate Dubbing when pending and transitions to Proceed to Edit Video when completed', () => {
+    useDubDubStore.setState({
+      currentStep: 3,
+      dubbingStatus: 'idle',
+    });
+
+    // Pending state -> Generate Dubbing
+    let footerHtml = renderToStaticMarkup(<StatusFooter />);
+    expect(footerHtml).toContain('Generate Dubbing');
+
+    // Completed state -> Proceed to Edit Video
+    useDubDubStore.setState({ dubbingStatus: 'completed' });
+    footerHtml = renderToStaticMarkup(<StatusFooter />);
+    expect(footerHtml).toContain('Proceed to Edit Video');
+  });
+
+  test('Stage 3 synchronizes segmentVoiceOverrides and segment.voiceOverride, and resets dubbingStatus on edit', () => {
+    useDubDubStore.setState({
+      segments: [
+        {
+          id: 1,
+          startSec: 0,
+          endSec: 2,
+          startTime: '00:00.000',
+          endTime: '00:02.000',
+          sourceText: 'Hello',
+          targetText: 'Xin chao',
+          speakerId: 'spk_1',
+          speakerName: 'Speaker 1',
+        },
+        {
+          id: 2,
+          startSec: 2,
+          endSec: 4,
+          startTime: '00:02.000',
+          endTime: '00:04.000',
+          sourceText: 'World',
+          targetText: 'The gioi',
+          speakerId: 'spk_2',
+          voiceOverride: 'Initial-Override',
+        },
+      ],
+      speakerVoiceMap: { spk_1: 'Voice-Spk1', spk_2: 'Voice-Spk2' },
+      segmentVoiceOverrides: {},
+      dubbingStatus: 'completed',
+    });
+
+    const store = useDubDubStore.getState();
+
+    // segment 2 has voiceOverride on segment itself
+    expect(store.getResolvedVoiceForSegment(store.segments[1])).toBe('Initial-Override');
+
+    // setSegmentVoiceOverride on segment 1
+    store.setSegmentVoiceOverride(1, 'Overridden-Voice-1');
+    const updatedState = useDubDubStore.getState();
+    expect(updatedState.segmentVoiceOverrides[1]).toBe('Overridden-Voice-1');
+    expect(updatedState.segments[0].voiceOverride).toBe('Overridden-Voice-1');
+    // dubbingStatus should reset from completed to idle
+    expect(updatedState.dubbingStatus).toBe('idle');
+
+    // mark completed and then clear override
+    useDubDubStore.setState({ dubbingStatus: 'completed' });
+    useDubDubStore.getState().clearSegmentVoiceOverride(1);
+    const clearedState = useDubDubStore.getState();
+    expect(clearedState.segmentVoiceOverrides[1]).toBeUndefined();
+    expect(clearedState.segments[0].voiceOverride).toBeUndefined();
+    expect(clearedState.dubbingStatus).toBe('idle');
+    expect(clearedState.getResolvedVoiceForSegment(clearedState.segments[0])).toBe('Voice-Spk1');
+
+    // mark completed and test that modifying target text resets dubbingStatus to idle
+    useDubDubStore.setState({ dubbingStatus: 'completed' });
+    useDubDubStore.getState().updateSegmentText(1, 'Ban dich moi', true);
+    expect(useDubDubStore.getState().dubbingStatus).toBe('idle');
+  });
+
+  test('Stage 3 handles diarization numeric speaker ID 0 without collapsing into spk_1', () => {
+    useDubDubStore.setState({
+      segments: [
+        {
+          id: 1,
+          startSec: 0,
+          endSec: 2,
+          startTime: '00:00.000',
+          endTime: '00:02.000',
+          sourceText: 'Speaker zero text',
+          targetText: 'Van ban nguoi noi 0',
+          speakerId: '0',
+        },
+        {
+          id: 2,
+          startSec: 2,
+          endSec: 4,
+          startTime: '00:02.000',
+          endTime: '00:04.000',
+          sourceText: 'Speaker one text',
+          targetText: 'Van ban nguoi noi 1',
+          speakerId: '1',
+        },
+      ],
+      speakers: [],
+      speakerVoiceMap: { '0': 'Voice-Zero', '1': 'Voice-One' },
+    });
+
+    const store = useDubDubStore.getState();
+    const distinct = store.getDistinctSpeakers();
+    expect(distinct.length).toBe(2);
+    expect(distinct.some((s) => s.id === '0')).toBe(true);
+    expect(distinct.some((s) => s.id === '1')).toBe(true);
+
+    // Resolved voice for speaker 0 must be Voice-Zero
+    expect(store.getResolvedVoiceForSegment(store.segments[0])).toBe('Voice-Zero');
+    expect(store.getResolvedVoiceForSegment(store.segments[1])).toBe('Voice-One');
+  });
+
+  test('Stage 3 renders Generate Voice Preview when segment voice differs from previewVoice', () => {
+    useDubDubStore.setState({
+      segments: [
+        {
+          id: 1,
+          startSec: 0,
+          endSec: 2,
+          startTime: '00:00.000',
+          endTime: '00:02.000',
+          sourceText: 'Hello',
+          targetText: 'Xin chao',
+          speakerId: 'spk_1',
+          previewAudioUrl: '/api/tts/preview/prev_old/audio',
+          previewVoice: 'OldVoice',
+          voiceOverride: 'NewVoice',
+        },
+      ],
+      speakers: [{ id: 'spk_1', name: 'Alex', code: 'AL' }],
+      speakerVoiceMap: { spk_1: 'OldVoice' },
+      segmentVoiceOverrides: { 1: 'NewVoice' },
+    });
+
+    const html = renderToStaticMarkup(<Stage3VoiceDubbing />);
+    // Since activeVoice is NewVoice and previewVoice is OldVoice, the button should offer Generate Voice Preview
+    expect(html).toContain('Generate Voice Preview');
+    expect(html).toContain('Audition (OldVoice)');
+  });
 });
+
+
+
 

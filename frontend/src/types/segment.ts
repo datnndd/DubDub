@@ -14,6 +14,11 @@ export interface Segment {
   sourceText: string;
   text?: string;
   targetText: string;
+  speakerColor?: string;
+  voiceOverride?: string;
+  previewAudioUrl?: string;
+  previewAudioId?: string;
+  previewVoice?: string;
   hasOcrDiff?: boolean;
   ocrBoxNumber?: string;
   ocrConfidence?: number;

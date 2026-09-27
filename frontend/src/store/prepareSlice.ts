@@ -145,20 +145,23 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
   initializeBackend: async () => {
     try {
       const opts = await fetchOptions();
-      set((state: any) => ({
-        backend: {
-          ...state.backend,
-          ready: true,
-          options: opts,
-          config: {
-            ...state.backend.config,
-            recognType: opts.defaults?.recognType ?? state.backend.config.recognType,
-            modelName: opts.defaults?.modelName ?? state.backend.config.modelName,
-            translateType: opts.defaults?.translateType ?? state.backend.config.translateType,
-            translationMode: opts.defaults?.translationMode ?? state.backend.config.translationMode,
+      set((state: any) => {
+        const isReady = state.backend?.ready;
+        return {
+          backend: {
+            ...state.backend,
+            ready: true,
+            options: opts,
+            config: {
+              ...state.backend.config,
+              recognType: isReady ? state.backend.config.recognType : (opts.defaults?.recognType ?? state.backend.config.recognType),
+              modelName: isReady ? state.backend.config.modelName : (opts.defaults?.modelName ?? state.backend.config.modelName),
+              translateType: isReady ? state.backend.config.translateType : (opts.defaults?.translateType ?? state.backend.config.translateType),
+              translationMode: isReady ? state.backend.config.translationMode : (opts.defaults?.translationMode ?? state.backend.config.translationMode),
+            },
           },
-        },
-      }));
+        };
+      });
     } catch (err: any) {
       set((state: any) => ({
         backend: {

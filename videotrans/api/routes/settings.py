@@ -174,6 +174,140 @@ async def probe_provider_connection(
         return False, f"Connection failed: {exc}"
 
 
+async def fetch_remote_provider_models(
+    provider_id: str,
+    api_key: str,
+    base_url: str = "",
+    proxy: str = "",
+    custom_session: Any = None,
+) -> tuple[bool, list[str], str]:
+    pid = provider_id.lower()
+    headers: dict[str, str] = {}
+    url: str = ""
+
+    if pid == "deepgram":
+        url = "https://api.deepgram.com/v1/models"
+        headers["Authorization"] = f"Token {api_key}"
+    elif pid in ("openai", "chatgpt"):
+        from videotrans.util.network import process_openai_api
+        b = process_openai_api(base_url) if base_url else "https://api.openai.com/v1"
+        url = f"{b.rstrip('/')}/models"
+        headers["Authorization"] = f"Bearer {api_key}"
+    elif pid == "deepseek":
+        b = base_url.rstrip("/") if base_url else "https://api.deepseek.com"
+        url = f"{b}/models"
+        headers["Authorization"] = f"Bearer {api_key}"
+    elif pid == "gemini":
+        b = base_url.rstrip("/") if base_url else "https://generativelanguage.googleapis.com"
+        url = f"{b}/v1beta/models?key={api_key}"
+    elif pid == "elevenlabs":
+        url = "https://api.elevenlabs.io/v1/models"
+        headers["xi-api-key"] = api_key
+    else:
+        return False, [], f"Provider {provider_id} does not support dynamic model listing"
+
+    client_proxy = proxy or global_settings.proxy or None
+
+    try:
+        data: Any = None
+        if custom_session is not None and hasattr(custom_session, "get"):
+            async with custom_session.get(url, headers=headers, proxy=client_proxy) as resp:
+                status = resp.status
+                if status in (401, 403):
+                    return False, [], f"Authentication failed (HTTP {status}): Invalid API key"
+                if status not in (200, 201):
+                    return False, [], f"Provider returned HTTP {status}"
+                data = await resp.json()
+        else:
+            async with httpx.AsyncClient(proxy=client_proxy, timeout=12.0) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code in (401, 403):
+                    return False, [], f"Authentication failed (HTTP {resp.status_code}): Invalid API key"
+                if resp.status_code not in (200, 201):
+                    return False, [], f"Provider returned HTTP {resp.status_code}"
+                data = resp.json()
+
+        models: list[str] = []
+
+        if pid in ("openai", "chatgpt", "deepseek"):
+            raw_list = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            for item in raw_list:
+                if isinstance(item, dict) and item.get("id"):
+                    models.append(str(item["id"]).strip())
+                elif isinstance(item, str):
+                    models.append(item.strip())
+            if pid in ("openai", "chatgpt") and "api.openai.com" in url:
+                non_chat_prefixes = ("text-embedding", "dall-e", "tts-1", "whisper", "text-moderation", "babbage", "davinci")
+                chat_models = [m for m in models if not any(m.startswith(p) for p in non_chat_prefixes)]
+                if chat_models:
+                    priority = ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o3-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"]
+                    sorted_models = [p for p in priority if p in chat_models]
+                    for m in sorted(chat_models):
+                        if m not in sorted_models:
+                            sorted_models.append(m)
+                    models = sorted_models
+
+        elif pid == "gemini":
+            raw_models = data.get("models", []) if isinstance(data, dict) else []
+            for m in raw_models:
+                if isinstance(m, dict):
+                    methods = m.get("supportedGenerationMethods", [])
+                    if "generateContent" in methods or not methods:
+                        name = str(m.get("name", "")).strip()
+                        if name.startswith("models/"):
+                            name = name[7:]
+                        if name and "embedding" not in name and "aqa" not in name:
+                            models.append(name)
+            if models:
+                priority = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash-lite-preview-02-05"]
+                sorted_models = [p for p in priority if p in models]
+                for m in sorted(models):
+                    if m not in sorted_models:
+                        sorted_models.append(m)
+                models = sorted_models
+
+        elif pid == "elevenlabs":
+            raw_list = data if isinstance(data, list) else data.get("models", [])
+            for item in raw_list:
+                if isinstance(item, dict):
+                    if item.get("can_do_text_to_speech", True):
+                        mid = item.get("model_id")
+                        if mid:
+                            models.append(str(mid).strip())
+
+        elif pid == "deepgram":
+            raw_list = []
+            if isinstance(data, dict):
+                raw_list = data.get("models", []) or data.get("stt", [])
+                if not raw_list:
+                    for v in data.values():
+                        if isinstance(v, list):
+                            raw_list.extend(v)
+            elif isinstance(data, list):
+                raw_list = data
+            for item in raw_list:
+                if isinstance(item, dict):
+                    name = item.get("canonical_name") or item.get("name") or item.get("architecture")
+                    if name:
+                        models.append(str(name).strip())
+            if not models:
+                models = ["nova-3", "nova-2", "nova-2-general", "nova-2-meeting", "enhanced", "base"]
+
+        seen = set()
+        deduped = []
+        for m in models:
+            if m and m not in seen:
+                seen.add(m)
+                deduped.append(m)
+
+        if not deduped:
+            return False, [], "No compatible models returned by provider"
+
+        return True, deduped, f"Found {len(deduped)} models"
+    except Exception as exc:
+        return False, [], f"Failed to fetch models: {exc}"
+
+
 @router.get("/api/options")
 async def options_handler(request: Request) -> JSONResponse:
     languages = [{"code": code, "name": name} for code, name in translator.LANGNAME_DICT.items()]
@@ -181,13 +315,31 @@ async def options_handler(request: Request) -> JSONResponse:
     asr_providers = []
     for provider in ASR_PROVIDERS:
         settings_key = provider.get("settingsKey")
+        models = list(provider["models"])
+        if provider["id"] == "deepgram":
+            deepgram_cfg_models = [m.strip() for m in str(global_settings.get("deepgram_model", "")).split(",") if m.strip()]
+            if deepgram_cfg_models:
+                models = deepgram_cfg_models
+            cur_m = str(
+                (settings_store.get("model_name", "") if settings_store else "")
+                or global_params.get("model_name", "nova-3")
+            ).strip()
+            if cur_m and cur_m not in models:
+                models.insert(0, cur_m)
+        is_configured = True
+        if settings_key:
+            is_configured = (
+                bool(settings_store.get(settings_key))
+                if settings_store is not None
+                else secret_store.is_secret_configured(settings_key)
+            )
         asr_providers.append({
             "id": provider["id"],
             "label": provider["label"],
             "recognType": provider["recognType"],
-            "models": list(provider["models"]),
+            "models": models,
             "requiresSettings": bool(settings_key),
-            "configured": bool(settings_key and settings_store.get(settings_key) if settings_store else False),
+            "configured": is_configured,
             "testable": bool(provider.get("thirdParty")),
         })
     return JSONResponse({
@@ -397,6 +549,32 @@ async def test_translation_settings_handler(
 @router.get("/api/settings")
 async def get_settings_handler(request: Request) -> JSONResponse:
     storage_metrics = storage_config.get_storage_metrics()
+    settings_store = getattr(request.app.state, "settings_store", None)
+
+    deepgram_model = str((settings_store.get("model_name", "") if settings_store else "") or global_params.get("model_name", "nova-3")).strip()
+    deepgram_models = [m.strip() for m in str(global_settings.get("deepgram_model", "nova-3,nova-2")).split(",") if m.strip()]
+    if deepgram_model and deepgram_model not in deepgram_models:
+        deepgram_models.insert(0, deepgram_model)
+
+    chatgpt_model = str((settings_store.get("chatgpt_model", "") if settings_store else "") or global_params.get("chatgpt_model", "gpt-4o")).strip()
+    chatgpt_models = [m.strip() for m in str(global_settings.get("chatgpt_model", "gpt-4o,gpt-4o-mini,gpt-3.5-turbo")).split(",") if m.strip()]
+    if chatgpt_model and chatgpt_model not in chatgpt_models:
+        chatgpt_models.insert(0, chatgpt_model)
+
+    deepseek_model = str((settings_store.get("deepseek_model", "") if settings_store else "") or global_params.get("deepseek_model", "deepseek-chat")).strip()
+    deepseek_models = [m.strip() for m in str(global_settings.get("deepseek_model", "deepseek-chat,deepseek-reasoner")).split(",") if m.strip()]
+    if deepseek_model and deepseek_model not in deepseek_models:
+        deepseek_models.insert(0, deepseek_model)
+
+    gemini_model = str((settings_store.get("gemini_model", "") if settings_store else "") or global_params.get("gemini_model", "gemini-2.0-flash")).strip()
+    gemini_models = [m.strip() for m in str(global_settings.get("gemini_model", "gemini-2.0-flash,gemini-1.5-pro,gemini-1.5-flash")).split(",") if m.strip()]
+    if gemini_model and gemini_model not in gemini_models:
+        gemini_models.insert(0, gemini_model)
+
+    elevenlabs_model = str((settings_store.get("elevenlabstts_models", "") if settings_store else "") or global_params.get("elevenlabstts_models", "eleven_multilingual_v2")).strip()
+    elevenlabs_models = [m.strip() for m in str(global_settings.get("elevenlabstts_models", ELEVENLABS_TTS_MODELS)).split(",") if m.strip()]
+    if elevenlabs_model and elevenlabs_model not in elevenlabs_models:
+        elevenlabs_models.insert(0, elevenlabs_model)
 
     providers = {
         "deepgram": {
@@ -405,8 +583,8 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "asr",
             "configured": secret_store.is_secret_configured("deepgram_apikey"),
             "fromEnv": secret_store.is_from_env("deepgram_apikey"),
-            "model": global_params.get("model_name", "nova-3"),
-            "models": ["nova-3", "nova-2"],
+            "model": deepgram_model,
+            "models": deepgram_models,
         },
         "openai": {
             "id": "openai",
@@ -414,9 +592,9 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "llm",
             "configured": secret_store.is_secret_configured("chatgpt_key"),
             "fromEnv": secret_store.is_from_env("chatgpt_key"),
-            "model": global_params.get("chatgpt_model", "gpt-4o"),
-            "models": [m.strip() for m in str(global_settings.get("chatgpt_model", "gpt-4o,gpt-4o-mini,gpt-3.5-turbo")).split(",") if m.strip()],
-            "baseUrl": global_params.get("chatgpt_api", ""),
+            "model": chatgpt_model,
+            "models": chatgpt_models,
+            "baseUrl": str((settings_store.get("chatgpt_api", "") if settings_store else "") or global_params.get("chatgpt_api", "")),
         },
         "deepseek": {
             "id": "deepseek",
@@ -424,9 +602,9 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "llm",
             "configured": secret_store.is_secret_configured("deepseek_key"),
             "fromEnv": secret_store.is_from_env("deepseek_key"),
-            "model": global_params.get("deepseek_model", "deepseek-chat"),
-            "models": [m.strip() for m in str(global_settings.get("deepseek_model", "deepseek-chat,deepseek-reasoner")).split(",") if m.strip()],
-            "baseUrl": global_params.get("deepseek_api", "https://api.deepseek.com/v1"),
+            "model": deepseek_model,
+            "models": deepseek_models,
+            "baseUrl": str((settings_store.get("deepseek_api", "") if settings_store else "") or global_params.get("deepseek_api", "https://api.deepseek.com/v1")),
         },
         "gemini": {
             "id": "gemini",
@@ -434,9 +612,9 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "multimodal",
             "configured": secret_store.is_secret_configured("gemini_key"),
             "fromEnv": secret_store.is_from_env("gemini_key"),
-            "model": global_params.get("gemini_model", "gemini-2.0-flash"),
-            "models": [m.strip() for m in str(global_settings.get("gemini_model", "gemini-2.0-flash,gemini-1.5-pro,gemini-1.5-flash")).split(",") if m.strip()],
-            "baseUrl": global_params.get("gemini_api", ""),
+            "model": gemini_model,
+            "models": gemini_models,
+            "baseUrl": str((settings_store.get("gemini_api", "") if settings_store else "") or global_params.get("gemini_api", "")),
         },
         "elevenlabs": {
             "id": "elevenlabs",
@@ -444,8 +622,8 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "tts",
             "configured": secret_store.is_secret_configured("elevenlabstts_key"),
             "fromEnv": secret_store.is_from_env("elevenlabstts_key"),
-            "model": global_params.get("elevenlabstts_models", "eleven_multilingual_v2"),
-            "models": [m.strip() for m in str(ELEVENLABS_TTS_MODELS).split(",") if m.strip()],
+            "model": elevenlabs_model,
+            "models": elevenlabs_models,
         },
         "huggingface": {
             "id": "huggingface",
@@ -459,8 +637,8 @@ async def get_settings_handler(request: Request) -> JSONResponse:
 
     general = {
         "proxy": global_settings.proxy or os.environ.get("HTTPS_PROXY", ""),
-        "defaultSourceLanguage": global_params.get("source_language", "en"),
-        "defaultTargetLanguage": global_params.get("target_language", "zh-cn"),
+        "defaultSourceLanguage": str((settings_store.get("source_language", "") if settings_store else "") or global_params.get("source_language", "en")),
+        "defaultTargetLanguage": str((settings_store.get("target_language", "") if settings_store else "") or global_params.get("target_language", "zh-cn")),
         "crf": global_settings.get("crf", 23),
         "preset": global_settings.get("preset", "slow"),
     }
@@ -484,6 +662,7 @@ async def update_provider_settings_handler(
     if not secret_key:
         raise HTTPException(status_code=404, detail=f"Unknown provider: {provider_id}")
 
+    settings_store = getattr(request.app.state, "settings_store", None)
     raw_key = payload.apiKey if payload.apiKey is not None else payload.token
     if raw_key is not None:
         key_val = str(raw_key).strip()
@@ -493,29 +672,92 @@ async def update_provider_settings_handler(
             global_settings.save()
         else:
             global_params[secret_key] = key_val
+        if settings_store is not None:
+            try:
+                settings_store[secret_key] = key_val
+            except Exception:
+                pass
 
     if payload.model is not None:
         model_str = str(payload.model).strip()
         if provider_id == "deepgram":
             global_params["model_name"] = model_str
             global_params["stt_model_name"] = model_str
+            if settings_store is not None:
+                try:
+                    settings_store["model_name"] = model_str
+                    settings_store["stt_model_name"] = model_str
+                except Exception:
+                    pass
         elif provider_id in ("openai", "chatgpt"):
             global_params["chatgpt_model"] = model_str
+            if settings_store is not None:
+                try:
+                    settings_store["chatgpt_model"] = model_str
+                except Exception:
+                    pass
+            cur_models = [m.strip() for m in str(global_settings.get("chatgpt_model", "")).split(",") if m.strip()]
+            if model_str and model_str not in cur_models:
+                cur_models.insert(0, model_str)
+                global_settings["chatgpt_model"] = ",".join(cur_models)
+                global_settings.save()
         elif provider_id == "deepseek":
             global_params["deepseek_model"] = model_str
+            if settings_store is not None:
+                try:
+                    settings_store["deepseek_model"] = model_str
+                except Exception:
+                    pass
+            cur_models = [m.strip() for m in str(global_settings.get("deepseek_model", "")).split(",") if m.strip()]
+            if model_str and model_str not in cur_models:
+                cur_models.insert(0, model_str)
+                global_settings["deepseek_model"] = ",".join(cur_models)
+                global_settings.save()
         elif provider_id == "gemini":
             global_params["gemini_model"] = model_str
+            if settings_store is not None:
+                try:
+                    settings_store["gemini_model"] = model_str
+                except Exception:
+                    pass
+            cur_models = [m.strip() for m in str(global_settings.get("gemini_model", "")).split(",") if m.strip()]
+            if model_str and model_str not in cur_models:
+                cur_models.insert(0, model_str)
+                global_settings["gemini_model"] = ",".join(cur_models)
+                global_settings.save()
         elif provider_id == "elevenlabs":
             global_params["elevenlabstts_models"] = model_str
+            if settings_store is not None:
+                try:
+                    settings_store["elevenlabstts_models"] = model_str
+                except Exception:
+                    pass
 
     if payload.baseUrl is not None:
         b_str = str(payload.baseUrl).strip()
         if provider_id in ("openai", "chatgpt"):
-            global_params["chatgpt_api"] = b_str
+            from videotrans.util.network import process_openai_api
+            norm_b = process_openai_api(b_str) if b_str else ""
+            global_params["chatgpt_api"] = norm_b
+            if settings_store is not None:
+                try:
+                    settings_store["chatgpt_api"] = norm_b
+                except Exception:
+                    pass
         elif provider_id == "deepseek":
             global_params["deepseek_api"] = b_str
+            if settings_store is not None:
+                try:
+                    settings_store["deepseek_api"] = b_str
+                except Exception:
+                    pass
         elif provider_id == "gemini":
             global_params["gemini_api"] = b_str
+            if settings_store is not None:
+                try:
+                    settings_store["gemini_api"] = b_str
+                except Exception:
+                    pass
 
     if payload.mirrorUrl is not None and provider_id in ("huggingface", "hf"):
         m_str = str(payload.mirrorUrl).strip()
@@ -527,7 +769,12 @@ async def update_provider_settings_handler(
     if provider_id in ("huggingface", "hf"):
         global_settings.save()
     else:
-        global_params._save_to_disk()
+        global_params.save()
+    if settings_store is not None and hasattr(settings_store, "save"):
+        try:
+            settings_store.save()
+        except Exception:
+            pass
 
     return JSONResponse({
         "ok": True,
@@ -572,7 +819,95 @@ async def test_provider_connection_handler(
     ok, msg = await probe_fn(provider_id, api_key, base_url, proxy)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
-    return JSONResponse({"ok": True, "message": msg})
+
+    models: list[str] = []
+    try:
+        fetcher_fn = (getattr(req_app.state, "provider_model_fetcher", None) if req_app else None) or fetch_remote_provider_models
+        m_ok, m_list, _ = await fetcher_fn(provider_id, api_key, base_url, proxy)
+        if m_ok and m_list:
+            models = m_list
+            models_csv = ",".join(models)
+            if provider_id in ("openai", "chatgpt"):
+                global_settings["chatgpt_model"] = models_csv
+                global_settings.save()
+            elif provider_id == "deepseek":
+                global_settings["deepseek_model"] = models_csv
+                global_settings.save()
+            elif provider_id == "gemini":
+                global_settings["gemini_model"] = models_csv
+                global_settings.save()
+            elif provider_id == "deepgram":
+                global_settings["deepgram_model"] = models_csv
+                global_settings.save()
+            elif provider_id == "elevenlabs":
+                global_settings["elevenlabstts_models"] = models_csv
+                global_settings.save()
+    except Exception:
+        pass
+
+    return JSONResponse({"ok": True, "message": msg, "models": models})
+
+
+@router.post("/api/settings/providers/{category}/{provider_id}/models")
+async def get_provider_models_handler(
+    category: str,
+    provider_id: str,
+    payload: Optional[ProviderTestRequest] = None,
+    request: Request = None,
+) -> JSONResponse:
+    provider_id = provider_id.lower()
+    secret_key = PROVIDER_SECRET_MAP.get(provider_id)
+    if not secret_key:
+        raise HTTPException(status_code=404, detail=f"Unknown provider: {provider_id}")
+
+    api_key = str((payload.apiKey if payload else None) or (payload.token if payload else None) or "").strip()
+    if not api_key:
+        api_key = secret_store.resolve_secret(secret_key) or ""
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"API key is not configured for {provider_id}")
+
+    base_url = str((payload.baseUrl if payload else None) or "").strip()
+    if not base_url:
+        if provider_id in ("openai", "chatgpt"):
+            base_url = global_params.get("chatgpt_api", "")
+        elif provider_id == "deepseek":
+            base_url = global_params.get("deepseek_api", "")
+        elif provider_id == "gemini":
+            base_url = global_params.get("gemini_api", "")
+
+    proxy = str((payload.proxy if payload else None) or global_settings.proxy or "").strip()
+
+    req_app = request.app if request is not None else None
+    fetcher_fn = (getattr(req_app.state, "provider_model_fetcher", None) if req_app else None) or fetch_remote_provider_models
+    ok, models, msg = await fetcher_fn(provider_id, api_key, base_url, proxy)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+
+    if models:
+        models_csv = ",".join(models)
+        if provider_id in ("openai", "chatgpt"):
+            global_settings["chatgpt_model"] = models_csv
+            global_settings.save()
+        elif provider_id == "deepseek":
+            global_settings["deepseek_model"] = models_csv
+            global_settings.save()
+        elif provider_id == "gemini":
+            global_settings["gemini_model"] = models_csv
+            global_settings.save()
+        elif provider_id == "deepgram":
+            global_settings["deepgram_model"] = models_csv
+            global_settings.save()
+        elif provider_id == "elevenlabs":
+            global_settings["elevenlabstts_models"] = models_csv
+            global_settings.save()
+
+    return JSONResponse({
+        "ok": True,
+        "providerId": provider_id,
+        "models": models,
+        "message": f"Successfully loaded {len(models)} models from {provider_id}",
+    })
 
 
 @router.get("/api/settings/storage")

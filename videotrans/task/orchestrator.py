@@ -268,6 +268,7 @@ def run(
         transcript_options = extract_transcript_options(task)
         if asr_duration_val is None:
             asr_duration_val = getattr(task, "asr_duration", None)
+        detected_lang = getattr(task, "detect_language", None) or getattr(task.cfg, "source_code", None)
         send(
             EventKind.SUCCEEDED,
             details={
@@ -275,6 +276,9 @@ def run(
                 "segments": list(segments),
                 "transcript_options": transcript_options,
                 "asr_duration": asr_duration_val,
+                "detected_language": detected_lang,
+                "source_language": detected_lang,
+                "target_language": getattr(task.cfg, "target_code", None),
             },
         )
         return TaskResult(
@@ -388,6 +392,23 @@ def _persist_stage_artifacts(task: Any, stage_name: str) -> None:
                 if transcript_options:
                     cur_state["transcript_options"] = transcript_options
                     cur_state["selected_segment_option"] = cur_state.get("selected_segment_option", "utterances")
+                src_code = getattr(task, "detect_language", None) or getattr(task.cfg, "source_code", None)
+                if src_code:
+                    if "languages" not in cur_state:
+                        cur_state["languages"] = {}
+                    cur_state["languages"]["source"] = {
+                        "code": src_code,
+                        "name": src_code,
+                        "flag": "",
+                        "autoDetected": bool(getattr(task, "detect_language", None)),
+                    }
+                if getattr(task.cfg, "target_code", None):
+                    if "languages" not in cur_state:
+                        cur_state["languages"] = {}
+                    cur_state["languages"]["target"] = {
+                        "code": getattr(task.cfg, "target_code"),
+                        "name": getattr(task.cfg, "target_code"),
+                    }
                 update_project_state(pid, cur_state, stage=2, status="completed" if stage_name == "diariz" else "processing")
 
         elif stage_name == "trans":
@@ -486,6 +507,7 @@ def run_staged_translation(
                 seg_copy = dict(seg)
                 if not seg_copy.get("targetText"):
                     seg_copy["targetText"] = seg_copy.get("sourceText") or seg_copy.get("text") or ""
+                seg_copy["text"] = seg_copy["targetText"]
                 dur = max(0.1, float(seg_copy.get("endSec", 0.0) or 0.0) - float(seg_copy.get("startSec", 0.0) or 0.0))
                 cps, cps_status = calculate_cps(seg_copy["targetText"], dur)
                 seg_copy["targetCps"] = cps
@@ -561,6 +583,7 @@ def run_staged_translation(
 
             if translated_text:
                 seg_copy["targetText"] = translated_text
+                seg_copy["text"] = translated_text
             elif not seg_copy.get("targetText"):
                 seg_copy["targetText"] = seg_copy.get("sourceText") or seg_copy.get("text") or ""
 
