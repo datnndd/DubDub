@@ -18,6 +18,8 @@ class VieNeuTTS(BaseTTS):
         self.engine = self._create_engine()
 
     def _create_engine(self):
+        from videotrans.tts._vieneu_compat import setup_vieneu_environment
+        setup_vieneu_environment()
         from vieneu import Vieneu
 
         device = "cuda" if self.is_cuda else "cpu"

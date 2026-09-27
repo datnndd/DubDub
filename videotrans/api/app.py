@@ -121,6 +121,11 @@ async def lifespan(app: FastAPI):
     sweep_orphans_on_startup()
     voice_store.init_voice_dirs()
     voice_store.migrate_legacy_voices()
+    try:
+        from videotrans.tts._vieneu_compat import setup_vieneu_environment
+        setup_vieneu_environment()
+    except Exception:
+        pass
     yield
     # Shutdown sequence
     try:

@@ -31,11 +31,11 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
     Record<
       string,
       {
-        apiKey: string;
-        model: string;
-        baseUrl: string;
-        mirrorUrl: string;
-        showKey: boolean;
+        apiKey?: string;
+        model?: string;
+        baseUrl?: string;
+        mirrorUrl?: string;
+        showKey?: boolean;
       }
     >
   >({});
@@ -57,15 +57,14 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
 
   const getForm = (id: string, initial: ProviderStatus) => {
     const availableModels = modelsMap[id] || initial.models || [];
-    return (
-      formState[id] || {
-        apiKey: '',
-        model: initial.model || (availableModels && availableModels[0]) || '',
-        baseUrl: initial.baseUrl || '',
-        mirrorUrl: initial.mirrorUrl || '',
-        showKey: false,
-      }
-    );
+    const local = formState[id] || {};
+    return {
+      apiKey: local.apiKey !== undefined ? local.apiKey : (initial.apiKey || ''),
+      model: local.model !== undefined ? local.model : (initial.model || (availableModels && availableModels[0]) || ''),
+      baseUrl: local.baseUrl !== undefined ? local.baseUrl : (initial.baseUrl || ''),
+      mirrorUrl: local.mirrorUrl !== undefined ? local.mirrorUrl : (initial.mirrorUrl || ''),
+      showKey: local.showKey !== undefined ? local.showKey : false,
+    };
   };
 
   const updateForm = (id: string, updates: Partial<ReturnType<typeof getForm>>, initial: ProviderStatus) => {
@@ -85,7 +84,7 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
 
     try {
       const payload: { apiKey?: string; model?: string; baseUrl?: string; mirrorUrl?: string } = {};
-      if (form.apiKey.trim()) {
+      if (form.apiKey !== undefined) {
         payload.apiKey = form.apiKey.trim();
       }
       if (form.model) {
@@ -210,9 +209,9 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
       <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-start gap-2.5">
         <ShieldCheck className="w-4 h-4 text-[#8D4B00] shrink-0 mt-0.5" />
         <div className="text-[11px] text-stone-700 leading-relaxed">
-          <strong className="font-semibold text-stone-900">Machine-Bound Encryption:</strong> All API keys are
-          encrypted at rest using Scrypt KDF and Fernet symmetric cryptography derived from your host machine ID. Keys
-          are never returned to the browser in plaintext.
+          <strong className="font-semibold text-stone-900">Encrypted Credentials:</strong> All API keys are
+          encrypted at rest using machine-bound cryptography. Keys are masked by default to protect your privacy and
+          can be revealed and edited when needed.
         </div>
       </div>
 
@@ -280,24 +279,27 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
                     <label className="text-[10px] font-semibold text-stone-600 block mb-1">
                       {p.id === 'huggingface' ? 'User Access Token' : 'API Key'}
                     </label>
-                    <div className="relative">
+                    <div className="relative flex items-center">
                       <input
                         type={form.showKey ? 'text' : 'password'}
                         disabled={p.fromEnv}
                         placeholder={
-                          p.configured
-                            ? '•••••••••••••••••••••••• (Leave blank to keep current)'
+                          p.fromEnv
+                            ? 'Configured via environment variable'
+                            : p.configured
+                            ? '••••••••••••••••••••••••'
                             : 'Enter API key…'
                         }
                         value={form.apiKey}
                         onChange={(e) => updateForm(p.id, { apiKey: e.target.value }, p)}
-                        className="w-full text-xs p-2 pr-8 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400 font-mono disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full text-xs p-2 pr-9 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400 font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                       />
                       <button
                         type="button"
                         onClick={() => updateForm(p.id, { showKey: !form.showKey }, p)}
-                        className="absolute right-2 top-2.5 text-stone-400 hover:text-stone-700"
+                        className="absolute right-2 text-stone-400 hover:text-stone-700 p-1 rounded hover:bg-stone-200/50 transition-colors cursor-pointer"
                         title={form.showKey ? 'Hide key' : 'Show key'}
+                        aria-label={form.showKey ? 'Hide key' : 'Show key'}
                       >
                         {form.showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>

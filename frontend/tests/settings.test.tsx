@@ -178,5 +178,32 @@ describe('Settings Modal & Store integration', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('ApiProvidersTab renders saved API keys masked by default with password type', async () => {
+    const { ApiProvidersTab } = await import('../src/components/settings/tabs/ApiProvidersTab');
+
+    const sampleProviders = {
+      deepgram: {
+        id: 'deepgram',
+        name: 'Deepgram',
+        category: 'asr',
+        configured: true,
+        fromEnv: false,
+        apiKey: 'token-dg-secret-987654321',
+        model: 'nova-3',
+        models: ['nova-3', 'nova-2'],
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      <ApiProvidersTab providers={sampleProviders} onRefresh={async () => {}} />
+    );
+
+    // Key must be in input value and type must be password by default (masked)
+    expect(markup).toContain('type="password"');
+    expect(markup).toContain('value="token-dg-secret-987654321"');
+    expect(markup).toContain('title="Show key"');
+  });
 });
+
 

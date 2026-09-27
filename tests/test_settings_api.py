@@ -30,7 +30,7 @@ class TestSettingsAPI(unittest.IsolatedAsyncioTestCase):
             self.tmp_dir.cleanup()
         secret_store.invalidate()
 
-    async def test_get_settings_snapshot_does_not_leak_keys(self):
+    async def test_get_settings_snapshot_returns_saved_api_keys(self):
         secret_store.set_secret("deepgram_apikey", "super-secret-key-123")
         resp = await self.client.get("/api/settings")
         assert resp.status_code == 200
@@ -42,9 +42,8 @@ class TestSettingsAPI(unittest.IsolatedAsyncioTestCase):
 
         dg = data["providers"]["deepgram"]
         assert dg["configured"] is True
-        # Plaintext secret MUST NOT be present anywhere in response body
-        text_body = resp.text
-        assert "super-secret-key-123" not in text_body
+        # Configured API key must be returned to client for persistence and masked display
+        assert dg["apiKey"] == "super-secret-key-123"
 
     async def test_update_provider_settings_write_only(self):
         payload = {

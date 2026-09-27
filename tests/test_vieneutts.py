@@ -80,6 +80,8 @@ class TestVieNeuTTS:
         params = FakeParams(vieneu_roles={})
         reference_audio = tmp_path / "narrator.wav"
         reference_audio.write_bytes(b"audio")
+        voice_store_mock = SimpleNamespace(list_voices=lambda **kw: [])
+        monkeypatch.setattr("videotrans.core.voice_store.list_voices", lambda **kw: [])
         monkeypatch.setattr(help_role, "params", params)
         monkeypatch.setattr(help_role, "get_vieneu_preset_roles", lambda: ["Binh"])
 
@@ -90,6 +92,36 @@ class TestVieNeuTTS:
         assert help_role.get_vieneu_custom_voice_path("Custom: Narrator") == reference_audio.resolve().as_posix()
         assert help_role.remove_vieneu_custom_voice("Narrator") is True
         assert params.save_calls == 2
+
+    def test_setup_vieneu_environment_and_warning_filter(self):
+        import logging
+        from videotrans.tts._vieneu_compat import VieneuWarningFilter, setup_vieneu_environment
+
+        setup_vieneu_environment()
+
+        # Check filter behavior
+        flt = VieneuWarningFilter()
+        rec_warning = logging.LogRecord(
+            name="transformers.configuration_utils",
+            level=logging.WARNING,
+            pathname="test.py",
+            lineno=10,
+            msg="You are using a model of type `vieneu_v3` to instantiate a model of type ``. This may be expected...",
+            args=(),
+            exc_info=None,
+        )
+        assert flt.filter(rec_warning) is False
+
+        rec_normal = logging.LogRecord(
+            name="transformers.configuration_utils",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=20,
+            msg="Model loaded successfully",
+            args=(),
+            exc_info=None,
+        )
+        assert flt.filter(rec_normal) is True
 
     def test_custom_voice_rejects_preset_name(self, monkeypatch, tmp_path):
         from videotrans.util import help_role

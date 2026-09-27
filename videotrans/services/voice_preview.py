@@ -46,6 +46,8 @@ def get_default_preview_text(language: str) -> str:
 
 def _run_vieneu_synthesis(ref_audio: Path, output_file: Path, text: str, use_cuda: bool = True) -> None:
     """Run VieNeu TTS inference synchronously, with CPU fallback if CUDA OOM occurs."""
+    from videotrans.tts._vieneu_compat import setup_vieneu_environment
+    setup_vieneu_environment()
     import soundfile as sf
     from vieneu import Vieneu
 
@@ -337,6 +339,8 @@ async def synthesize_unified_tts_preview(
                     return
                 # Try VieNeu engine if installed
                 def _infer_vieneu_preset():
+                    from videotrans.tts._vieneu_compat import setup_vieneu_environment
+                    setup_vieneu_environment()
                     from vieneu import Vieneu
                     import soundfile as sf
                     engine = Vieneu(mode="v3turbo", device="cuda" if use_cuda else "cpu", backend="pytorch" if use_cuda else "onnx", max_batch_size=1)

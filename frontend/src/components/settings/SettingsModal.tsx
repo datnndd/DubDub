@@ -152,19 +152,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ forceOpen }) => {
             </div>
           ) : snapshot ? (
             <>
-              {activeTab === 'providers' && (
+              <div className={activeTab === 'providers' ? 'block' : 'hidden'}>
                 <ApiProvidersTab
                   providers={snapshot.providers}
                   targetProvider={targetProvider}
                   onRefresh={loadData}
                 />
-              )}
-              {activeTab === 'storage' && (
+              </div>
+              <div className={activeTab === 'storage' ? 'block' : 'hidden'}>
                 <StorageTab storage={snapshot.storage} onRefresh={loadData} />
-              )}
-              {activeTab === 'general' && (
+              </div>
+              <div className={activeTab === 'general' ? 'block' : 'hidden'}>
                 <GeneralTab general={snapshot.general} onRefresh={loadData} />
-              )}
+              </div>
             </>
           ) : null}
         </div>

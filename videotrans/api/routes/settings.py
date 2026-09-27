@@ -355,10 +355,10 @@ async def options_handler(request: Request) -> JSONResponse:
         ],
         "voices": list(enumerate(tts.TTS_NAME_LIST)),
         "defaults": {
-            "sourceLanguage": "zh-cn",
-            "targetLanguage": "vi",
+            "sourceLanguage": str((settings_store.get("source_language", "") if settings_store else "") or global_params.get("source_language", "en")).strip() or "en",
+            "targetLanguage": str((settings_store.get("target_language", "") if settings_store else "") or global_params.get("target_language", "vi")).strip() or "vi",
             "recognType": recognition.Deepgram,
-            "modelName": "nova-3",
+            "modelName": str((settings_store.get("model_name", "") if settings_store else "") or global_params.get("model_name", "nova-3")).strip() or "nova-3",
             "timingMode": "voice",
             "translateType": translator.GOOGLE_INDEX,
             "translationMode": _translation_mode()[0],
@@ -576,6 +576,11 @@ async def get_settings_handler(request: Request) -> JSONResponse:
     if elevenlabs_model and elevenlabs_model not in elevenlabs_models:
         elevenlabs_models.insert(0, elevenlabs_model)
 
+    def _resolve_provider_key(secret_key: str) -> str:
+        if settings_store and settings_store.get(secret_key):
+            return str(settings_store.get(secret_key)).strip()
+        return (secret_store.resolve_secret(secret_key) or "").strip()
+
     providers = {
         "deepgram": {
             "id": "deepgram",
@@ -583,6 +588,7 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "asr",
             "configured": secret_store.is_secret_configured("deepgram_apikey"),
             "fromEnv": secret_store.is_from_env("deepgram_apikey"),
+            "apiKey": _resolve_provider_key("deepgram_apikey"),
             "model": deepgram_model,
             "models": deepgram_models,
         },
@@ -592,6 +598,7 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "llm",
             "configured": secret_store.is_secret_configured("chatgpt_key"),
             "fromEnv": secret_store.is_from_env("chatgpt_key"),
+            "apiKey": _resolve_provider_key("chatgpt_key"),
             "model": chatgpt_model,
             "models": chatgpt_models,
             "baseUrl": str((settings_store.get("chatgpt_api", "") if settings_store else "") or global_params.get("chatgpt_api", "")),
@@ -602,6 +609,7 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "llm",
             "configured": secret_store.is_secret_configured("deepseek_key"),
             "fromEnv": secret_store.is_from_env("deepseek_key"),
+            "apiKey": _resolve_provider_key("deepseek_key"),
             "model": deepseek_model,
             "models": deepseek_models,
             "baseUrl": str((settings_store.get("deepseek_api", "") if settings_store else "") or global_params.get("deepseek_api", "https://api.deepseek.com/v1")),
@@ -612,6 +620,7 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "multimodal",
             "configured": secret_store.is_secret_configured("gemini_key"),
             "fromEnv": secret_store.is_from_env("gemini_key"),
+            "apiKey": _resolve_provider_key("gemini_key"),
             "model": gemini_model,
             "models": gemini_models,
             "baseUrl": str((settings_store.get("gemini_api", "") if settings_store else "") or global_params.get("gemini_api", "")),
@@ -622,6 +631,7 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "tts",
             "configured": secret_store.is_secret_configured("elevenlabstts_key"),
             "fromEnv": secret_store.is_from_env("elevenlabstts_key"),
+            "apiKey": _resolve_provider_key("elevenlabstts_key"),
             "model": elevenlabs_model,
             "models": elevenlabs_models,
         },
@@ -631,6 +641,7 @@ async def get_settings_handler(request: Request) -> JSONResponse:
             "category": "weights",
             "configured": secret_store.is_secret_configured("hf_token"),
             "fromEnv": secret_store.is_from_env("hf_token"),
+            "apiKey": _resolve_provider_key("hf_token"),
             "mirrorUrl": os.environ.get("HF_ENDPOINT", ""),
         },
     }
@@ -638,7 +649,7 @@ async def get_settings_handler(request: Request) -> JSONResponse:
     general = {
         "proxy": global_settings.proxy or os.environ.get("HTTPS_PROXY", ""),
         "defaultSourceLanguage": str((settings_store.get("source_language", "") if settings_store else "") or global_params.get("source_language", "en")),
-        "defaultTargetLanguage": str((settings_store.get("target_language", "") if settings_store else "") or global_params.get("target_language", "zh-cn")),
+        "defaultTargetLanguage": str((settings_store.get("target_language", "") if settings_store else "") or global_params.get("target_language", "vi")),
         "crf": global_settings.get("crf", 23),
         "preset": global_settings.get("preset", "slow"),
     }

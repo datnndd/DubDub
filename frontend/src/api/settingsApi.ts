@@ -6,6 +6,7 @@ export interface ProviderStatus {
   category: string;
   configured: boolean;
   fromEnv: boolean;
+  apiKey?: string;
   model?: string;
   models?: string[];
   baseUrl?: string;
