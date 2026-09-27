@@ -14,6 +14,8 @@ import {
   Sparkles,
   Loader2,
   Users,
+  Filter,
+  X,
 } from 'lucide-react';
 import { previewTTS } from '../api/voices';
 import type { Segment } from '../types/segment';
@@ -66,7 +68,6 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const setSegmentVoiceOverride = useDubDubStore((s) => s.setSegmentVoiceOverride);
   const clearSegmentVoiceOverride = useDubDubStore((s) => s.clearSegmentVoiceOverride);
   const updateSegmentVoicePreview = useDubDubStore((s) => s.updateSegmentVoicePreview);
-  const updateTuning = useDubDubStore((s) => s.updateTuning);
   const updateSegmentText = useDubDubStore((s) => s.updateSegmentText);
   const setCreateVoiceModalOpen = useDubDubStore((s) => s.setCreateVoiceModalOpen);
   const setVoiceManagerDrawerOpen = useDubDubStore((s) => s.setVoiceManagerDrawerOpen);
@@ -75,11 +76,38 @@ export const Stage3VoiceDubbing: React.FC = () => {
 
   const [loadingPreviewMap, setLoadingPreviewMap] = useState<Record<number, boolean>>({});
   const [playingSegmentId, setPlayingSegmentId] = useState<number | null>(null);
+  const [selectedSpeakerFilter, setSelectedSpeakerFilter] = useState<string>('all');
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const speakers = useMemo(() => {
     return getDistinctSpeakers(segments, rawSpeakers);
   }, [segments, rawSpeakers, getDistinctSpeakers]);
+
+  const speakerCueCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    segments.forEach((seg) => {
+      const rawSpkId = seg.speakerId ?? (seg as any).speakerLabel ?? (seg as any).speakerName ?? 'spk_1';
+      const segSpkId = String(rawSpkId).trim();
+      const matchedSpeaker = speakers.find(
+        (s) => s.id === segSpkId || (seg.speakerId != null && s.id === String(seg.speakerId))
+      );
+      const key = matchedSpeaker?.id || segSpkId;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [segments, speakers]);
+
+  const filteredSegments = useMemo(() => {
+    if (selectedSpeakerFilter === 'all') return segments;
+    return segments.filter((seg) => {
+      const rawSpkId = seg.speakerId ?? (seg as any).speakerLabel ?? (seg as any).speakerName ?? 'spk_1';
+      const segSpkId = String(rawSpkId).trim();
+      const matchedSpeaker = speakers.find(
+        (s) => s.id === segSpkId || (seg.speakerId != null && s.id === String(seg.speakerId))
+      );
+      return segSpkId === selectedSpeakerFilter || matchedSpeaker?.id === selectedSpeakerFilter;
+    });
+  }, [segments, speakers, selectedSpeakerFilter]);
 
   const currentProvider = Number(backend?.config?.ttsType ?? 2);
 
@@ -261,59 +289,120 @@ export const Stage3VoiceDubbing: React.FC = () => {
             </div>
           </div>
 
-          {/* Global Dubbing Tuning Faders */}
-          <div className="p-3 rounded-xl border border-stone-200 bg-stone-50/50 space-y-3">
-            <div className="flex items-center gap-1.5 font-bold text-xs text-stone-900">
-              <Sliders className="w-3.5 h-3.5 text-[#8D4B00]" />
-              <span>Voice Synthesis Tuning</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="flex items-center justify-between text-[10px] text-stone-600 mb-1">
-                  <span>Speech Rate</span>
-                  <span className="font-mono font-bold">{(tuning?.pace ?? 1.0).toFixed(2)}x</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.75"
-                  max="1.5"
-                  step="0.05"
-                  value={tuning?.pace ?? 1.0}
-                  onChange={(e) => updateTuning('pace', parseFloat(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between text-[10px] text-stone-600 mb-1">
-                  <span>Timbre Warmth</span>
-                  <span className="font-mono font-bold">{tuning?.timbreWarmth ?? 62}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={tuning?.timbreWarmth ?? 62}
-                  onChange={(e) => updateTuning('timbreWarmth', parseInt(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Per-Segment Dialogue Blocks */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                Dialogue Cue Overrides
-              </h4>
-              <span className="text-[10px] text-stone-500 font-mono">
-                {segments.length} {segments.length === 1 ? 'cue' : 'cues'}
-              </span>
+            {/* Header with Title, Cue Count, and Speaker Filter */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                  Dialogue Cue Overrides
+                </h4>
+                {selectedSpeakerFilter !== 'all' && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-[#8D4B00]">
+                    Filtered
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Speaker Filter Dropdown */}
+                <div className="flex items-center gap-1.5 bg-stone-100/90 px-2.5 py-1 rounded-lg border border-stone-200 shadow-2xs">
+                  <Filter className="w-3 h-3 text-[#8D4B00]" />
+                  <span className="text-[11px] font-semibold text-stone-600">Speaker:</span>
+                  <select
+                    data-testid="stage3-speaker-filter"
+                    data-action="filter-speaker"
+                    value={selectedSpeakerFilter}
+                    onChange={(e) => setSelectedSpeakerFilter(e.target.value)}
+                    className="text-xs font-semibold bg-white border border-stone-200 rounded px-2 py-0.5 text-stone-800 focus:outline-none focus:border-[#8D4B00] cursor-pointer"
+                  >
+                    <option value="all">All Speakers ({segments.length})</option>
+                    {speakers.map((spk) => (
+                      <option key={spk.id} value={spk.id}>
+                        {spk.name} ({speakerCueCounts[spk.id] || 0})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedSpeakerFilter !== 'all' && (
+                    <button
+                      type="button"
+                      data-testid="clear-speaker-filter-btn"
+                      onClick={() => setSelectedSpeakerFilter('all')}
+                      className="p-0.5 rounded hover:bg-stone-200 text-stone-400 hover:text-stone-700 cursor-pointer"
+                      title="Clear speaker filter"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                <span className="text-[10px] text-stone-500 font-mono">
+                  {filteredSegments.length} of {segments.length} {segments.length === 1 ? 'cue' : 'cues'}
+                </span>
+              </div>
             </div>
 
-            {segments.map((seg) => {
+            {/* Quick Interactive Speaker Pills */}
+            {speakers.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs">
+                <button
+                  type="button"
+                  data-testid="filter-pill-all"
+                  onClick={() => setSelectedSpeakerFilter('all')}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors cursor-pointer shrink-0 ${
+                    selectedSpeakerFilter === 'all'
+                      ? 'bg-[#8D4B00] text-white shadow-2xs'
+                      : 'bg-stone-100 hover:bg-stone-200 text-stone-600'
+                  }`}
+                >
+                  All ({segments.length})
+                </button>
+                {speakers.map((spk) => {
+                  const isSelected = selectedSpeakerFilter === spk.id;
+                  const badgeClass = getSpeakerBadgeClasses(spk.color);
+                  const count = speakerCueCounts[spk.id] || 0;
+                  return (
+                    <button
+                      key={spk.id}
+                      type="button"
+                      data-testid={`filter-pill-${spk.id}`}
+                      onClick={() => setSelectedSpeakerFilter(isSelected ? 'all' : spk.id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer shrink-0 border ${
+                        isSelected
+                          ? 'bg-amber-50 border-[#8D4B00] text-[#8D4B00] ring-1 ring-[#8D4B00]/30 shadow-2xs font-bold'
+                          : 'bg-white border-stone-200 hover:border-stone-300 text-stone-700'
+                      }`}
+                    >
+                      <span className={`w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center font-bold ${badgeClass}`}>
+                        {spk.code || (spk.id != null ? String(spk.id).slice(0, 1).toUpperCase() : 'S')}
+                      </span>
+                      <span>{spk.name}</span>
+                      <span className="text-[10px] opacity-70">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {filteredSegments.length === 0 ? (
+              <div
+                data-testid="no-cues-for-speaker"
+                className="p-8 text-center bg-stone-50 rounded-xl border border-stone-200 text-stone-500 space-y-2"
+              >
+                <Users className="w-8 h-8 mx-auto text-stone-300" />
+                <p className="font-semibold text-xs text-stone-700">No dialogue cues found for this speaker</p>
+                <p className="text-[11px] text-stone-400">Try switching to another speaker or resetting the filter.</p>
+                <button
+                  type="button"
+                  data-testid="reset-empty-speaker-filter-btn"
+                  onClick={() => setSelectedSpeakerFilter('all')}
+                  className="mt-2 px-3 py-1 bg-white border border-stone-200 rounded-lg text-xs font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer shadow-2xs"
+                >
+                  Show All Cues
+                </button>
+              </div>
+            ) : (
+              filteredSegments.map((seg) => {
               const rawSpkId = seg.speakerId ?? (seg as any).speakerLabel ?? (seg as any).speakerName ?? 'spk_1';
               const segSpkId = String(rawSpkId).trim();
               const matchedSpeaker = speakers.find((s) => s.id === segSpkId || (seg.speakerId != null && s.id === String(seg.speakerId)));
@@ -497,7 +586,7 @@ export const Stage3VoiceDubbing: React.FC = () => {
                   </div>
                 </div>
               );
-            })}
+            }))}
           </div>
         </div>
       </div>

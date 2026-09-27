@@ -888,8 +888,13 @@ describe('React four-stage workflow', () => {
     const html = renderToStaticMarkup(<Stage3VoiceDubbing />);
     expect(html).toContain('Alice');
     expect(html).toContain('Bob');
-    expect(html).toContain('1.10x');
-    expect(html).toContain('75%');
+    // Tuning sliders removed as requested
+    expect(html).not.toContain('Voice Synthesis Tuning');
+    // Speaker filter dropdown and pill buttons
+    expect(html).toContain('data-testid="stage3-speaker-filter"');
+    expect(html).toContain('All Speakers (2)');
+    expect(html).toContain('data-testid="filter-pill-spk_1"');
+    expect(html).toContain('data-testid="filter-pill-spk_2"');
     expect(html).toContain('Dialogue Cue Overrides');
   });
 
@@ -1305,6 +1310,64 @@ describe('React four-stage workflow', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test('Stage 3 speaker filter accurately renders filter dropdown, counts, and pills', () => {
+    useDubDubStore.setState({
+      segments: [
+        {
+          id: 1,
+          startSec: 0,
+          endSec: 2,
+          startTime: '00:00.000',
+          endTime: '00:02.000',
+          sourceText: 'Hello from speaker 1',
+          targetText: 'Xin chao tu nguoi 1',
+          speakerId: 'spk_1',
+          speakerName: 'Speaker 1',
+        },
+        {
+          id: 2,
+          startSec: 2,
+          endSec: 4,
+          startTime: '00:02.000',
+          endTime: '00:04.000',
+          sourceText: 'Second line from speaker 1',
+          targetText: 'Cau thu hai tu nguoi 1',
+          speakerId: 'spk_1',
+          speakerName: 'Speaker 1',
+        },
+        {
+          id: 3,
+          startSec: 4,
+          endSec: 6,
+          startTime: '00:04.000',
+          endTime: '00:06.000',
+          sourceText: 'Hello from speaker 2',
+          targetText: 'Xin chao tu nguoi 2',
+          speakerId: 'spk_2',
+          speakerName: 'Speaker 2',
+        },
+      ],
+      speakers: [
+        { id: 'spk_1', name: 'Speaker 1', code: 'S1', color: 'amber' },
+        { id: 'spk_2', name: 'Speaker 2', code: 'S2', color: 'purple' },
+      ],
+    });
+
+    const html = renderToStaticMarkup(<Stage3VoiceDubbing />);
+
+    // Speaker filter dropdown with total cues and counts
+    expect(html).toContain('data-testid="stage3-speaker-filter"');
+    expect(html).toContain('All Speakers (3)');
+    expect(html).toContain('Speaker 1 (2)');
+    expect(html).toContain('Speaker 2 (1)');
+
+    // Interactive quick filter pills
+    expect(html).toContain('data-testid="filter-pill-all"');
+    expect(html).toContain('data-testid="filter-pill-spk_1"');
+    expect(html).toContain('data-testid="filter-pill-spk_2"');
+    expect(html).toContain('3 of 3 cues');
   });
 });
 
