@@ -190,6 +190,35 @@ describe('React four-stage workflow', () => {
     expect(withoutSubs).toContain('CC OFF');
   });
 
+  test('VideoPlayer renders subtitles with blurred outline, white text, and black outline', () => {
+    useDubDubStore.setState({
+      segments: [{ ...segment, startSec: 0, endSec: 5, targetText: 'Subtitles Blurred Outline Test' }],
+      playback: { ...useDubDubStore.getState().playback, currentTime: 1.0 },
+    });
+
+    // 1. Dual mode (Stage 2 & 3)
+    const dualHtml = renderToStaticMarkup(
+      <VideoPlayer title="Dual Player" subtitleVariant="dual" initialSubtitlesVisible={true} />
+    );
+    expect(dualHtml).toContain('data-canvas-subtitle="true"');
+    expect(dualHtml).toContain('Subtitles Blurred Outline Test');
+    // White text
+    expect(dualHtml).toContain('color:#FFFFFF');
+    // Black outline around text
+    expect(dualHtml).toContain('-webkit-text-stroke:1.5px #000000');
+    // Blurred outline around them
+    expect(dualHtml).toContain('rgba(0,0,0,0.95)');
+    expect(dualHtml).toContain('drop-shadow');
+
+    // 2. CapCut mode (Stage 4)
+    const capcutHtml = renderToStaticMarkup(
+      <VideoPlayer title="CapCut Player" subtitleVariant="capcut" initialSubtitlesVisible={true} />
+    );
+    expect(capcutHtml).toContain('data-canvas-subtitle="true"');
+    expect(capcutHtml).toContain('-webkit-text-stroke:2px #000000');
+    expect(capcutHtml).toContain('drop-shadow');
+  });
+
   test('keeps Stage 3 speaker defaults and per-segment overrides independent', () => {
     const store = useDubDubStore.getState();
     store.setSpeakerVoice('speaker-1', 'voice-a');

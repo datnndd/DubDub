@@ -261,13 +261,13 @@ export const Stage4EditVideo: React.FC = () => {
 
                   <div>
                     <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="font-medium text-stone-700">Shadow Size</span>
+                      <span className="font-medium text-stone-700">Blurred Outline (Shadow / Glow)</span>
                       <span className="font-mono font-bold text-[#8D4B00]">{subtitleStyles.shadowSize}px</span>
                     </div>
                     <input
                       type="range"
                       min="0"
-                      max="8"
+                      max="12"
                       value={subtitleStyles.shadowSize}
                       onChange={(e) => updateSubtitleStyle('shadowSize', parseInt(e.target.value))}
                       className="w-full"

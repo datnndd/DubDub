@@ -93,14 +93,59 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   // Subtitle dynamic styles for CapCut canvas
+  const outlineWidth = subtitleStyles.outlineWidth ?? 2;
+  const outlineColor = subtitleStyles.outlineColor || '#000000';
+  const textColor = subtitleStyles.color || '#FFFFFF';
+  const shadowColor = subtitleStyles.shadowColor || 'rgba(0,0,0,0.85)';
+  const blurBase = Math.max(4, (subtitleStyles.shadowSize || 2) * 2.5);
+
   const capcutStyle: React.CSSProperties = {
-    fontFamily: subtitleStyles.fontFamily || 'Arial',
+    fontFamily: subtitleStyles.fontFamily || 'Arial, sans-serif',
     fontSize: `${subtitleStyles.fontSize || 22}px`,
-    color: subtitleStyles.color || '#FFFFFF',
-    WebkitTextStroke: `${subtitleStyles.outlineWidth || 2}px ${subtitleStyles.outlineColor || '#000000'}`,
-    textShadow: `${subtitleStyles.shadowSize || 2}px ${subtitleStyles.shadowSize || 2}px 0px ${
-      subtitleStyles.shadowColor || 'rgba(0,0,0,.75)'
-    }`,
+    color: textColor,
+    WebkitTextStroke: `${outlineWidth}px ${outlineColor}`,
+    paintOrder: 'stroke fill',
+    textShadow: [
+      // Solid black outline around text (8-directional crisp stroke)
+      `-${outlineWidth}px -${outlineWidth}px 0 ${outlineColor}`,
+      ` ${outlineWidth}px -${outlineWidth}px 0 ${outlineColor}`,
+      `-${outlineWidth}px  ${outlineWidth}px 0 ${outlineColor}`,
+      ` ${outlineWidth}px  ${outlineWidth}px 0 ${outlineColor}`,
+      ` 0 -${outlineWidth}px 0 ${outlineColor}`,
+      ` 0  ${outlineWidth}px 0 ${outlineColor}`,
+      `-${outlineWidth}px 0 0 ${outlineColor}`,
+      ` ${outlineWidth}px 0 0 ${outlineColor}`,
+      // Blurred outline around the subtitle (diffused multi-layer Gaussian halo)
+      `0 0 ${blurBase}px ${shadowColor}`,
+      `0 0 ${blurBase * 2}px ${shadowColor}`,
+      `0 0 ${blurBase * 3}px rgba(0,0,0,0.65)`,
+    ].join(', '),
+    filter: `drop-shadow(0 0 ${blurBase}px rgba(0,0,0,0.85))`,
+  };
+
+  // Subtitle dynamic styles for dual teleprompter deck (Stage 2 & Stage 3)
+  const dualSubtitleStyle: React.CSSProperties = {
+    fontFamily: subtitleStyles.fontFamily || 'Arial, sans-serif',
+    fontSize: `${subtitleStyles.fontSize || 20}px`,
+    color: '#FFFFFF',
+    WebkitTextStroke: '1.5px #000000',
+    paintOrder: 'stroke fill',
+    textShadow: [
+      // Black outline around the text
+      '-1.5px -1.5px 0 #000000',
+      ' 1.5px -1.5px 0 #000000',
+      '-1.5px  1.5px 0 #000000',
+      ' 1.5px  1.5px 0 #000000',
+      ' 0 -1.5px 0 #000000',
+      ' 0  1.5px 0 #000000',
+      '-1.5px 0 0 #000000',
+      ' 1.5px 0 0 #000000',
+      // Blurred outline around the subtitle
+      '0 0 6px rgba(0,0,0,0.95)',
+      '0 0 12px rgba(0,0,0,0.85)',
+      '0 0 20px rgba(0,0,0,0.65)',
+    ].join(', '),
+    filter: 'drop-shadow(0 0 6px rgba(0,0,0,0.85))',
   };
 
   return (
@@ -204,23 +249,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="w-full max-w-xl bg-black/85 backdrop-blur-md px-3.5 py-1.5 rounded-lg border border-amber-500/30 shadow-xl flex flex-col items-center">
-                {currentSegment?.speakerName && (
-                  <span
-                    data-canvas-speaker-badge="true"
-                    className="px-2 py-0.5 rounded-full bg-[#8D4B00] text-white text-[9px] font-bold uppercase tracking-wider mb-0.5"
-                  >
-                    {currentSegment.speakerName}
-                  </span>
-                )}
-                <p data-canvas-subtitle="true" className="text-white font-semibold text-xs leading-snug">
+              <div className="w-full max-w-2xl px-4 py-1 flex flex-col items-center">
+                <p
+                  data-canvas-subtitle="true"
+                  className="font-bold text-base leading-snug tracking-wide text-center select-none"
+                  style={dualSubtitleStyle}
+                >
                   {currentSegment?.targetText || currentSegment?.sourceText || ''}
                 </p>
-                {currentSegment?.sourceText && currentSegment?.targetText && (
-                  <p className="text-amber-200/80 text-[10px] font-mono mt-0.5">
-                    EN: {currentSegment.sourceText}
-                  </p>
-                )}
               </div>
             )}
           </div>
