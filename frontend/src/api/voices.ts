@@ -125,10 +125,14 @@ export interface TTSPreviewResponse {
   provider?: number;
 }
 
-export async function previewTTS(payload: TTSPreviewPayload): Promise<TTSPreviewResponse> {
+export async function previewTTS(
+  payload: TTSPreviewPayload,
+  options?: RequestInit
+): Promise<TTSPreviewResponse> {
   return apiRequest<TTSPreviewResponse>('/api/tts/preview', {
     method: 'POST',
     body: JSON.stringify(payload),
+    ...options,
   });
 }
 

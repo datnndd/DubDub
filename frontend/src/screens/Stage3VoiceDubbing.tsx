@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { previewTTS } from '../api/voices';
+import { useVoiceAudition, auditionVoice } from '../services/voiceAuditionManager';
 import type { Segment } from '../types/segment';
 
 const TTS_PROVIDERS = [
@@ -56,6 +57,7 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const speakerVoiceMap = useDubDubStore((s) => s.speakerVoiceMap);
   const segmentVoiceOverrides = useDubDubStore((s) => s.segmentVoiceOverrides);
   const voices = useDubDubStore((s) => s.voices);
+  const customVoices = useDubDubStore((s) => s.customVoices);
   const tuning = useDubDubStore((s) => s.tuning);
   const backend = useDubDubStore((s) => s.backend);
   const languages = useDubDubStore((s) => s.languages);
@@ -75,9 +77,10 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const updateBackendConfig = useDubDubStore((s) => (s as any).updateBackendConfig);
 
   const [loadingPreviewMap, setLoadingPreviewMap] = useState<Record<number, boolean>>({});
-  const [playingSegmentId, setPlayingSegmentId] = useState<number | null>(null);
   const [selectedSpeakerFilter, setSelectedSpeakerFilter] = useState<string>('all');
-  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [loadingSpeakerAudition, setLoadingSpeakerAudition] = useState<Record<string, boolean>>({});
+
+  const { isKeyPlaying, isKeyLoading, stop, stopIfKey, play } = useVoiceAudition();
 
   const speakers = useMemo(() => {
     return getDistinctSpeakers(segments, rawSpeakers);
@@ -119,12 +122,9 @@ export const Stage3VoiceDubbing: React.FC = () => {
   // Stop preview audio playback on unmount
   useEffect(() => {
     return () => {
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause();
-        previewAudioRef.current = null;
-      }
+      stop();
     };
-  }, []);
+  }, [stop]);
 
   const handleProviderChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newProvider = parseInt(e.target.value, 10);
@@ -135,22 +135,41 @@ export const Stage3VoiceDubbing: React.FC = () => {
     triggerAutosave();
   };
 
+  const handleAuditionSpeakerVoice = async (speakerId: string, voiceId: string) => {
+    if (!voiceId || !voiceId.trim() || voiceId === 'No' || voiceId.trim().toLowerCase() === 'clone') return;
+    const targetLanguage = languages?.target?.code || 'vi';
+    const matchedCustom = customVoices.find(
+      (cv) => cv.id === voiceId || cv.name === voiceId || `Custom: ${cv.name}` === voiceId
+    );
+    const matchedPreset = voices.find((v) => v.id === voiceId || v.name === voiceId);
+    const resolvedVoice = matchedCustom ? matchedCustom.id : (matchedPreset ? matchedPreset.id : voiceId);
+    const targetProvider = matchedCustom?.provider ?? matchedPreset?.provider ?? currentProvider;
+    const isMatchedPresetClone =
+      matchedPreset &&
+      matchedPreset.id.toLowerCase() !== 'clone' &&
+      (matchedPreset.kind === 'custom' || matchedPreset.kind === 'clone' || matchedPreset.id.startsWith('voice_'));
+    const staticSample = matchedCustom
+      ? `/api/custom-voices/${matchedCustom.id}/audio`
+      : matchedPreset?.sampleUrl || (isMatchedPresetClone ? `/api/custom-voices/${matchedPreset.id}/audio` : undefined);
+
+    await auditionVoice({
+      key: `speaker-${speakerId}`,
+      voice: resolvedVoice,
+      provider: targetProvider,
+      language: targetLanguage,
+      staticSampleUrl: staticSample,
+      onLoadingChange: (loading) => {
+        setLoadingSpeakerAudition((prev) => ({ ...prev, [speakerId]: loading }));
+      },
+    });
+  };
+
   const handleTogglePlay = (segmentId: number, audioUrl: string) => {
-    if (playingSegmentId === segmentId) {
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause();
-      }
-      setPlayingSegmentId(null);
+    const segKey = `segment-${segmentId}`;
+    if (isKeyPlaying(segKey)) {
+      stop();
     } else {
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause();
-      }
-      const audio = new Audio(audioUrl);
-      previewAudioRef.current = audio;
-      audio.onended = () => setPlayingSegmentId(null);
-      audio.onerror = () => setPlayingSegmentId(null);
-      audio.play().catch(() => setPlayingSegmentId(null));
-      setPlayingSegmentId(segmentId);
+      play(segKey, audioUrl);
     }
   };
 
@@ -158,10 +177,17 @@ export const Stage3VoiceDubbing: React.FC = () => {
     setLoadingPreviewMap((prev) => ({ ...prev, [seg.id]: true }));
     try {
       const textToSynthesize = seg.targetText || seg.sourceText || '';
+      const matchedCustom = customVoices.find(
+        (cv) => cv.id === activeVoice || cv.name === activeVoice || `Custom: ${cv.name}` === activeVoice
+      );
+      const matchedPreset = voices.find((v) => v.id === activeVoice || v.name === activeVoice);
+      const resolvedVoice = matchedCustom ? matchedCustom.id : (matchedPreset ? matchedPreset.id : activeVoice);
+      const targetProvider = matchedCustom?.provider ?? matchedPreset?.provider ?? currentProvider;
+
       const res = await previewTTS({
         text: textToSynthesize,
-        voice: activeVoice,
-        provider: currentProvider,
+        voice: resolvedVoice,
+        provider: targetProvider,
         language: languages?.target?.code || 'vi',
         speed: tuning?.pace,
         segment_id: seg.id,
@@ -279,9 +305,57 @@ export const Stage3VoiceDubbing: React.FC = () => {
                     <div className="flex items-center gap-2 shrink-0" data-speaker-voice-select={spk.id}>
                       <VoiceSelector
                         value={currentVoice}
-                        onChange={(voiceId) => setSpeakerVoice(spk.id, voiceId)}
+                        onChange={(voiceId) => {
+                          stopIfKey(`speaker-${spk.id}`);
+                          setSpeakerVoice(spk.id, voiceId);
+                        }}
                         size="md"
+                        provider={currentProvider}
+                        language={languages?.target?.code || 'vi'}
                       />
+                      {(() => {
+                        const hasValidVoice = Boolean(
+                          currentVoice &&
+                          currentVoice.trim() &&
+                          currentVoice !== 'No' &&
+                          currentVoice.trim().toLowerCase() !== 'clone'
+                        );
+                        const isThisLoading = isKeyLoading(`speaker-${spk.id}`) || Boolean(loadingSpeakerAudition[spk.id]);
+                        const isThisPlaying = isKeyPlaying(`speaker-${spk.id}`);
+
+                        return (
+                          <button
+                            type="button"
+                            data-action="audition-speaker-voice"
+                            data-speaker-id={spk.id}
+                            onClick={() => handleAuditionSpeakerVoice(spk.id, currentVoice)}
+                            disabled={!hasValidVoice || isThisLoading}
+                            className={`p-2 rounded-lg border transition-colors flex items-center justify-center cursor-pointer shadow-2xs ${
+                              isThisPlaying
+                                ? 'bg-[#8D4B00] text-white border-[#8D4B00]'
+                                : 'bg-white text-stone-600 border-stone-200 hover:border-amber-400 hover:text-[#8D4B00]'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={
+                              !hasValidVoice
+                                ? 'No voice assigned'
+                                : isThisPlaying
+                                ? 'Stop Audition'
+                                : isThisLoading
+                                ? 'Generating voice preview…'
+                                : `Audition ${currentVoice}`
+                            }
+                            aria-label={`Audition voice for ${spk.name}`}
+                          >
+                            {isThisLoading ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#8D4B00]" />
+                            ) : isThisPlaying ? (
+                              <Pause className="w-3.5 h-3.5" />
+                            ) : (
+                              <Play className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -421,7 +495,7 @@ export const Stage3VoiceDubbing: React.FC = () => {
                 (voices[0]?.id ?? 'Default');
 
               const isLoadingPreview = Boolean(loadingPreviewMap[seg.id]);
-              const isPlayingThis = playingSegmentId === seg.id;
+              const isPlayingThis = isKeyPlaying(`segment-${seg.id}`);
 
               return (
                 <div
@@ -480,8 +554,13 @@ export const Stage3VoiceDubbing: React.FC = () => {
 
                       <VoiceSelector
                         value={activeVoice}
-                        onChange={(voiceId) => setSegmentVoiceOverride(seg.id, voiceId)}
+                        onChange={(voiceId) => {
+                          stopIfKey(`segment-${seg.id}`);
+                          setSegmentVoiceOverride(seg.id, voiceId);
+                        }}
                         size="sm"
+                        provider={currentProvider}
+                        language={languages?.target?.code || 'vi'}
                       />
 
                       {hasOverride && (

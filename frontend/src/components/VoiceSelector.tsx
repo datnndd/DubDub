@@ -12,7 +12,9 @@ import {
   ChevronDown,
   User,
   AudioWaveform,
+  Loader2,
 } from 'lucide-react';
+import { useVoiceAudition, auditionVoice } from '../services/voiceAuditionManager';
 
 export interface VoiceSelectorProps {
   value: string;
@@ -21,6 +23,9 @@ export interface VoiceSelectorProps {
   className?: string;
   disabled?: boolean;
   placeholder?: string;
+  provider?: number;
+  language?: string;
+  forceOpen?: boolean;
 }
 
 interface SelectorOption {
@@ -54,31 +59,48 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
   className = '',
   disabled = false,
   placeholder = 'Select Voice',
+  provider,
+  language,
+  forceOpen,
 }) => {
   const voices = useDubDubStore((s) => s.voices);
   const customVoices = useDubDubStore((s) => s.customVoices);
+  const storeProvider = useDubDubStore((s) => s.backend?.config?.ttsType ?? 2);
+  const storeLanguage = useDubDubStore((s) => s.languages?.target?.code || 'vi');
   const setCreateVoiceModalOpen = useDubDubStore((s) => s.setCreateVoiceModalOpen);
   const setVoiceManagerDrawerOpen = useDubDubStore((s) => s.setVoiceManagerDrawerOpen);
 
-  const [isOpen, setIsOpen] = useState(false);
+  const activeProvider = provider !== undefined ? provider : storeProvider;
+  const activeLanguage = language || storeLanguage;
+
+  const [isOpen, setIsOpen] = useState(forceOpen || false);
   const [search, setSearch] = useState('');
   const [openUpwards, setOpenUpwards] = useState(false);
-  const [playingUrl, setPlayingUrl] = useState<string | null>(null);
+  const [loadingVoiceMap, setLoadingVoiceMap] = useState<Record<string, boolean>>({});
+
+  const { isKeyPlaying, isKeyLoading, stopIfKeyPrefix } = useVoiceAudition();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Stop audio on unmount
+  useEffect(() => {
+    if (forceOpen !== undefined) {
+      setIsOpen(forceOpen);
+    }
+  }, [forceOpen]);
+
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+
+  // Cleanly pause and release active audio on unmount if this selector was open
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
+      if (isOpenRef.current) {
+        stopIfKeyPrefix('voice-');
       }
     };
-  }, []);
+  }, [stopIfKeyPrefix]);
 
   // Handle outside click and Escape key
   useEffect(() => {
@@ -114,10 +136,8 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
   const closeDropdown = () => {
     setIsOpen(false);
     setSearch('');
-    if (audioRef.current) {
-      audioRef.current.pause();
-      setPlayingUrl(null);
-    }
+    // Cleanly pause and release active audio when closing dropdown
+    stopIfKeyPrefix('voice-');
   };
 
   const handleToggleOpen = () => {
@@ -152,11 +172,13 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
 
     // 2. Add voices from voices list (presets, systems, or additional customs)
     (voices || []).forEach((v) => {
-      const isCustom = v.kind === 'custom' || v.id.startsWith('voice_');
+      const isCloneVoice =
+        (v.kind === 'clone' || v.kind === 'custom') &&
+        v.id.toLowerCase() !== 'clone';
+      const isCustom = isCloneVoice || v.id.startsWith('voice_');
       const isSystem =
         v.id === 'No' ||
         v.id.toLowerCase() === 'clone' ||
-        v.kind === 'clone' ||
         v.kind === 'system';
 
       if (!map.has(v.id)) {
@@ -201,7 +223,7 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
 
     const custom = filtered.filter((o) => o.kind === 'custom');
     const preset = filtered.filter((o) => o.kind === 'preset');
-    const system = filtered.filter((o) => o.kind === 'system' || o.kind === 'clone');
+    const system = filtered.filter((o) => o.kind === 'system');
 
     return {
       customGroup: custom,
@@ -216,24 +238,23 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
     closeDropdown();
   };
 
-  const handleTogglePlay = (e: React.MouseEvent, sampleUrl?: string) => {
+  const handleToggleAudition = async (e: React.MouseEvent, opt: SelectorOption) => {
     e.stopPropagation();
-    if (!sampleUrl) return;
+    if (disabled) return;
+    const key = `voice-${opt.id}`;
+    const targetProvider = opt.provider ?? activeProvider;
+    const targetLanguage = activeLanguage;
 
-    if (!audioRef.current) {
-      audioRef.current = new Audio();
-      audioRef.current.onended = () => setPlayingUrl(null);
-      audioRef.current.onerror = () => setPlayingUrl(null);
-    }
-
-    if (playingUrl === sampleUrl) {
-      audioRef.current.pause();
-      setPlayingUrl(null);
-    } else {
-      audioRef.current.src = sampleUrl;
-      audioRef.current.play().catch(() => setPlayingUrl(null));
-      setPlayingUrl(sampleUrl);
-    }
+    await auditionVoice({
+      key,
+      voice: opt.id,
+      provider: targetProvider,
+      language: targetLanguage,
+      staticSampleUrl: opt.sampleUrl,
+      onLoadingChange: (loading) => {
+        setLoadingVoiceMap((prev) => ({ ...prev, [opt.id]: loading }));
+      },
+    });
   };
 
   const isSelected = (optId: string) => {
@@ -243,7 +264,10 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
   };
 
   const displayLabel = activeOption ? activeOption.name : (value || placeholder);
-  const isCustomActive = activeOption?.kind === 'custom' || value?.startsWith('voice_');
+  const isCustomActive =
+    activeOption?.kind === 'custom' ||
+    value?.startsWith('voice_') ||
+    value?.startsWith('Custom: ');
 
   const sizeClasses =
     size === 'sm'
@@ -314,11 +338,13 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                   {customGroup.map((opt) => {
                     const selected = isSelected(opt.id);
                     const providerTag = getProviderBadge(opt.provider);
-                    const isAudioPlaying = playingUrl === opt.sampleUrl;
+                    const isAudioPlaying = isKeyPlaying(`voice-${opt.id}`);
+                    const isLoading = isKeyLoading(`voice-${opt.id}`) || Boolean(loadingVoiceMap[opt.id]);
 
                     return (
                       <div
                         key={opt.id}
+                        data-voice-option={opt.id}
                         onClick={() => handleSelect(opt.id)}
                         className={`group px-2 py-1.5 rounded-lg flex items-center justify-between gap-2 cursor-pointer transition-colors ${
                           selected
@@ -341,24 +367,34 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                         </div>
 
                         <div className="flex items-center gap-1 shrink-0">
-                          {opt.sampleUrl && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleTogglePlay(e, opt.sampleUrl)}
-                              className={`p-1 rounded-md transition-colors ${
-                                isAudioPlaying
-                                  ? 'bg-[#8D4B00] text-white'
-                                  : 'text-stone-400 hover:text-stone-700 hover:bg-stone-200/60'
-                              }`}
-                              title={isAudioPlaying ? 'Stop Audition' : 'Audition Voice'}
-                            >
-                              {isAudioPlaying ? (
-                                <Pause className="w-3 h-3" />
-                              ) : (
-                                <Play className="w-3 h-3" />
-                              )}
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            data-action="audition-custom-voice"
+                            data-voice-id={opt.id}
+                            onClick={(e) => handleToggleAudition(e, opt)}
+                            disabled={isLoading}
+                            className={`p-1 rounded-md transition-colors cursor-pointer ${
+                              isAudioPlaying
+                                ? 'bg-[#8D4B00] text-white'
+                                : 'text-stone-400 hover:text-stone-700 hover:bg-stone-200/60'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={
+                              isAudioPlaying
+                                ? 'Stop Audition'
+                                : isLoading
+                                ? 'Generating preview…'
+                                : 'Audition Voice'
+                            }
+                            aria-label="Audition Voice"
+                          >
+                            {isLoading ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-[#8D4B00]" />
+                            ) : isAudioPlaying ? (
+                              <Pause className="w-3 h-3" />
+                            ) : (
+                              <Play className="w-3 h-3" />
+                            )}
+                          </button>
                           {selected && <Check className="w-3.5 h-3.5 text-[#8D4B00]" />}
                         </div>
                       </div>
@@ -377,9 +413,13 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                 <div className="space-y-0.5 mt-0.5">
                   {presetGroup.map((opt) => {
                     const selected = isSelected(opt.id);
+                    const isAudioPlaying = isKeyPlaying(`voice-${opt.id}`);
+                    const isLoading = isKeyLoading(`voice-${opt.id}`) || Boolean(loadingVoiceMap[opt.id]);
+
                     return (
                       <div
                         key={opt.id}
+                        data-voice-option={opt.id}
                         onClick={() => handleSelect(opt.id)}
                         className={`px-2 py-1.5 rounded-lg flex items-center justify-between cursor-pointer transition-colors text-xs ${
                           selected
@@ -391,7 +431,38 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({
                           <Volume2 className="w-3 h-3 text-stone-400 shrink-0" />
                           <span className="truncate">{opt.name}</span>
                         </div>
-                        {selected && <Check className="w-3.5 h-3.5 text-[#8D4B00] shrink-0" />}
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            data-action="audition-preset-voice"
+                            data-voice-id={opt.id}
+                            onClick={(e) => handleToggleAudition(e, opt)}
+                            disabled={isLoading}
+                            className={`p-1 rounded-md transition-colors cursor-pointer ${
+                              isAudioPlaying
+                                ? 'bg-[#8D4B00] text-white'
+                                : 'text-stone-400 hover:text-stone-700 hover:bg-stone-200/60'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title={
+                              isAudioPlaying
+                                ? 'Stop Audition'
+                                : isLoading
+                                ? 'Generating preview…'
+                                : 'Audition Voice'
+                            }
+                            aria-label="Audition Voice"
+                          >
+                            {isLoading ? (
+                              <Loader2 className="w-3 h-3 animate-spin text-[#8D4B00]" />
+                            ) : isAudioPlaying ? (
+                              <Pause className="w-3 h-3" />
+                            ) : (
+                              <Play className="w-3 h-3" />
+                            )}
+                          </button>
+                          {selected && <Check className="w-3.5 h-3.5 text-[#8D4B00] shrink-0" />}
+                        </div>
                       </div>
                     );
                   })}
