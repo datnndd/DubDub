@@ -358,3 +358,90 @@ def migrate_legacy_voices(db_path: Optional[str | Path] = None) -> int:
                 migrated_count += 1
 
     return migrated_count
+
+
+def cache_voice_embedding(
+    voice_id: str,
+    speaker_emb: Any,
+    ref_codes: Optional[Any] = None,
+    base_dir: Optional[Path] = None,
+) -> Path:
+    """Save pre-extracted speaker embedding and optional reference codes as .npz."""
+    import numpy as np
+
+    target_dir = base_dir or VOICES_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+    out_file = target_dir / f"{voice_id}_embedding.npz"
+
+    save_dict = {}
+    if speaker_emb is not None:
+        save_dict["speaker_emb"] = np.asarray(speaker_emb, dtype=np.float32)
+    if ref_codes is not None:
+        save_dict["ref_codes"] = np.asarray(ref_codes, dtype=np.int64)
+
+    np.savez_compressed(out_file, **save_dict)
+    return out_file
+
+
+def get_voice_embedding(
+    voice_id: str,
+    base_dir: Optional[Path] = None,
+) -> Optional[tuple[Any, Optional[Any]]]:
+    """Retrieve pre-extracted (speaker_emb, ref_codes) if cached on disk."""
+    import numpy as np
+
+    target_dir = base_dir or VOICES_DIR
+    npz_file = target_dir / f"{voice_id}_embedding.npz"
+    if not npz_file.is_file():
+        return None
+
+    try:
+        with np.load(npz_file) as data:
+            speaker_emb = data["speaker_emb"] if "speaker_emb" in data else None
+            ref_codes = data["ref_codes"] if "ref_codes" in data else None
+            return (speaker_emb, ref_codes)
+    except Exception as exc:
+        logger.warning("Failed to load cached embedding for %s: %s", voice_id, exc)
+        return None
+
+
+def resolve_voice_params(
+    voice_id_or_name: str,
+    provider: Optional[int] = None,
+    db_path: Optional[str | Path] = None,
+) -> Optional[dict[str, Any]]:
+    """
+    Resolve a custom voice record, flattening designed voice hierarchies
+    to determine the effective base audio, preset voice, and tuning parameters.
+    """
+    if not voice_id_or_name:
+        return None
+
+    voice = get_voice(voice_id_or_name, db_path=db_path)
+    if not voice:
+        voice = find_voice_by_name(voice_id_or_name, provider=provider, db_path=db_path)
+    if not voice:
+        return None
+
+    result = dict(voice)
+    tuning = dict(voice.get("tuning_params") or {})
+
+    # If it's a designed voice, resolve its base voice
+    if voice.get("kind") == "design":
+        base_ref = voice.get("external_voice_id") or tuning.get("base_voice", "")
+        if base_ref:
+            # Check if base_ref points to another custom voice
+            parent_voice = get_voice(base_ref, db_path=db_path) or find_voice_by_name(base_ref, provider=provider, db_path=db_path)
+            if parent_voice:
+                result["ref_audio_path"] = parent_voice.get("ref_audio_path", "")
+                result["effective_voice_id"] = parent_voice["id"]
+                result["base_type"] = "custom"
+            else:
+                # Base is a preset voice name (e.g. "Bình (nam miền Bắc)")
+                result["preset_voice"] = base_ref
+                result["base_type"] = "preset"
+        else:
+            result["base_type"] = "preset"
+
+    result["tuning_params"] = tuning
+    return result

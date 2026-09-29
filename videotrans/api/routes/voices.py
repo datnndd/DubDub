@@ -60,8 +60,17 @@ class UnifiedTTSPreviewRequest(BaseModel):
     speed: Optional[float] = None
     rate: Optional[str] = None
     pitch: Optional[str] = None
+    style: Optional[str] = None
+    tuning_params: Optional[dict[str, Any]] = Field(None, alias="tuningParams")
     segment_id: Optional[Any] = Field(None, alias="segmentId")
     force_refresh: Optional[bool] = Field(False, alias="forceRefresh")
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class VoiceDesignAssistRequest(BaseModel):
+    prompt: str
+    base_voice: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -162,6 +171,9 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
     voice_id = f"voice_{uuid.uuid4().hex[:8]}"
     ref_audio_rel = ""
 
+    denoise_flag = str(fields.get("denoise", "true")).strip().lower() not in {"false", "0", "no"}
+    tuning_params["denoise"] = denoise_flag
+
     if audio_file_obj:
         ext = Path(audio_filename).suffix or ".wav"
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
@@ -199,8 +211,32 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
             raise HTTPException(status_code=400, detail=f"Audio normalization failed: {exc}") from exc
         finally:
             tmp_path.unlink(missing_ok=True)
-    elif provider != tts.ELEVENLABS_TTS or not external_voice_id:
+    elif kind == "design":
+        base_v = external_voice_id or str(tuning_params.get("base_voice") or "")
+        if not base_v:
+            raise HTTPException(status_code=400, detail="Base voice is required for Voice Design")
+        external_voice_id = base_v
+    elif provider == tts.ELEVENLABS_TTS and external_voice_id:
+        pass
+    else:
         raise HTTPException(status_code=400, detail="Audio file is required for voice cloning")
+
+    # For VieNeu voice cloning, pre-cache speaker embedding for low-latency inference
+    if ref_audio_rel and provider == tts.VIENEU_TTS:
+        dest_path = voice_store.VOICES_DIR / ref_audio_rel
+        try:
+            from videotrans.tts._vieneu_compat import setup_vieneu_environment
+            setup_vieneu_environment()
+            from vieneu import Vieneu
+            engine = Vieneu(mode="v3turbo", device="cpu", backend="onnx", max_batch_size=1)
+            try:
+                emb, codes = engine.encode_reference(dest_path, denoise=denoise_flag)
+                voice_store.cache_voice_embedding(voice_id, emb, codes)
+            finally:
+                if hasattr(engine, "close"):
+                    engine.close()
+        except Exception as exc:
+            logger.info("VieNeu pre-caching skipped or unavailable: %s", exc)
 
     created = voice_store.create_voice(
         name=clean_name,
@@ -369,6 +405,8 @@ async def create_tts_preview_handler(
             speed=payload_obj.speed,
             rate=payload_obj.rate,
             pitch=payload_obj.pitch,
+            style=payload_obj.style,
+            tuning_params=payload_obj.tuning_params,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -385,6 +423,53 @@ async def create_tts_preview_handler(
         "audio_url": preview_url,
         "voice": voice,
         "provider": provider,
+    })
+
+
+@router.post("/api/voices/design-assist")
+async def voice_design_assist_handler(payload: VoiceDesignAssistRequest) -> JSONResponse:
+    prompt = payload.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required")
+
+    p_lower = prompt.lower()
+
+    if any(k in p_lower for k in ["tin tức", "thời sự", "bản tin", "news", "formal", "phát thanh", "anchor", "chính luận"]):
+        style = "tin_tuc"
+        temp = 0.70
+        rep_pen = 1.25
+        desc = "Phong cách bản tin, thời sự trang trọng và rõ ràng"
+    elif any(k in p_lower for k in ["kể chuyện", "đọc truyện", "truyện", "story", "audiobook", "tiểu thuyết", "bedtime", "cổ tích", "thơ"]):
+        style = "doc_truyen"
+        temp = 0.95
+        rep_pen = 1.15
+        desc = "Phong cách kể chuyện truyền cảm, giàu ngữ điệu và biểu cảm"
+    else:
+        style = "tu_nhien"
+        temp = 0.80
+        rep_pen = 1.20
+        desc = "Phong cách tự nhiên, hội thoại chân thực và gần gũi"
+
+    suggested_tags = []
+    if any(k in p_lower for k in ["cười", "vui", "hài", "chuckle", "happy", "laugh", "thân thiện", "ấm áp"]):
+        suggested_tags.append("[cười]")
+    if any(k in p_lower for k in ["thở dài", "buồn", "trầm", "sigh", "sad", "suy tư", "lắng đọng"]):
+        suggested_tags.append("[thở dài]")
+    if any(k in p_lower for k in ["hắng giọng", "nghiêm", "rõ", "dõng dạc", "throat", "chú ý"]):
+        suggested_tags.append("[hắng giọng]")
+
+    suggested_name = "Giọng " + ("Tin tức" if style == "tin_tuc" else "Kể chuyện" if style == "doc_truyen" else "Tự nhiên")
+    if suggested_tags:
+        tag_str = ", ".join(suggested_tags)
+        suggested_name += f" ({tag_str})"
+
+    return JSONResponse({
+        "style": style,
+        "temperature": temp,
+        "repetition_penalty": rep_pen,
+        "suggested_tags": suggested_tags,
+        "suggested_name": suggested_name,
+        "description": desc,
     })
 
 

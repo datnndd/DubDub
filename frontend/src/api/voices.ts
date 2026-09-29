@@ -29,6 +29,7 @@ export interface CreateVoicePayload {
   audio?: Blob | File;
   external_voice_id?: string;
   tuning_params?: Record<string, any>;
+  denoise?: boolean;
 }
 
 export async function fetchCustomVoices(provider?: number): Promise<CustomVoice[]> {
@@ -52,6 +53,7 @@ export async function createCustomVoice(payload: CreateVoicePayload): Promise<Cu
   if (payload.instruct) formData.append('instruct', payload.instruct);
   if (payload.external_voice_id) formData.append('external_voice_id', payload.external_voice_id);
   if (payload.tuning_params) formData.append('tuning_params', JSON.stringify(payload.tuning_params));
+  if (payload.denoise !== undefined) formData.append('denoise', String(payload.denoise));
   if (payload.audio) {
     let filename = 'recording.wav';
     if (payload.audio instanceof File) {
@@ -106,6 +108,27 @@ export function getCustomVoicePreviewAudioUrl(id: string): string {
   return `/api/custom-voices/${encodeURIComponent(id)}/preview/audio`;
 }
 
+export interface VoiceDesignAssistRequest {
+  prompt: string;
+  base_voice?: string;
+}
+
+export interface VoiceDesignAssistResponse {
+  style: string;
+  temperature: number;
+  repetition_penalty: number;
+  suggested_tags: string[];
+  suggested_name: string;
+  description: string;
+}
+
+export async function requestVoiceDesignAssist(payload: VoiceDesignAssistRequest): Promise<VoiceDesignAssistResponse> {
+  return apiRequest<VoiceDesignAssistResponse>('/api/voices/design-assist', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export interface TTSPreviewPayload {
   text?: string;
   voice?: string;
@@ -117,6 +140,9 @@ export interface TTSPreviewPayload {
   speed?: number;
   rate?: string;
   pitch?: string;
+  style?: string;
+  tuning_params?: Record<string, any>;
+  tuningParams?: Record<string, any>;
   segment_id?: number | string;
   segmentId?: number | string;
   force_refresh?: boolean;

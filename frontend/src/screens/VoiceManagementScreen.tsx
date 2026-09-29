@@ -69,6 +69,7 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
   const [languageFilter, setLanguageFilter] = useState('all');
   const [providerFilter, setProviderFilter] = useState('all');
   const [genderFilter, setGenderFilter] = useState(initialGenderFilter);
+  const [kindFilter, setKindFilter] = useState<'all' | 'clone' | 'design'>('all');
 
   // Bulk Selection & Deletion State
   const [selectedVoiceIds, setSelectedVoiceIds] = useState<Set<string>>(new Set());
@@ -91,6 +92,8 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
   const [selectedLabVoiceId, setSelectedLabVoiceId] = useState<string>('');
   const [testPhrase, setTestPhrase] = useState(getStandardSamplePhrase('vi'));
   const [testSpeed, setTestSpeed] = useState<number>(1.0);
+  const [labStyle, setLabStyle] = useState<'tu_nhien' | 'tin_tuc' | 'doc_truyen'>('tu_nhien');
+  const [labTemperature, setLabTemperature] = useState<number>(0.8);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [synthesisError, setSynthesisError] = useState<string | null>(null);
   const [testAudioUrl, setTestAudioUrl] = useState<string | null>(null);
@@ -213,35 +216,22 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
       const targetProvider = customMatch?.provider ?? presetMatch?.provider ?? storeProvider;
       const targetLanguage = customMatch?.language ?? storeLanguage;
 
+      const targetVoice = customMatch ? customMatch.id : selectedLabVoiceId;
       let generatedAudioUrl = '';
-
-      if (customMatch) {
-        try {
-          const res = await previewCustomVoice(customMatch.id, testPhrase.trim(), targetLanguage);
-          generatedAudioUrl = res.preview_url || getCustomVoicePreviewAudioUrl(customMatch.id);
-        } catch {
-          // Fall back to general previewTTS
-          const ttsRes = await previewTTS({
-            text: testPhrase.trim(),
-            voice: customMatch.id,
-            provider: targetProvider,
-            language: targetLanguage,
-            speed: testSpeed,
-            force_refresh: true,
-          });
-          generatedAudioUrl = ttsRes.preview_url || ttsRes.audio_url;
-        }
-      } else {
-        const ttsRes = await previewTTS({
-          text: testPhrase.trim(),
-          voice: selectedLabVoiceId,
-          provider: targetProvider,
-          language: targetLanguage,
-          speed: testSpeed,
-          force_refresh: true,
-        });
-        generatedAudioUrl = ttsRes.preview_url || ttsRes.audio_url;
-      }
+      const ttsRes = await previewTTS({
+        text: testPhrase.trim(),
+        voice: targetVoice,
+        provider: targetProvider,
+        language: targetLanguage,
+        speed: testSpeed,
+        style: labStyle,
+        tuningParams: {
+          style: labStyle,
+          temperature: labTemperature,
+        },
+        force_refresh: true,
+      });
+      generatedAudioUrl = ttsRes.preview_url || ttsRes.audio_url;
 
       setTestAudioUrl(generatedAudioUrl);
 
@@ -272,6 +262,8 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
   // Filtered voice lists
   const filteredCustomVoices = useMemo(() => {
     return customVoices.filter((v) => {
+      if (kindFilter === 'clone' && v.kind === 'design') return false;
+      if (kindFilter === 'design' && v.kind !== 'design') return false;
       const q = search.trim().toLowerCase();
       if (q && !v.name.toLowerCase().includes(q) && !(v.description || '').toLowerCase().includes(q) && !(v.ref_text || '').toLowerCase().includes(q)) {
         return false;
@@ -280,7 +272,7 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
       if (languageFilter !== 'all' && v.language && !v.language.toLowerCase().includes(languageFilter.toLowerCase())) return false;
       return true;
     });
-  }, [customVoices, search, providerFilter, languageFilter]);
+  }, [customVoices, kindFilter, search, providerFilter, languageFilter]);
 
   const allFilteredCustomSelected =
     filteredCustomVoices.length > 0 && filteredCustomVoices.every((v) => selectedVoiceIds.has(v.id));
@@ -570,6 +562,18 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                 <option value="female">Female</option>
                 <option value="male">Male</option>
               </select>
+
+              {/* Kind / Type Filter */}
+              <select
+                data-testid="voice-kind-filter"
+                value={kindFilter}
+                onChange={(e) => setKindFilter(e.target.value as any)}
+                className="px-2 py-1 bg-stone-50 border border-stone-200 rounded-lg text-xs font-medium text-stone-700 focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Types</option>
+                <option value="clone">Cloned Only</option>
+                <option value="design">Designed Only</option>
+              </select>
             </div>
           </div>
 
@@ -742,9 +746,15 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                                         {voice.name}
                                       </h3>
                                       {getProviderBadge(voice.provider)}
-                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-[#8D4B00]">
-                                        Cloned
-                                      </span>
+                                      {voice.kind === 'design' ? (
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                          Designed • {voice.tuning_params?.style === 'tin_tuc' ? 'Tin tức' : voice.tuning_params?.style === 'doc_truyen' ? 'Đọc truyện' : 'Tự nhiên'}
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-[#8D4B00]">
+                                          Cloned
+                                        </span>
+                                      )}
                                     </div>
                                     {voice.description ? (
                                       <p className="text-[10px] text-stone-500 truncate mt-0.5">
@@ -993,6 +1003,75 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                 placeholder="Type or paste any test sentence to evaluate voice pronunciation and tone..."
                 className="w-full text-xs p-2.5 bg-stone-50 rounded-xl border border-stone-200 focus:bg-white focus:outline-none focus:border-[#8D4B00] transition-colors"
               />
+              {/* Emotion Tag Shortcuts */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                <span className="text-[10px] text-stone-400 font-medium">Emotion tags:</span>
+                <button
+                  type="button"
+                  onClick={() => setTestPhrase((prev) => `${prev.trim()} [cười] `)}
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                >
+                  + [cười]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTestPhrase((prev) => `${prev.trim()} [thở dài] `)}
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-colors cursor-pointer"
+                >
+                  + [thở dài]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTestPhrase((prev) => `${prev.trim()} [hắng giọng] `)}
+                  className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-colors cursor-pointer"
+                >
+                  + [hắng giọng]
+                </button>
+              </div>
+            </div>
+
+            {/* Speaking Style (VieNeu) */}
+            <div className="space-y-1 bg-stone-50 p-2.5 rounded-xl border border-stone-200">
+              <div className="flex items-center justify-between text-xs font-semibold text-stone-700">
+                <div className="flex items-center gap-1">
+                  <Sliders className="w-3.5 h-3.5 text-stone-400" />
+                  <span>VieNeu Speaking Style</span>
+                </div>
+              </div>
+              <select
+                value={labStyle}
+                onChange={(e) => setLabStyle(e.target.value as any)}
+                className="w-full text-xs px-2 py-1.5 bg-white rounded-lg border border-stone-200 text-stone-800 font-medium focus:outline-none focus:border-[#8D4B00] cursor-pointer"
+              >
+                <option value="tu_nhien">Tự nhiên (Natural Dialogue)</option>
+                <option value="tin_tuc">Tin tức (News Broadcast)</option>
+                <option value="doc_truyen">Đọc truyện (Storytelling / Drama)</option>
+              </select>
+            </div>
+
+            {/* Expressiveness (Temperature) */}
+            <div className="space-y-1 bg-stone-50 p-2.5 rounded-xl border border-stone-200">
+              <div className="flex items-center justify-between text-xs font-semibold text-stone-700">
+                <div className="flex items-center gap-1">
+                  <Sliders className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Expressiveness (Temp)</span>
+                </div>
+                <span className="font-mono text-[11px] text-[#8D4B00] font-bold">{labTemperature.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="1.2"
+                step="0.05"
+                value={labTemperature}
+                onChange={(e) => setLabTemperature(parseFloat(e.target.value))}
+                className="w-full h-1 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-[#8D4B00]"
+              />
+              <div className="flex items-center justify-between text-[9px] text-stone-400">
+                <span>0.5 Calm</span>
+                <span>0.8 Normal</span>
+                <span>1.2 Expressive</span>
+              </div>
             </div>
 
             {/* Speed / Pace Slider */}

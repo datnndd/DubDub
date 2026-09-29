@@ -601,9 +601,38 @@ export const Stage3VoiceDubbing: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-semibold text-stone-700 block mb-0.5">
-                        Target Dubbing Text
-                      </label>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label className="text-[10px] font-semibold text-stone-700 block">
+                          Target Dubbing Text
+                        </label>
+                        {/* Emotion tag quick insertion chips for VieNeu */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateSegmentText(seg.id, `${(seg.targetText || '').trim()} [cười] `, true)}
+                            className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 cursor-pointer"
+                            title="Insert chuckle emotion tag"
+                          >
+                            + [cười]
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateSegmentText(seg.id, `${(seg.targetText || '').trim()} [thở dài] `, true)}
+                            className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 cursor-pointer"
+                            title="Insert sigh emotion tag"
+                          >
+                            + [thở dài]
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateSegmentText(seg.id, `${(seg.targetText || '').trim()} [hắng giọng] `, true)}
+                            className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 cursor-pointer"
+                            title="Insert throat clear emotion tag"
+                          >
+                            + [hắng giọng]
+                          </button>
+                        </div>
+                      </div>
                       <textarea
                         data-segment-input={`stage3-${seg.id}`}
                         value={seg.targetText ?? ''}

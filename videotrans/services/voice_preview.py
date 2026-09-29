@@ -44,8 +44,23 @@ def get_default_preview_text(language: str) -> str:
     return DEFAULT_TEXTS["en"]
 
 
-def _run_vieneu_synthesis(ref_audio: Path, output_file: Path, text: str, use_cuda: bool = True) -> None:
-    """Run VieNeu TTS inference synchronously, with CPU fallback if CUDA OOM occurs."""
+def _run_vieneu_synthesis(
+    ref_audio: Optional[Path] = None,
+    output_file: Optional[Path] = None,
+    text: str = "",
+    use_cuda: bool = True,
+    voice: Optional[Any] = None,
+    style: str = "tu_nhien",
+    denoise: bool = True,
+    temperature: float = 0.8,
+    repetition_penalty: float = 1.2,
+    top_p: float = 0.95,
+    cached_embedding: Optional[tuple[Any, Optional[Any]]] = None,
+) -> None:
+    """Run VieNeu TTS inference synchronously with style, emotion tags, and tuning parameters."""
+    if output_file is None:
+        raise ValueError("output_file is required")
+
     from videotrans.tts._vieneu_compat import setup_vieneu_environment
     setup_vieneu_environment()
     import soundfile as sf
@@ -59,7 +74,35 @@ def _run_vieneu_synthesis(ref_audio: Path, output_file: Path, text: str, use_cud
             max_batch_size=1,
         )
         try:
-            audios = engine.infer_batch([text], ref_audio=ref_audio.as_posix())
+            kwargs: dict[str, Any] = {
+                "style": style or "tu_nhien",
+                "temperature": temperature,
+                "repetition_penalty": repetition_penalty,
+                "top_p": top_p,
+            }
+            if cached_embedding and cached_embedding[0] is not None:
+                audios = engine.infer_batch(
+                    [text],
+                    voice={"speaker_emb": cached_embedding[0], "codes": cached_embedding[1]},
+                    **kwargs,
+                )
+            elif ref_audio and ref_audio.is_file():
+                audios = engine.infer_batch(
+                    [text],
+                    ref_audio=ref_audio.as_posix(),
+                    denoise=denoise,
+                    **kwargs,
+                )
+            elif voice:
+                v_target = engine.get_preset_voice(voice) if isinstance(voice, str) else voice
+                audios = engine.infer_batch(
+                    [text],
+                    voice=v_target,
+                    **kwargs,
+                )
+            else:
+                audios = engine.infer_batch([text], **kwargs)
+
             if not audios or len(audios) == 0:
                 raise RuntimeError("VieNeu returned empty audio")
             sf.write(str(output_file), audios[0], engine.sample_rate)
@@ -157,8 +200,16 @@ async def synthesize_voice_preview(
     lang = language or voice.get("language") or "vi"
     sample_text = (text or "").strip() or get_default_preview_text(lang)
 
-    # 3. Reference audio path
-    ref_audio_rel = voice.get("ref_audio_path", "")
+    # 3. Resolve voice hierarchy (handling designed voices)
+    resolved = voice_store.resolve_voice_params(voice_id, db_path=db_path) or voice
+    tuning = dict(resolved.get("tuning_params") or {})
+    style = str(tuning.get("style") or "tu_nhien")
+    temp = float(tuning.get("temperature", 0.8))
+    rep_penalty = float(tuning.get("repetition_penalty", 1.2))
+    top_p_val = float(tuning.get("top_p", 0.95))
+    denoise_opt = bool(tuning.get("denoise", True))
+
+    ref_audio_rel = resolved.get("ref_audio_path", "")
     ref_audio_path: Optional[Path] = None
     if ref_audio_rel:
         try:
@@ -167,6 +218,9 @@ async def synthesize_voice_preview(
                 ref_audio_path = None
         except Exception:
             ref_audio_path = None
+
+    eff_vid = resolved.get("effective_voice_id") or voice_id
+    cached_emb = voice_store.get_voice_embedding(eff_vid)
 
     async with _preview_lock:
         # Re-check cache inside lock to avoid redundant concurrent synthesis
@@ -182,20 +236,42 @@ async def synthesize_voice_preview(
                 return
 
             # Check if neural engine can be loaded
-            if provider == tts.VIENEU_TTS and ref_audio_path:
+            if provider == tts.VIENEU_TTS:
                 try:
-                    await asyncio.to_thread(
-                        _run_vieneu_synthesis,
-                        ref_audio_path,
-                        preview_path,
-                        sample_text,
-                        use_cuda,
-                    )
-                    return
+                    if resolved.get("base_type") == "preset":
+                        preset_name = resolved.get("preset_voice") or voice.get("external_voice_id")
+                        await asyncio.to_thread(
+                            _run_vieneu_synthesis,
+                            None,
+                            preview_path,
+                            sample_text,
+                            use_cuda,
+                            voice=preset_name,
+                            style=style,
+                            temperature=temp,
+                            repetition_penalty=rep_penalty,
+                            top_p=top_p_val,
+                        )
+                        return
+                    elif ref_audio_path or cached_emb:
+                        await asyncio.to_thread(
+                            _run_vieneu_synthesis,
+                            ref_audio_path,
+                            preview_path,
+                            sample_text,
+                            use_cuda,
+                            style=style,
+                            denoise=denoise_opt,
+                            temperature=temp,
+                            repetition_penalty=rep_penalty,
+                            top_p=top_p_val,
+                            cached_embedding=cached_emb,
+                        )
+                        return
                 except ImportError:
-                    logger.info("vieneu package not installed, using reference audio snippet fallback")
+                    logger.info("vieneu package not installed, using fallback")
                 except Exception as exc:
-                    logger.warning("VieNeu synthesis error, falling back to snippet preview: %s", exc)
+                    logger.warning("VieNeu synthesis error, falling back: %s", exc)
 
             if provider == tts.OMNIVOICE_TTS and ref_audio_path:
                 try:
@@ -231,7 +307,9 @@ async def synthesize_voice_preview(
                 await asyncio.to_thread(runffmpeg, cmd, force_cpu=True)
                 return
 
-            raise RuntimeError(f"No reference audio or engine available to synthesize preview for {voice_id}")
+            # Pure synthetic wav fallback for design voices without source audio
+            generate_fallback_preview_wav(preview_path)
+            return
 
         await asyncio.wait_for(_do_synthesis(), timeout=PREVIEW_TIMEOUT_SECONDS)
 
@@ -270,6 +348,8 @@ async def synthesize_unified_tts_preview(
     speed: Optional[float] = None,
     rate: Optional[str] = None,
     pitch: Optional[str] = None,
+    style: Optional[str] = None,
+    tuning_params: Optional[dict[str, Any]] = None,
     use_cuda: bool = True,
     db_path: Optional[str | Path] = None,
 ) -> tuple[str, Path]:
@@ -281,6 +361,7 @@ async def synthesize_unified_tts_preview(
     voice_store.init_voice_dirs()
     sample_text = (text or "").strip() or get_default_preview_text(language or "vi")
     voice_str = str(voice or "").strip()
+    tp = dict(tuning_params or {})
 
     # 1. Check if voice refers to an existing custom voice
     cv = voice_store.get_voice(voice_str, db_path=db_path) if voice_str else None
@@ -301,7 +382,7 @@ async def synthesize_unified_tts_preview(
 
     # 2. If test double synthesizer is set, invoke it
     if _preview_synthesizer is not None:
-        key_raw = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}"
+        key_raw = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}_{style}"
         p_id = f"prev_{hashlib.md5(key_raw.encode('utf-8')).hexdigest()[:12]}"
         p_path = voice_store.get_preview_audio_path(f"{p_id}.wav")
         voice_dict = {
@@ -309,6 +390,7 @@ async def synthesize_unified_tts_preview(
             "name": voice_str or "Default",
             "provider": provider,
             "language": language or "vi",
+            "style": style,
         }
         await asyncio.to_thread(_preview_synthesizer, voice_dict, p_path, sample_text)
         if not p_path.is_file() or p_path.stat().st_size == 0:
@@ -316,7 +398,8 @@ async def synthesize_unified_tts_preview(
         return p_id, p_path
 
     # 3. Standard/Preset voice synthesis with deterministic cache
-    cache_seed = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}_{rate}_{pitch}"
+    tuning_key = json.dumps(tp, sort_keys=True)
+    cache_seed = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}_{rate}_{pitch}_{style}_{tuning_key}"
     preview_id = f"prev_{hashlib.md5(cache_seed.encode('utf-8')).hexdigest()[:12]}"
     preview_filename = f"{preview_id}.wav"
     preview_path = voice_store.get_preview_audio_path(preview_filename)
@@ -334,8 +417,21 @@ async def synthesize_unified_tts_preview(
             if provider == tts.VIENEU_TTS:
                 from videotrans.util.help_role import get_vieneu_custom_voice_path
                 custom_ref = get_vieneu_custom_voice_path(voice_str)
+                selected_style = style or tp.get("style", "tu_nhien")
+                temp_val = float(tp.get("temperature", 0.8))
+                rep_pen = float(tp.get("repetition_penalty", 1.2))
+
                 if custom_ref and Path(custom_ref).is_file():
-                    await asyncio.to_thread(_run_vieneu_synthesis, Path(custom_ref), preview_path, sample_text, use_cuda)
+                    await asyncio.to_thread(
+                        _run_vieneu_synthesis,
+                        Path(custom_ref),
+                        preview_path,
+                        sample_text,
+                        use_cuda,
+                        style=selected_style,
+                        temperature=temp_val,
+                        repetition_penalty=rep_pen,
+                    )
                     return
                 # Try VieNeu engine if installed
                 def _infer_vieneu_preset():
@@ -346,7 +442,13 @@ async def synthesize_unified_tts_preview(
                     engine = Vieneu(mode="v3turbo", device="cuda" if use_cuda else "cpu", backend="pytorch" if use_cuda else "onnx", max_batch_size=1)
                     try:
                         preset_v = engine.get_preset_voice(voice_str) if (voice_str and voice_str.lower() not in ("no", "default", "clone")) else None
-                        audios = engine.infer_batch([sample_text], voice=preset_v)
+                        audios = engine.infer_batch(
+                            [sample_text],
+                            voice=preset_v,
+                            style=selected_style,
+                            temperature=temp_val,
+                            repetition_penalty=rep_pen,
+                        )
                         sf.write(str(preview_path), audios[0], engine.sample_rate)
                     finally:
                         if hasattr(engine, "close"):
