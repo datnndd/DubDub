@@ -258,6 +258,24 @@ async def delete_custom_voice_handler(
     return JSONResponse({"ok": True, "id": id, "hard": hard_delete})
 
 
+class BulkDeleteVoicesRequest(BaseModel):
+    ids: list[str]
+    hard: Optional[bool] = False
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+@router.post("/api/custom-voices/bulk-delete")
+@router.delete("/api/custom-voices/bulk-delete")
+@router.post("/api/voices/bulk-delete")
+@router.delete("/api/voices/bulk-delete")
+async def bulk_delete_custom_voices_handler(payload: BulkDeleteVoicesRequest) -> JSONResponse:
+    raw_ids = payload.ids or []
+    deleted_ids = voice_store.bulk_delete_voices(raw_ids, hard=bool(payload.hard))
+    return JSONResponse({"ok": True, "deleted": deleted_ids, "count": len(deleted_ids)})
+
+
+
 @router.get("/api/custom-voices/{id}/audio")
 async def get_custom_voice_audio_handler(id: str) -> FileResponse:
     voice = voice_store.get_voice(id)

@@ -7,6 +7,10 @@ import {
   Play,
   Pause,
   Trash2,
+  CheckSquare,
+  Square,
+  MinusSquare,
+  AlertTriangle,
   Edit2,
   Check,
   X,
@@ -54,6 +58,7 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
   const loadCustomVoices = useDubDubStore((s) => s.loadCustomVoices);
   const updateVoice = useDubDubStore((s) => s.updateVoice);
   const deleteVoice = useDubDubStore((s) => s.deleteVoice);
+  const deleteVoices = useDubDubStore((s) => s.deleteVoices);
   const setCreateVoiceModalOpen = useDubDubStore((s) => s.setCreateVoiceModalOpen);
   const storeProvider = useDubDubStore((s) => s.backend?.config?.ttsType ?? 2);
   const storeLanguage = useDubDubStore((s) => s.languages?.target?.code || 'vi');
@@ -64,6 +69,11 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
   const [languageFilter, setLanguageFilter] = useState('all');
   const [providerFilter, setProviderFilter] = useState('all');
   const [genderFilter, setGenderFilter] = useState(initialGenderFilter);
+
+  // Bulk Selection & Deletion State
+  const [selectedVoiceIds, setSelectedVoiceIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
 
   // Custom Voice In-place Editing
   const [editingVoiceId, setEditingVoiceId] = useState<string | null>(null);
@@ -151,6 +161,11 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
     try {
       await deleteVoice(voiceId, false);
       setConfirmDeleteId(null);
+      setSelectedVoiceIds((prev) => {
+        const next = new Set(prev);
+        next.delete(voiceId);
+        return next;
+      });
       if (selectedLabVoiceId === voiceId) {
         setSelectedLabVoiceId('');
       }
@@ -266,6 +281,50 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
       return true;
     });
   }, [customVoices, search, providerFilter, languageFilter]);
+
+  const allFilteredCustomSelected =
+    filteredCustomVoices.length > 0 && filteredCustomVoices.every((v) => selectedVoiceIds.has(v.id));
+  const someFilteredCustomSelected =
+    filteredCustomVoices.some((v) => selectedVoiceIds.has(v.id)) && !allFilteredCustomSelected;
+
+  const toggleSelectVoice = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedVoiceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllCustomVoices = () => {
+    if (allFilteredCustomSelected) {
+      setSelectedVoiceIds(new Set());
+    } else {
+      setSelectedVoiceIds(new Set(filteredCustomVoices.map((v) => v.id)));
+    }
+  };
+
+  const handleBulkDeleteCustomVoices = async () => {
+    if (selectedVoiceIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      const idsToDelete = Array.from(selectedVoiceIds);
+      await deleteVoices(idsToDelete);
+      if (idsToDelete.includes(selectedLabVoiceId)) {
+        setSelectedLabVoiceId('');
+      }
+      setSelectedVoiceIds(new Set());
+      setConfirmBulkDeleteOpen(false);
+    } catch (err) {
+      console.error('Failed to bulk delete voices:', err);
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   const filteredPresetVoices = useMemo(() => {
     return presetVoices.filter((v) => {
@@ -551,39 +610,104 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                    {filteredCustomVoices.map((voice) => {
-                      const isEditing = editingVoiceId === voice.id;
-                      const isPlaying = isKeyPlaying(`voicescreen-${voice.id}`);
-                      const isLoading = isKeyLoading(`voicescreen-${voice.id}`) || Boolean(loadingVoiceMap[voice.id]);
-                      const isConfirmingDelete = confirmDeleteId === voice.id;
-                      const isSelectedForLab = selectedLabVoiceId === voice.id;
-
-                      return (
-                        <div
-                          key={voice.id}
-                          data-voice-card={voice.id}
-                          className={`p-3 rounded-xl border transition-all bg-white shadow-2xs ${
-                            isSelectedForLab
-                              ? 'border-amber-400 ring-1 ring-amber-400/50 bg-amber-50/20'
-                              : 'border-stone-200 hover:border-amber-200'
-                          }`}
+                  <div className="space-y-2.5">
+                    {/* Bulk Action & Selection Bar */}
+                    <div className="bg-stone-50/90 border border-[#E7E4DC] rounded-lg px-3 py-1.5 flex items-center justify-between gap-3 text-xs shrink-0">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          data-testid="select-all-voices-btn"
+                          onClick={toggleSelectAllCustomVoices}
+                          className="flex items-center gap-1.5 font-semibold text-stone-700 hover:text-stone-900 cursor-pointer px-1.5 py-0.5 rounded hover:bg-stone-200/50 transition-colors"
+                          title={allFilteredCustomSelected ? 'Deselect all voices' : 'Select all voices'}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                              {/* Inline Audition Button */}
-                              <button
-                                type="button"
-                                data-action="audition-voice"
-                                data-voice-id={voice.id}
-                                onClick={() => handleToggleAudition(voice.id, voice.name, voice.provider, true)}
-                                disabled={isLoading}
-                                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
-                                  isPlaying
-                                    ? 'bg-[#8D4B00] text-white shadow-2xs'
-                                    : 'bg-amber-50 hover:bg-amber-100 text-[#8D4B00] border border-amber-200/80'
-                                }`}
-                                title={isPlaying ? 'Stop Audition' : 'Audition Voice Sample'}
+                          {allFilteredCustomSelected ? (
+                            <CheckSquare className="w-4 h-4 text-[#8D4B00]" />
+                          ) : someFilteredCustomSelected ? (
+                            <MinusSquare className="w-4 h-4 text-[#8D4B00]" />
+                          ) : (
+                            <Square className="w-4 h-4 text-stone-400" />
+                          )}
+                          <span>
+                            {allFilteredCustomSelected ? 'Deselect All' : 'Select All'} ({filteredCustomVoices.length})
+                          </span>
+                        </button>
+
+                        {selectedVoiceIds.size > 0 && (
+                          <span
+                            data-testid="selected-voices-count"
+                            className="text-[11px] font-semibold text-[#8D4B00] bg-amber-100/80 px-2 py-0.5 rounded-full"
+                          >
+                            {selectedVoiceIds.size} selected
+                          </span>
+                        )}
+                      </div>
+
+                      {selectedVoiceIds.size > 0 && (
+                        <button
+                          type="button"
+                          data-testid="bulk-delete-voices-btn"
+                          onClick={() => setConfirmBulkDeleteOpen(true)}
+                          className="px-2.5 py-1 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs border border-rose-200 flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Delete Selected ({selectedVoiceIds.size})</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                      {filteredCustomVoices.map((voice) => {
+                        const isSelected = selectedVoiceIds.has(voice.id);
+                        const isEditing = editingVoiceId === voice.id;
+                        const isPlaying = isKeyPlaying(`voicescreen-${voice.id}`);
+                        const isLoading = isKeyLoading(`voicescreen-${voice.id}`) || Boolean(loadingVoiceMap[voice.id]);
+                        const isConfirmingDelete = confirmDeleteId === voice.id;
+                        const isSelectedForLab = selectedLabVoiceId === voice.id;
+
+                        return (
+                          <div
+                            key={voice.id}
+                            data-voice-card={voice.id}
+                            className={`p-3 rounded-xl border transition-all bg-white shadow-2xs ${
+                              isSelected
+                                ? 'border-amber-400 ring-1 ring-amber-400/50 bg-amber-50/30'
+                                : isSelectedForLab
+                                ? 'border-amber-400 ring-1 ring-amber-400/50 bg-amber-50/20'
+                                : 'border-stone-200 hover:border-amber-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2 min-w-0 flex-1">
+                                {/* Selection Checkbox */}
+                                <button
+                                  type="button"
+                                  data-action="select-voice"
+                                  data-testid={`select-voice-${voice.id}`}
+                                  onClick={(e) => toggleSelectVoice(voice.id, e)}
+                                  className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-700 transition-colors shrink-0 cursor-pointer self-center"
+                                  title={isSelected ? 'Deselect voice' : 'Select voice'}
+                                >
+                                  {isSelected ? (
+                                    <CheckSquare className="w-4 h-4 text-[#8D4B00]" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-stone-300" />
+                                  )}
+                                </button>
+
+                                {/* Inline Audition Button */}
+                                <button
+                                  type="button"
+                                  data-action="audition-voice"
+                                  data-voice-id={voice.id}
+                                  onClick={() => handleToggleAudition(voice.id, voice.name, voice.provider, true)}
+                                  disabled={isLoading}
+                                  className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                                    isPlaying
+                                      ? 'bg-[#8D4B00] text-white shadow-2xs'
+                                      : 'bg-amber-50 hover:bg-amber-100 text-[#8D4B00] border border-amber-200/80'
+                                  }`}
+                                  title={isPlaying ? 'Stop Audition' : 'Audition Voice Sample'}
                               >
                                 {isLoading ? (
                                   <Loader2 className="w-4 h-4 animate-spin text-amber-700" />
@@ -714,7 +838,8 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                       );
                     })}
                   </div>
-                )}
+                </div>
+              )}
               </div>
             )}
 
@@ -957,6 +1082,58 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Bulk Delete Confirmation Modal */}
+      {confirmBulkDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-xl max-w-md w-full p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-stone-900">
+                  Delete {selectedVoiceIds.size} Custom {selectedVoiceIds.size === 1 ? 'Voice' : 'Voices'}?
+                </h3>
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  This will permanently delete the selected custom cloned voices and their reference audio files. Any speakers currently mapped to these voices will fall back to preset defaults.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                data-testid="cancel-bulk-delete-btn"
+                onClick={() => setConfirmBulkDeleteOpen(false)}
+                disabled={isBulkDeleting}
+                className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="confirm-bulk-delete-btn"
+                onClick={handleBulkDeleteCustomVoices}
+                disabled={isBulkDeleting}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors disabled:opacity-50"
+              >
+                {isBulkDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting…</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm Delete ({selectedVoiceIds.size})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

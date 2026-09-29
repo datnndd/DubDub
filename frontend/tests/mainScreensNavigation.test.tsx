@@ -493,6 +493,52 @@ describe('Top-Level Navigation & Main Screen Interfaces', () => {
       }
     });
 
+    test('deleteVoices bulk deletes custom voices via store and API', async () => {
+      const originalFetch = globalThis.fetch;
+      let bulkDeletePayload: any = null;
+
+      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = String(url);
+        if (urlStr.includes('/api/custom-voices/bulk-delete') && init?.method === 'POST') {
+          bulkDeletePayload = JSON.parse(String(init.body));
+          return new Response(JSON.stringify({ ok: true, deleted: ['cv_viet_1', 'cv_viet_2'], count: 2 }), { status: 200 });
+        }
+        if (urlStr.includes('/api/custom-voices')) {
+          return new Response(JSON.stringify({ voices: [] }), { status: 200 });
+        }
+        return new Response('{}', { status: 200 });
+      }) as any;
+
+      try {
+        useDubDubStore.setState({
+          customVoices: [
+            { id: 'cv_viet_1', name: 'Voice 1', provider: 2 },
+            { id: 'cv_viet_2', name: 'Voice 2', provider: 2 },
+          ],
+        });
+
+        await useDubDubStore.getState().deleteVoices(['cv_viet_1', 'cv_viet_2']);
+        expect(bulkDeletePayload).toEqual({ ids: ['cv_viet_1', 'cv_viet_2'], hard: false });
+        expect(useDubDubStore.getState().customVoices).toHaveLength(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    test('VoiceManagementScreen renders bulk select toolbar and voice checkboxes when custom voices exist', () => {
+      useDubDubStore.setState({
+        customVoices: [
+          { id: 'cv_1', name: 'Custom Narrator', provider: 2 },
+          { id: 'cv_2', name: 'Custom Announcer', provider: 2 },
+        ],
+      });
+
+      const markup = renderToStaticMarkup(<VoiceManagementScreen initialTab="custom" />);
+      expect(markup).toContain('data-testid="select-all-voices-btn"');
+      expect(markup).toContain('data-testid="select-voice-cv_1"');
+      expect(markup).toContain('data-testid="select-voice-cv_2"');
+    });
+
     test('gender filter respects explicit voice gender property', () => {
       useDubDubStore.setState({
         voices: [

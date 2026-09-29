@@ -280,3 +280,49 @@ def test_custom_voices_api_provider_variants(voice_api_env):
             await client.close()
 
     asyncio.run(scenario())
+
+
+def test_bulk_delete_custom_voices_api(voice_api_env):
+    """Verify bulk selection and deletion of custom voices."""
+    app = voice_api_env["app"]
+    db_path = voice_api_env["db_path"]
+
+    async def scenario():
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            # 1. Create 3 custom voices
+            v1 = voice_store.create_voice("Voice 1", provider=tts.VIENEU_TTS, db_path=db_path)
+            v2 = voice_store.create_voice("Voice 2", provider=tts.VIENEU_TTS, db_path=db_path)
+            v3 = voice_store.create_voice("Voice 3", provider=tts.VIENEU_TTS, db_path=db_path)
+
+            initial_list = voice_store.list_voices(db_path=db_path)
+            assert len(initial_list) == 3
+
+            # 2. Bulk delete v1 and v2 via API
+            res = await client.post(
+                "/api/custom-voices/bulk-delete",
+                json={"ids": [v1["id"], v2["id"]]},
+            )
+            assert res.status == 200
+            data = await res.json()
+            assert data["ok"] is True
+            assert data["count"] == 2
+            assert set(data["deleted"]) == {v1["id"], v2["id"]}
+
+            # 3. Verify only v3 remains active in list
+            res_list = await client.get("/api/custom-voices")
+            assert res_list.status == 200
+            list_data = await res_list.json()
+            remaining_ids = [item["id"] for item in list_data["voices"]]
+            assert remaining_ids == [v3["id"]]
+
+            # 4. Direct voice_store.bulk_delete_voices test
+            deleted_v3 = voice_store.bulk_delete_voices([v3["id"]], db_path=db_path)
+            assert deleted_v3 == [v3["id"]]
+            assert len(voice_store.list_voices(db_path=db_path)) == 0
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+

@@ -84,6 +84,13 @@ export async function deleteCustomVoice(id: string, hard: boolean = false): Prom
   });
 }
 
+export async function bulkDeleteCustomVoices(ids: string[], hard: boolean = false): Promise<{ ok: boolean; deleted: string[]; count: number }> {
+  return apiRequest<{ ok: boolean; deleted: string[]; count: number }>('/api/custom-voices/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids, hard }),
+  });
+}
+
 export async function previewCustomVoice(id: string, text?: string, language?: string): Promise<{ ok: boolean; preview_url: string }> {
   return apiRequest<{ ok: boolean; preview_url: string }>(`/api/custom-voices/${encodeURIComponent(id)}/preview`, {
     method: 'POST',

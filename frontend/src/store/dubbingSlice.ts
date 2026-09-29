@@ -9,6 +9,7 @@ import {
   createCustomVoice as apiCreateCustomVoice,
   updateCustomVoice as apiUpdateCustomVoice,
   deleteCustomVoice as apiDeleteCustomVoice,
+  bulkDeleteCustomVoices as apiBulkDeleteCustomVoices,
   previewTTS,
 } from '../api/voices';
 
@@ -31,6 +32,7 @@ export interface DubbingSlice {
   createVoice: (payload: CreateVoicePayload) => Promise<CustomVoice>;
   updateVoice: (id: string, updates: Partial<CustomVoice>) => Promise<void>;
   deleteVoice: (id: string, hard?: boolean) => Promise<void>;
+  deleteVoices: (ids: string[], hard?: boolean) => Promise<void>;
   setCreateVoiceModalOpen: (open: boolean) => void;
   setVoiceManagerDrawerOpen: (open: boolean) => void;
   setActivePreviewVoiceId: (id: string | null) => void;
@@ -140,6 +142,12 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
 
   deleteVoice: async (id: string, hard: boolean = false) => {
     await apiDeleteCustomVoice(id, hard);
+    await get().loadVoices();
+  },
+
+  deleteVoices: async (ids: string[], hard: boolean = false) => {
+    if (!ids || ids.length === 0) return;
+    await apiBulkDeleteCustomVoices(ids, hard);
     await get().loadVoices();
   },
 

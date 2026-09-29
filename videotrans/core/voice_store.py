@@ -271,6 +271,19 @@ def delete_voice(
     return True
 
 
+def bulk_delete_voices(
+    voice_ids: list[str],
+    hard: bool = False,
+    db_path: Optional[str | Path] = None,
+) -> list[str]:
+    """Delete multiple voices. Returns list of successfully deleted voice IDs."""
+    deleted: list[str] = []
+    for vid in voice_ids:
+        if delete_voice(str(vid), hard=hard, db_path=db_path):
+            deleted.append(str(vid))
+    return deleted
+
+
 def migrate_legacy_voices(db_path: Optional[str | Path] = None) -> int:
     """Migrate legacy params['vieneu_roles'] and params['f5tts_role'] to voices table idempotently."""
     from videotrans.configure.config import params
