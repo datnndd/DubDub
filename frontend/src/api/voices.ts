@@ -32,6 +32,27 @@ export interface CreateVoicePayload {
   denoise?: boolean;
   cut_start?: number;
   cut_end?: number;
+  preview_filename?: string;
+  preview_audio_path?: string;
+}
+
+export interface PreviewClonePayload {
+  audio: Blob | File;
+  provider?: number | string;
+  text?: string;
+  language?: string;
+  denoise?: boolean;
+  cut_start?: number;
+  cut_end?: number;
+  ref_text?: string;
+}
+
+export interface PreviewCloneResponse {
+  ok: boolean;
+  preview_id: string;
+  preview_filename: string;
+  preview_url: string;
+  audio_url: string;
 }
 
 export interface TrimAudioPayload {
@@ -96,12 +117,15 @@ export async function createCustomVoice(payload: CreateVoicePayload): Promise<Cu
   if (payload.denoise !== undefined) formData.append('denoise', String(payload.denoise));
   if (payload.cut_start !== undefined) formData.append('cut_start', String(payload.cut_start));
   if (payload.cut_end !== undefined) formData.append('cut_end', String(payload.cut_end));
+  if (payload.preview_filename) formData.append('preview_filename', payload.preview_filename);
+  if (payload.preview_audio_path) formData.append('preview_audio_path', payload.preview_audio_path);
   if (payload.audio) {
     let filename = 'recording.wav';
     if (payload.audio instanceof File) {
       filename = payload.audio.name;
     } else if (payload.audio.type) {
-      if (payload.audio.type.includes('webm')) filename = 'recording.webm';
+      if (payload.audio.type.includes('mpeg') || payload.audio.type.includes('mp3')) filename = 'recording.mp3';
+      else if (payload.audio.type.includes('webm')) filename = 'recording.webm';
       else if (payload.audio.type.includes('mp4') || payload.audio.type.includes('m4a')) filename = 'recording.mp4';
       else if (payload.audio.type.includes('ogg')) filename = 'recording.ogg';
       else if (payload.audio.type.includes('flac')) filename = 'recording.flac';
@@ -110,6 +134,33 @@ export async function createCustomVoice(payload: CreateVoicePayload): Promise<Cu
   }
 
   return apiRequest<CustomVoice>('/api/custom-voices', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function previewCloneVoice(payload: PreviewClonePayload): Promise<PreviewCloneResponse> {
+  const formData = new FormData();
+  let filename = 'recording.wav';
+  if (payload.audio instanceof File) {
+    filename = payload.audio.name;
+  } else if (payload.audio.type) {
+    if (payload.audio.type.includes('mpeg') || payload.audio.type.includes('mp3')) filename = 'recording.mp3';
+    else if (payload.audio.type.includes('webm')) filename = 'recording.webm';
+    else if (payload.audio.type.includes('mp4') || payload.audio.type.includes('m4a')) filename = 'recording.mp4';
+    else if (payload.audio.type.includes('ogg')) filename = 'recording.ogg';
+    else if (payload.audio.type.includes('flac')) filename = 'recording.flac';
+  }
+  formData.append('audio', payload.audio, filename);
+  if (payload.provider !== undefined) formData.append('provider', String(payload.provider));
+  if (payload.text) formData.append('text', payload.text);
+  if (payload.language) formData.append('language', payload.language);
+  if (payload.denoise !== undefined) formData.append('denoise', String(payload.denoise));
+  if (payload.cut_start !== undefined) formData.append('cut_start', String(payload.cut_start));
+  if (payload.cut_end !== undefined) formData.append('cut_end', String(payload.cut_end));
+  if (payload.ref_text) formData.append('ref_text', payload.ref_text);
+
+  return apiRequest<PreviewCloneResponse>('/api/voices/preview-clone', {
     method: 'POST',
     body: formData,
   });

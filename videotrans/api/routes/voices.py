@@ -25,6 +25,7 @@ from videotrans.services.audio_normalizer import (
 from videotrans.services.voice_preview import (
     synthesize_voice_preview,
     synthesize_unified_tts_preview,
+    synthesize_clone_preview,
 )
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -187,8 +188,37 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
     except (ValueError, TypeError):
         end_time = None
 
+    if not audio_file_obj and not audio_bytes and fields.get("audio"):
+        raw_audio = fields.get("audio")
+        if isinstance(raw_audio, str):
+            import base64
+            if raw_audio.startswith("data:audio"):
+                try:
+                    _, encoded = raw_audio.split(",", 1)
+                    audio_bytes = base64.b64decode(encoded)
+                except Exception:
+                    pass
+            elif len(raw_audio) > 100:
+                try:
+                    audio_bytes = base64.b64decode(raw_audio)
+                except Exception:
+                    pass
+
     if audio_file_obj:
-        ext = Path(audio_filename).suffix or ".wav"
+        ext = Path(audio_filename).suffix
+        if not ext and getattr(audio_file_obj, "content_type", None):
+            ct = str(audio_file_obj.content_type).lower()
+            if "mpeg" in ct or "mp3" in ct:
+                ext = ".mp3"
+            elif "ogg" in ct:
+                ext = ".ogg"
+            elif "flac" in ct:
+                ext = ".flac"
+            elif "webm" in ct:
+                ext = ".webm"
+            elif "mp4" in ct or "m4a" in ct:
+                ext = ".m4a"
+        ext = ext or ".wav"
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
             tmp_path = Path(tmp_file.name)
             while chunk := await audio_file_obj.read(4 * 1024 * 1024):
@@ -207,7 +237,20 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
         finally:
             tmp_path.unlink(missing_ok=True)
     elif audio_bytes:
-        ext = Path(audio_filename).suffix or ".wav"
+        ext = Path(audio_filename).suffix
+        if not ext and fields.get("content_type"):
+            ct = str(fields.get("content_type")).lower()
+            if "mpeg" in ct or "mp3" in ct:
+                ext = ".mp3"
+            elif "ogg" in ct:
+                ext = ".ogg"
+            elif "flac" in ct:
+                ext = ".flac"
+            elif "webm" in ct:
+                ext = ".webm"
+            elif "mp4" in ct or "m4a" in ct:
+                ext = ".m4a"
+        ext = ext or ".wav"
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
             tmp_path = Path(tmp_file.name)
             tmp_file.write(audio_bytes)
@@ -251,6 +294,21 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
         except Exception as exc:
             logger.info("VieNeu pre-caching skipped or unavailable: %s", exc)
 
+    # Check if a pre-generated preview audio was provided from preview-clone
+    passed_preview = str(fields.get("preview_audio_path") or fields.get("preview_filename") or "").strip()
+    preview_audio_rel = ""
+    if passed_preview:
+        try:
+            clean_passed = Path(unquote(passed_preview.split("?")[0])).name
+            p_check = voice_store.get_preview_audio_path(clean_passed)
+            if p_check.is_file() and p_check.stat().st_size > 0:
+                dest_preview = voice_store.PREVIEWS_DIR / f"{voice_id}_preview.wav"
+                import shutil
+                shutil.copyfile(p_check, dest_preview)
+                preview_audio_rel = f"{voice_id}_preview.wav"
+        except Exception as exc:
+            logger.info("Could not reuse passed preview file: %s", exc)
+
     created = voice_store.create_voice(
         name=clean_name,
         provider=provider,
@@ -263,7 +321,21 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
         instruct=instruct,
         external_voice_id=external_voice_id,
         tuning_params=tuning_params,
+        preview_audio_path=preview_audio_rel,
     )
+
+    # Auto-generate initial preview if not yet present
+    if not preview_audio_rel:
+        try:
+            gen_path = await synthesize_voice_preview(voice_id)
+            preview_audio_rel = gen_path.name
+            created["preview_audio_path"] = preview_audio_rel
+            voice_store.update_voice(voice_id, preview_audio_path=preview_audio_rel)
+        except Exception as exc:
+            logger.warning("Auto-synthesizing preview on voice creation failed: %s", exc)
+
+    created["preview_url"] = f"/api/custom-voices/{voice_id}/preview/audio"
+    created["audio_url"] = f"/api/custom-voices/{voice_id}/audio"
 
     return JSONResponse(created, status_code=201)
 
@@ -384,14 +456,29 @@ async def get_custom_voice_preview_audio_handler(id: str) -> FileResponse:
     if not voice:
         raise HTTPException(status_code=404, detail=f"Voice {id} not found")
 
-    preview_filename = voice.get("preview_audio_path") or f"{id}_preview.wav"
+    raw_preview = str(voice.get("preview_audio_path") or "").strip()
+    preview_filename = Path(unquote(raw_preview.split("?")[0])).name if raw_preview else f"{id}_preview.wav"
     try:
         preview_path = voice_store.get_preview_audio_path(preview_filename)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError:
+        preview_path = voice_store.get_preview_audio_path(f"{id}_preview.wav")
 
-    if not preview_path.is_file():
-        raise HTTPException(status_code=404, detail="Preview audio not generated yet")
+    if not preview_path.is_file() or preview_path.stat().st_size == 0:
+        try:
+            preview_path = await synthesize_voice_preview(id)
+        except Exception as exc:
+            logger.warning("Auto-synthesizing preview audio for voice %s failed: %s", id, exc)
+            ref_path = voice.get("ref_audio_path")
+            if ref_path:
+                try:
+                    clean_ref = Path(unquote(str(ref_path).split("?")[0])).name
+                    ref_audio_path = voice_store.get_voice_audio_path(clean_ref)
+                    if ref_audio_path.is_file() and ref_audio_path.stat().st_size > 0:
+                        media_t = "audio/mpeg" if clean_ref.lower().endswith(".mp3") else "audio/wav"
+                        return FileResponse(ref_audio_path, media_type=media_t)
+                except Exception:
+                    pass
+            raise HTTPException(status_code=404, detail="Preview audio not generated yet")
 
     return FileResponse(preview_path, media_type="audio/wav")
 
@@ -617,6 +704,182 @@ async def get_trimmed_audio_handler(filename: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Trimmed audio file not found")
 
     return FileResponse(target_path, media_type="audio/wav")
+
+
+@router.post("/api/voices/preview-clone")
+async def preview_clone_handler(request: Request) -> JSONResponse:
+    """
+    Generate an audio preview for a cloned voice before saving it.
+    Accepts multipart/form-data or application/json.
+    """
+    voice_store.init_voice_dirs()
+    fields: dict[str, Any] = {}
+    audio_file_obj: Optional[UploadFile] = None
+    audio_bytes: Optional[bytes] = None
+    audio_filename: str = "audio.wav"
+
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "multipart" in content_type:
+        form = await request.form()
+        for key, val in form.items():
+            if key in {"audio", "file"}:
+                if hasattr(val, "filename") and val.filename:
+                    audio_file_obj = val
+                    audio_filename = Path(unquote(val.filename)).name
+                elif isinstance(val, (bytes, bytearray)):
+                    audio_bytes = bytes(val)
+                    audio_filename = "sample.wav"
+            else:
+                fields[key] = str(val)
+    elif "json" in content_type:
+        fields = await request.json()
+    else:
+        raise HTTPException(status_code=400, detail="Expected multipart/form-data or application/json")
+
+    provider = _parse_provider(fields.get("provider"))
+    text = fields.get("text") or fields.get("sample_text") or None
+    language = str(fields.get("language") or "vi").strip()
+    ref_text = str(fields.get("ref_text") or "").strip()
+
+    if provider == tts.OMNIVOICE_TTS and not ref_text:
+        raise HTTPException(
+            status_code=400,
+            detail="OmniVoice requires reference text transcript to prevent acoustic hallucinations",
+        )
+
+    cut_start_raw = fields.get("cut_start") or fields.get("start_time")
+    cut_end_raw = fields.get("cut_end") or fields.get("end_time")
+    try:
+        start_time = float(cut_start_raw) if cut_start_raw is not None and str(cut_start_raw).strip() != "" else None
+    except (ValueError, TypeError):
+        start_time = None
+    try:
+        end_time = float(cut_end_raw) if cut_end_raw is not None and str(cut_end_raw).strip() != "" else None
+    except (ValueError, TypeError):
+        end_time = None
+
+    if not audio_file_obj and not audio_bytes and fields.get("audio"):
+        raw_audio = fields.get("audio")
+        if isinstance(raw_audio, str):
+            import base64
+            if raw_audio.startswith("data:audio"):
+                try:
+                    _, encoded = raw_audio.split(",", 1)
+                    audio_bytes = base64.b64decode(encoded)
+                except Exception:
+                    pass
+            elif len(raw_audio) > 100:
+                try:
+                    audio_bytes = base64.b64decode(raw_audio)
+                except Exception:
+                    pass
+
+    preview_id = f"preview_clone_{uuid.uuid4().hex[:10]}"
+    temp_ref_path = voice_store.PREVIEWS_DIR / f"{preview_id}_temp_ref.wav"
+
+    if audio_file_obj:
+        ext = Path(audio_filename).suffix
+        if not ext and getattr(audio_file_obj, "content_type", None):
+            ct = str(audio_file_obj.content_type).lower()
+            if "mpeg" in ct or "mp3" in ct:
+                ext = ".mp3"
+            elif "ogg" in ct:
+                ext = ".ogg"
+            elif "flac" in ct:
+                ext = ".flac"
+            elif "webm" in ct:
+                ext = ".webm"
+            elif "mp4" in ct or "m4a" in ct:
+                ext = ".m4a"
+        ext = ext or ".wav"
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+            while chunk := await audio_file_obj.read(4 * 1024 * 1024):
+                tmp_file.write(chunk)
+        try:
+            normalize_reference_audio(tmp_path, temp_ref_path, provider=provider, start_time=start_time, end_time=end_time)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to normalize preview audio", exc_info=True)
+            raise HTTPException(status_code=400, detail=f"Audio normalization failed: {exc}") from exc
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    elif audio_bytes:
+        ext = Path(audio_filename).suffix
+        if not ext and fields.get("content_type"):
+            ct = str(fields.get("content_type")).lower()
+            if "mpeg" in ct or "mp3" in ct:
+                ext = ".mp3"
+            elif "ogg" in ct:
+                ext = ".ogg"
+            elif "flac" in ct:
+                ext = ".flac"
+            elif "webm" in ct:
+                ext = ".webm"
+            elif "mp4" in ct or "m4a" in ct:
+                ext = ".m4a"
+        ext = ext or ".wav"
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+            tmp_file.write(audio_bytes)
+        try:
+            normalize_reference_audio(tmp_path, temp_ref_path, provider=provider, start_time=start_time, end_time=end_time)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to normalize preview audio", exc_info=True)
+            raise HTTPException(status_code=400, detail=f"Audio normalization failed: {exc}") from exc
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    else:
+        raise HTTPException(status_code=400, detail="Audio file is required to preview cloned voice")
+
+    try:
+        pid, preview_path = await synthesize_clone_preview(
+            temp_ref_path,
+            provider=provider,
+            text=text,
+            language=language,
+            ref_text=ref_text,
+            preview_id=preview_id,
+        )
+    except Exception as exc:
+        logger.exception("Clone preview synthesis failed", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Preview synthesis failed: {exc}") from exc
+    finally:
+        temp_ref_path.unlink(missing_ok=True)
+
+    preview_url = f"/api/voices/preview-audio/{preview_path.name}"
+    return JSONResponse({
+        "ok": True,
+        "preview_id": pid,
+        "preview_filename": preview_path.name,
+        "preview_url": preview_url,
+        "audio_url": preview_url,
+    })
+
+
+@router.get("/api/voices/preview-audio/{filename}")
+async def get_preview_audio_file_handler(filename: str) -> FileResponse:
+    unquoted = unquote(filename)
+    if ".." in unquoted or "/" in unquoted or "\\" in unquoted:
+        raise HTTPException(status_code=400, detail="Invalid audio filename or path traversal detected")
+
+    clean_name = Path(unquoted.split("?")[0]).name
+    if not clean_name.lower().endswith((".wav", ".mp3", ".ogg")):
+        raise HTTPException(status_code=400, detail="Invalid audio filename")
+
+    try:
+        target_path = voice_store.get_preview_audio_path(clean_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not target_path.is_file():
+        raise HTTPException(status_code=404, detail="Preview audio file not found")
+
+    media_t = "audio/mpeg" if clean_name.lower().endswith(".mp3") else ("audio/ogg" if clean_name.lower().endswith(".ogg") else "audio/wav")
+    return FileResponse(target_path, media_type=media_t)
 
 
 def register_routes(app) -> None:

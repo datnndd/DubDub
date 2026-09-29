@@ -121,8 +121,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
 
   loadCustomVoices: async (provider?: number) => {
     try {
-      const p = provider ?? get().backend?.config?.ttsType ?? 2;
-      const cList = await fetchCustomVoices(p);
+      const cList = await fetchCustomVoices(provider);
       set({ customVoices: cList || [] });
     } catch (err) {
       console.warn('Failed to load custom voices:', err);
@@ -132,6 +131,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
   createVoice: async (payload: CreateVoicePayload) => {
     const newVoice = await apiCreateCustomVoice(payload);
     await get().loadVoices();
+    await get().loadCustomVoices();
     return newVoice;
   },
 

@@ -11,6 +11,7 @@ import shutil
 import struct
 import time
 from typing import Optional
+import uuid
 import wave
 
 from videotrans import tts
@@ -337,6 +338,100 @@ def generate_fallback_preview_wav(path: Path, duration_sec: float = 1.5, sample_
         ]
         wf.writeframes(array.array("h", samples).tobytes())
     return path
+
+
+async def synthesize_clone_preview(
+    audio_path: str | Path,
+    provider: int = tts.VIENEU_TTS,
+    text: Optional[str] = None,
+    language: Optional[str] = None,
+    use_cuda: bool = True,
+    ref_text: Optional[str] = None,
+    preview_id: Optional[str] = None,
+) -> tuple[str, Path]:
+    """
+    Synthesize a voice preview directly from a reference audio file before saving the voice.
+    Returns (preview_id, preview_path).
+    """
+    voice_store.init_voice_dirs()
+    pid = preview_id or f"preview_clone_{uuid.uuid4().hex[:10]}"
+    clean_pid = "".join(c for c in pid if c.isalnum() or c in ("-", "_")) or f"preview_clone_{uuid.uuid4().hex[:10]}"
+    preview_filename = f"{clean_pid}.wav"
+    preview_path = voice_store.get_preview_audio_path(preview_filename)
+
+    lang = language or "vi"
+    sample_text = (text or "").strip() or get_default_preview_text(lang)
+    ref_src = Path(audio_path).resolve()
+
+    async with _preview_lock:
+        async def _do_synthesis() -> None:
+            if _preview_synthesizer is not None:
+                voice_dict = {
+                    "id": pid,
+                    "name": "Clone Preview",
+                    "provider": provider,
+                    "language": lang,
+                    "ref_audio_path": str(ref_src),
+                }
+                await asyncio.to_thread(_preview_synthesizer, voice_dict, preview_path, sample_text)
+                return
+
+            if provider == tts.VIENEU_TTS and ref_src.is_file():
+                try:
+                    await asyncio.to_thread(
+                        _run_vieneu_synthesis,
+                        ref_src,
+                        preview_path,
+                        sample_text,
+                        use_cuda,
+                    )
+                    return
+                except ImportError:
+                    logger.info("vieneu package not installed, falling back to snippet preview")
+                except Exception as exc:
+                    logger.warning("VieNeu clone preview synthesis failed: %s", exc)
+
+            elif provider == tts.OMNIVOICE_TTS and ref_src.is_file():
+                try:
+                    await asyncio.to_thread(
+                        _run_omnivoice_synthesis,
+                        ref_src,
+                        ref_text or "",
+                        preview_path,
+                        sample_text,
+                        use_cuda,
+                    )
+                    return
+                except ImportError:
+                    logger.info("omnivoice package not installed, falling back to snippet preview")
+                except Exception as exc:
+                    logger.warning("OmniVoice clone preview synthesis failed: %s", exc)
+
+            # Robust snippet fallback from reference audio
+            if ref_src.is_file():
+                target_rate = 48000 if provider == tts.VIENEU_TTS else 24000
+                cmd = [
+                    "-y",
+                    "-ss", "0",
+                    "-t", "3",
+                    "-i", str(ref_src),
+                    "-vn",
+                    "-ac", "1",
+                    "-ar", str(target_rate),
+                    "-acodec", "pcm_s16le",
+                    str(preview_path),
+                ]
+                await asyncio.to_thread(runffmpeg, cmd, force_cpu=True)
+                return
+
+            generate_fallback_preview_wav(preview_path)
+
+        await asyncio.wait_for(_do_synthesis(), timeout=PREVIEW_TIMEOUT_SECONDS)
+
+    if not preview_path.is_file() or preview_path.stat().st_size == 0:
+        generate_fallback_preview_wav(preview_path)
+
+    return pid, preview_path
 
 
 async def synthesize_unified_tts_preview(

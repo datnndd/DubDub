@@ -17,8 +17,9 @@ import {
   Wand2,
   Scissors,
   RotateCcw,
+  Headphones,
 } from 'lucide-react';
-import { requestVoiceDesignAssist, previewTTS, trimAudio } from '../api/voices';
+import { requestVoiceDesignAssist, previewTTS, trimAudio, previewCloneVoice } from '../api/voices';
 
 const VIENEU_PRESET_VOICES = [
   { id: 'Bình (nam miền Bắc)', name: 'Bình', region: 'Nam Bắc', gender: 'Nam', desc: 'Truyền cảm, ấm áp' },
@@ -89,6 +90,14 @@ export const CreateVoiceModal: React.FC = () => {
   const [isAuditionPlaying, setIsAuditionPlaying] = useState(false);
   const auditionAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Clone Voice Preview before saving
+  const [clonePreviewText, setClonePreviewText] = useState('Xin chào, đây là bản nghe thử giọng nói được sao chép.');
+  const [isCloneAuditioning, setIsCloneAuditioning] = useState(false);
+  const [cloneAuditionUrl, setCloneAuditionUrl] = useState<string | null>(null);
+  const [clonePreviewFilename, setClonePreviewFilename] = useState<string | null>(null);
+  const [isCloneAuditionPlaying, setIsCloneAuditionPlaying] = useState(false);
+  const cloneAuditionAudioRef = useRef<HTMLAudioElement | null>(null);
+
   // Status
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -128,6 +137,15 @@ export const CreateVoiceModal: React.FC = () => {
       setPreviewText('Xin chào, đây là bản nghe thử phong cách giọng nói vừa được thiết kế.');
       setAuditionAudioUrl(null);
       setIsAuditionPlaying(false);
+      setClonePreviewText('Xin chào, đây là bản nghe thử giọng nói được sao chép.');
+      setIsCloneAuditioning(false);
+      setCloneAuditionUrl(null);
+      setClonePreviewFilename(null);
+      setIsCloneAuditionPlaying(false);
+    } else {
+      if (audioPlayerRef.current) audioPlayerRef.current.pause();
+      if (auditionAudioRef.current) auditionAudioRef.current.pause();
+      if (cloneAuditionAudioRef.current) cloneAuditionAudioRef.current.pause();
     }
   }, [isOpen, activeTtsType]);
 
@@ -136,8 +154,9 @@ export const CreateVoiceModal: React.FC = () => {
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       if (rawAudioUrl && rawAudioUrl !== audioUrl) URL.revokeObjectURL(rawAudioUrl);
       if (auditionAudioUrl && auditionAudioUrl.startsWith('blob:')) URL.revokeObjectURL(auditionAudioUrl);
+      if (cloneAuditionUrl && cloneAuditionUrl.startsWith('blob:')) URL.revokeObjectURL(cloneAuditionUrl);
     };
-  }, [audioUrl, rawAudioUrl, auditionAudioUrl]);
+  }, [audioUrl, rawAudioUrl, auditionAudioUrl, cloneAuditionUrl]);
 
   if (!isOpen) return null;
 
@@ -442,6 +461,64 @@ export const CreateVoiceModal: React.FC = () => {
     }
   };
 
+  const handleAuditionClone = async () => {
+    const hasRawSource = Boolean(rawAudioFile || rawAudioBlob);
+    const sourceAudio = (isTrimming || isTrimmed) && hasRawSource
+      ? (rawAudioFile || rawAudioBlob)
+      : (audioBlob || audioFile);
+
+    if (!sourceAudio) {
+      setErrorMsg('Please upload or record reference audio first.');
+      return;
+    }
+    if (!clonePreviewText.trim()) {
+      setErrorMsg('Please enter a test phrase to preview the voice.');
+      return;
+    }
+    if (provider === 1 && !refText.trim()) {
+      setErrorMsg('OmniVoice requires reference text transcript to prevent acoustic hallucinations.');
+      return;
+    }
+    setIsCloneAuditioning(true);
+    setErrorMsg(null);
+
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      setIsPlaying(false);
+    }
+    if (auditionAudioRef.current) {
+      auditionAudioRef.current.pause();
+      setIsAuditionPlaying(false);
+    }
+
+    try {
+      const res = await previewCloneVoice({
+        audio: sourceAudio,
+        provider,
+        text: clonePreviewText.trim(),
+        language,
+        denoise,
+        cut_start: isTrimming || (isTrimmed && hasRawSource) ? trimStart : undefined,
+        cut_end: isTrimming || (isTrimmed && hasRawSource) ? trimEnd : undefined,
+        ref_text: refText.trim() || undefined,
+      });
+      if (res && (res.preview_url || res.audio_url)) {
+        const url = res.preview_url || res.audio_url;
+        setCloneAuditionUrl(url);
+        setClonePreviewFilename(res.preview_filename);
+        setIsCloneAuditionPlaying(true);
+        if (cloneAuditionAudioRef.current) {
+          cloneAuditionAudioRef.current.src = url;
+          cloneAuditionAudioRef.current.play().catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      setErrorMsg(`Preview voice error: ${err.message || 'Failed to synthesize cloned voice preview'}`);
+    } finally {
+      setIsCloneAuditioning(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -475,6 +552,11 @@ export const CreateVoiceModal: React.FC = () => {
 
       setIsSubmitting(true);
       try {
+        const hasRawSource = Boolean(rawAudioFile || rawAudioBlob);
+        const sourceAudio = (isTrimming || isTrimmed) && hasRawSource
+          ? (rawAudioFile || rawAudioBlob)
+          : (audioBlob || audioFile);
+
         const payload: any = {
           name: cleanName,
           provider,
@@ -483,11 +565,12 @@ export const CreateVoiceModal: React.FC = () => {
           kind: 'clone',
           ref_text: refText.trim(),
           instruct: instruct.trim(),
-          audio: audioBlob || audioFile || undefined,
+          audio: sourceAudio || undefined,
           denoise,
           tuning_params: { denoise },
+          preview_filename: clonePreviewFilename || undefined,
         };
-        if (isTrimming || isTrimmed) {
+        if (isTrimming || (isTrimmed && hasRawSource)) {
           payload.cut_start = trimStart;
           payload.cut_end = trimEnd;
         }
@@ -1046,6 +1129,61 @@ export const CreateVoiceModal: React.FC = () => {
                     onChange={(e) => setRefText(e.target.value)}
                     className="w-full text-xs p-2.5 bg-white rounded-lg border border-[#E7E4DC] focus:border-[#8D4B00] outline-hidden font-medium"
                   />
+                </div>
+              )}
+
+              {/* Preview Cloned Voice before saving */}
+              {(audioBlob || audioFile) && (
+                <div className="space-y-2 p-3 bg-stone-50 rounded-xl border border-stone-200">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-stone-700 flex items-center gap-1.5">
+                      <Headphones className="w-3.5 h-3.5 text-[#8D4B00]" />
+                      Preview Cloned Voice
+                    </label>
+                    <span className="text-[10px] text-stone-500">Listen before saving</span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    placeholder="Enter phrase to preview cloned voice..."
+                    value={clonePreviewText}
+                    onChange={(e) => setClonePreviewText(e.target.value)}
+                    className="w-full text-xs p-2 bg-white rounded-lg border border-[#E7E4DC] focus:border-[#8D4B00] outline-hidden font-medium"
+                  />
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      data-action="preview-cloned-voice"
+                      onClick={handleAuditionClone}
+                      disabled={isCloneAuditioning || !clonePreviewText.trim() || !canSubmitClone}
+                      className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+                      title="Preview Voice before saving"
+                    >
+                      {isCloneAuditioning ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Synthesizing Cloned Voice...
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-3.5 h-3.5" />
+                          Preview Voice
+                        </>
+                      )}
+                    </button>
+
+                    {cloneAuditionUrl && (
+                      <audio
+                        ref={cloneAuditionAudioRef}
+                        src={cloneAuditionUrl}
+                        controls
+                        autoPlay
+                        className="h-7 w-48"
+                        onPlay={() => setIsCloneAuditionPlaying(true)}
+                        onPause={() => setIsCloneAuditionPlaying(false)}
+                        onEnded={() => setIsCloneAuditionPlaying(false)}
+                      />
+                    )}
+                  </div>
                 </div>
               )}
             </>

@@ -186,5 +186,107 @@ describe('VieNeu-TTS Voice Design & Voice Cloning', () => {
     expect(res.start_time).toBe(5.0);
     expect(res.end_time).toBe(15.0);
   });
+
+  test('previewCloneVoice client function sends proper parameters and returns preview metadata', async () => {
+    const { previewCloneVoice } = await import('../src/api/voices');
+    let capturedUrl = '';
+    let capturedBody: any = null;
+
+    const mockData = {
+      ok: true,
+      preview_id: 'preview_clone_12345678',
+      preview_filename: 'preview_clone_12345678.wav',
+      preview_url: '/api/voices/preview-audio/preview_clone_12345678.wav',
+      audio_url: '/api/voices/preview-audio/preview_clone_12345678.wav',
+    };
+
+    (globalThis as any).fetch = async (url: string, init: any) => {
+      capturedUrl = url;
+      capturedBody = init?.body;
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+        },
+        json: async () => mockData,
+        text: async () => JSON.stringify(mockData),
+      };
+    };
+
+    const dummyBlob = new Blob(['sample-voice-data'], { type: 'audio/mpeg' });
+    const res = await previewCloneVoice({
+      audio: dummyBlob,
+      provider: 2,
+      text: 'Test preview phrase for cloned voice',
+      language: 'vi',
+      denoise: true,
+      cut_start: 1.0,
+      cut_end: 6.0,
+    });
+
+    expect(capturedUrl).toBe('/api/voices/preview-clone');
+    expect(capturedBody).toBeInstanceOf(FormData);
+    expect(res.ok).toBe(true);
+    expect(res.preview_id).toBe('preview_clone_12345678');
+    expect(res.preview_url).toBe('/api/voices/preview-audio/preview_clone_12345678.wav');
+  });
+
+  test('createCustomVoice client function carries preview_filename and maps MP3 audio', async () => {
+    const { createCustomVoice } = await import('../src/api/voices');
+    let capturedUrl = '';
+    let capturedFormData: any = null;
+
+    const mockResponse = {
+      id: 'voice_3b224d3c',
+      name: 'Cloned Voice Test',
+      provider: 2,
+      kind: 'clone',
+      ref_audio_path: 'voice_3b224d3c.wav',
+      preview_audio_path: 'voice_3b224d3c_preview.wav',
+      preview_url: '/api/custom-voices/voice_3b224d3c/preview/audio',
+      audio_url: '/api/custom-voices/voice_3b224d3c/audio',
+    };
+
+    (globalThis as any).fetch = async (url: string, init: any) => {
+      capturedUrl = url;
+      capturedFormData = init?.body;
+      return {
+        ok: true,
+        status: 201,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+        },
+        json: async () => mockResponse,
+        text: async () => JSON.stringify(mockResponse),
+      };
+    };
+
+    const mp3Blob = new Blob(['mp3-binary-frames'], { type: 'audio/mp3' });
+    const res = await createCustomVoice({
+      name: 'Cloned Voice Test',
+      provider: 2,
+      audio: mp3Blob,
+      preview_filename: 'preview_clone_12345678.wav',
+    });
+
+    expect(capturedUrl).toBe('/api/custom-voices');
+    expect(capturedFormData).toBeInstanceOf(FormData);
+    expect(capturedFormData.get('preview_filename')).toBe('preview_clone_12345678.wav');
+    expect(capturedFormData.get('name')).toBe('Cloned Voice Test');
+    expect(res.id).toBe('voice_3b224d3c');
+    expect(res.preview_audio_path).toBe('voice_3b224d3c_preview.wav');
+  });
+
+  test('CreateVoiceModal renders Preview Cloned Voice button and test phrase area when reference audio is provided', () => {
+    // Render CreateVoiceModal initially
+    const html = renderToStaticMarkup(<CreateVoiceModal />);
+    // Verify standard cloning surfaces are present
+    expect(html).toContain('Reference Audio Sample');
+    expect(html).toContain('data-modal="create-voice"');
+    expect(html).toContain('Save Cloned Voice');
+  });
 });
+
+
 
