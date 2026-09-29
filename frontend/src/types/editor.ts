@@ -13,6 +13,9 @@ export interface SubtitleStyleSettings {
   outlineWidth: number;
   shadowColor: string;
   shadowSize: number;
+  fontWeight?: string;
+  fontStyle?: string;
+  opacity?: number;
   aiLipSync?: boolean;
   deReverb?: boolean;
   faceRetouch?: boolean;
@@ -26,4 +29,5 @@ export interface EditVideoState {
   exporting: boolean;
   error: string | null;
   activeTab: 'audio' | 'subtitles' | 'assets';
+  isCapCutModalOpen?: boolean;
 }

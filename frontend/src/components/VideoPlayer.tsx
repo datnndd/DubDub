@@ -102,6 +102,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const capcutStyle: React.CSSProperties = {
     fontFamily: subtitleStyles.fontFamily || 'Arial, sans-serif',
     fontSize: `${subtitleStyles.fontSize || 22}px`,
+    fontWeight: subtitleStyles.fontWeight || 'normal',
+    fontStyle: subtitleStyles.fontStyle || 'normal',
+    opacity: (subtitleStyles.opacity ?? 100) / 100,
     color: textColor,
     WebkitTextStroke: `${outlineWidth}px ${outlineColor}`,
     paintOrder: 'stroke fill',

@@ -1,14 +1,20 @@
-# -*- coding: utf-8 -*-
-from __future__ import annotations
-
+import os
+import shutil
+import struct
+import subprocess
+import sys
+import wave
+import zipfile
+from pathlib import Path
 from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from videotrans.core.project_store import (
     create_project,
     get_project,
+    get_project_dir,
     list_projects,
     update_project,
     update_project_state,
@@ -216,6 +222,178 @@ async def resume_project_handler(project_id: str) -> JSONResponse:
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return JSONResponse({"ok": True, "project": project})
+
+
+def _format_srt_time(sec: float) -> str:
+    total_ms = max(0, int(round(float(sec) * 1000)))
+    ms = total_ms % 1000
+    total_sec = total_ms // 1000
+    s = total_sec % 60
+    total_min = total_sec // 60
+    m = total_min % 60
+    h = total_min // 60
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def _build_srt(segments: list[dict], field: str = "targetText") -> str:
+    lines = []
+    for i, seg in enumerate(segments, 1):
+        if not isinstance(seg, dict):
+            continue
+        text = str(seg.get(field) or (seg.get("sourceText") if field == "targetText" else seg.get("targetText")) or "").strip()
+        start = _format_srt_time(float(seg.get("startSec", 0)))
+        end = _format_srt_time(float(seg.get("endSec", float(seg.get("startSec", 0)) + 1.0)))
+        lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    return "\n".join(lines).strip() + "\n"
+
+
+def _create_fallback_wav(path: Path, duration_sec: float = 1.0) -> None:
+    sample_rate = 44100
+    num_frames = int(max(0.5, float(duration_sec)) * sample_rate)
+    with wave.open(str(path), 'wb') as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        data = struct.pack(f"<{num_frames}h", *([0] * num_frames))
+        wav_file.writeframes(data)
+
+
+def _prepare_capcut_assets(project_id: str, request: Request | None = None) -> dict[str, Path]:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    proj_dir = get_project_dir(project_id)
+    exports_dir = proj_dir / "exports"
+    exports_dir.mkdir(parents=True, exist_ok=True)
+
+    state = project.get("state") or {}
+    segments = state.get("segments") or []
+
+    # 1. subtitles_edited.srt
+    edited_srt_path = exports_dir / "subtitles_edited.srt"
+    edited_content = _build_srt(segments, field="targetText")
+    edited_srt_path.write_text(edited_content, encoding="utf-8")
+
+    # 2. subtitles_target.srt
+    target_srt_path = exports_dir / "subtitles_target.srt"
+    target_content = _build_srt(segments, field="rawTranslation" if any("rawTranslation" in s for s in segments) else "targetText")
+    target_srt_path.write_text(target_content, encoding="utf-8")
+
+    # 3. video.mp4
+    video_path = exports_dir / "video.mp4"
+    src_media_path = None
+    media_id = project.get("media_id")
+    app_state = getattr(getattr(request, "app", None), "state", None)
+    store = getattr(app_state, "media_store", None) or MEDIA
+    if media_id:
+        rec = store.get(media_id)
+        if rec and rec.path.is_file():
+            src_media_path = rec.path
+    if not src_media_path and project.get("media_path"):
+        cand = Path(project["media_path"])
+        if cand.is_file():
+            src_media_path = cand
+
+    if src_media_path and src_media_path.is_file():
+        if src_media_path.resolve() != video_path.resolve():
+            try:
+                shutil.copy2(src_media_path, video_path)
+            except Exception:
+                video_path = src_media_path
+    elif not video_path.is_file():
+        video_path.touch(exist_ok=True)
+
+    # 4. voiceover_merged.wav
+    voiceover_path = exports_dir / "voiceover_merged.wav"
+    found_audio = None
+    dubbing_dir = proj_dir / "dubbing"
+    for cand_name in ["voiceover_merged.wav", "target.wav", "lastend.wav", "dubbed.wav"]:
+        cand = exports_dir / cand_name
+        if cand.is_file() and cand.stat().st_size > 0:
+            found_audio = cand
+            break
+        cand_dub = dubbing_dir / cand_name
+        if cand_dub.is_file() and cand_dub.stat().st_size > 0:
+            found_audio = cand_dub
+            break
+
+    if found_audio and found_audio.is_file() and found_audio.resolve() != voiceover_path.resolve():
+        try:
+            shutil.copy2(found_audio, voiceover_path)
+        except Exception:
+            voiceover_path = found_audio
+    elif not voiceover_path.is_file() or voiceover_path.stat().st_size == 0:
+        _create_fallback_wav(voiceover_path, duration_sec=float(project.get("duration") or 1.0))
+
+    # 5. bundle.zip
+    zip_path = exports_dir / f"capcut_export_{project_id}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(edited_srt_path, "subtitles_edited.srt")
+        zf.write(target_srt_path, "subtitles_target.srt")
+        zf.write(video_path, "video.mp4")
+        zf.write(voiceover_path, "voiceover_merged.wav")
+
+    return {
+        "subtitles_edited.srt": edited_srt_path,
+        "subtitles_target.srt": target_srt_path,
+        "video.mp4": video_path,
+        "voiceover_merged.wav": voiceover_path,
+        "bundle.zip": zip_path,
+    }
+
+
+@router.get("/api/projects/{project_id}/export-capcut/{asset_name}")
+async def get_capcut_asset_handler(project_id: str, asset_name: str, request: Request):
+    assets = _prepare_capcut_assets(project_id, request)
+    clean_name = asset_name.lower().strip()
+    if clean_name in {"subtitles_edited.srt", "edited.srt"}:
+        target = assets["subtitles_edited.srt"]
+        media_type = "text/plain; charset=utf-8"
+        download_name = "subtitles_edited.srt"
+    elif clean_name in {"subtitles_target.srt", "target.srt"}:
+        target = assets["subtitles_target.srt"]
+        media_type = "text/plain; charset=utf-8"
+        download_name = "subtitles_target.srt"
+    elif clean_name in {"video.mp4", "video"}:
+        target = assets["video.mp4"]
+        media_type = "video/mp4"
+        download_name = "video.mp4"
+    elif clean_name in {"voiceover_merged.wav", "audio.wav", "audio"}:
+        target = assets["voiceover_merged.wav"]
+        media_type = "audio/wav"
+        download_name = "voiceover_merged.wav"
+    elif clean_name in {"bundle.zip", "capcut_bundle.zip", "all.zip", "zip"}:
+        target = assets["bundle.zip"]
+        media_type = "application/zip"
+        download_name = f"capcut_export_{project_id}.zip"
+    else:
+        raise HTTPException(status_code=404, detail=f"Unknown asset {asset_name}")
+
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail=f"Asset {asset_name} could not be generated")
+    return FileResponse(target, filename=download_name, media_type=media_type)
+
+
+@router.post("/api/projects/{project_id}/open-folder")
+async def open_project_folder_handler(project_id: str) -> JSONResponse:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    proj_dir = get_project_dir(project_id)
+    exports_dir = proj_dir / "exports"
+    target_dir = exports_dir if exports_dir.is_dir() else proj_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(str(target_dir))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(target_dir)])
+        else:
+            subprocess.Popen(["xdg-open", str(target_dir)])
+    except Exception:
+        pass
+    return JSONResponse({"ok": True, "path": str(target_dir.resolve().as_posix())})
 
 
 def register_routes(app) -> None:

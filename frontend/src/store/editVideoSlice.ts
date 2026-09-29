@@ -38,6 +38,7 @@ export interface EditVideoSlice {
   removeThumbnail: () => void;
   updateSubtitleStyle: (key: keyof SubtitleStyleSettings, val: any) => void;
   setActiveInspectorTab: (tab: 'audio' | 'subtitles' | 'assets') => void;
+  setCapCutModalOpen: (open: boolean) => void;
   exportEditedVideo: () => Promise<void>;
 }
 
@@ -51,6 +52,9 @@ export const createEditVideoSlice: StateCreator<any, [], [], EditVideoSlice> = (
     outlineWidth: 2,
     shadowColor: 'rgba(0,0,0,.75)',
     shadowSize: 2,
+    fontWeight: 'normal',
+    fontStyle: 'normal',
+    opacity: 100,
     aiLipSync: true,
     deReverb: true,
     faceRetouch: false,
@@ -63,6 +67,7 @@ export const createEditVideoSlice: StateCreator<any, [], [], EditVideoSlice> = (
     exporting: false,
     error: null,
     activeTab: 'audio',
+    isCapCutModalOpen: false,
   },
   muteCache: {},
 
@@ -193,6 +198,15 @@ export const createEditVideoSlice: StateCreator<any, [], [], EditVideoSlice> = (
       editVideo: {
         ...state.editVideo,
         activeTab: tab,
+      },
+    }));
+  },
+
+  setCapCutModalOpen: (open: boolean) => {
+    set((state: any) => ({
+      editVideo: {
+        ...state.editVideo,
+        isCapCutModalOpen: open,
       },
     }));
   },

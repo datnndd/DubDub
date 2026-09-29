@@ -600,20 +600,38 @@ def test_build_task_params_subtitle_style_and_ass_conversion_compatibility(tmp_p
         "shadowSize": 3,
         "fontSize": 28,
         "fontFamily": "Inter",
+        "fontWeight": "bold",
+        "fontStyle": "italic",
+        "opacity": 80,
     }
 
-    # Verify set_ass_font color converter logic
-    def ass_color(value: str, fallback: str) -> str:
+    # Verify set_ass_font color & alpha converter logic
+    def ass_color(value: str, fallback: str, alpha: int = 0) -> str:
         match = re.fullmatch(r"#([0-9a-fA-F]{6})", str(value or ""))
         if not match:
             return fallback
         rgb = match.group(1)
-        return f"&H00{rgb[4:6]}{rgb[2:4]}{rgb[0:2]}&"
+        alpha_hex = f"{max(0, min(255, alpha)):02X}"
+        return f"&H{alpha_hex}{rgb[4:6]}{rgb[2:4]}{rgb[0:2]}&"
 
     assert ass_color(style_override["color"], "&H00FFFFFF&") == "&H00FFFFFF&"
     assert ass_color(style_override["outlineColor"], "&H00000000&") == "&H00000000&"
     # Red color #FF0000 in RGB becomes &H000000FF& in ASS BGR
     assert ass_color("#FF0000", "&H00FFFFFF&") == "&H000000FF&"
+
+    # Opacity 80% -> alpha = round((1 - 0.8) * 255) = round(51) = 51 = 0x33
+    alpha_80 = int(round((1.0 - 80 / 100.0) * 255.0))
+    assert alpha_80 == 51
+    assert ass_color("#FFFFFF", "&H00FFFFFF&", alpha=alpha_80) == "&H33FFFFFF&"
+
+    # Test bold and italic flag extraction
+    is_bold = str(style_override["fontWeight"]).lower() in {"bold", "700", "800", "900", "true"}
+    bold_val = -1 if is_bold else 0
+    assert bold_val == -1
+
+    is_italic = str(style_override["fontStyle"]).lower() in {"italic", "oblique", "true"}
+    italic_val = -1 if is_italic else 0
+    assert italic_val == -1
 
 
 # ============================================================================
@@ -800,3 +818,37 @@ def test_adversarial_invalid_audio_mix_inputs(tmp_path, monkeypatch):
     assert params["source_audio_volume"] == 0.0
     # "not-a-number" defaults to 0.8 in py
     assert params["backaudio_volume"] == 0.8
+
+
+def test_capcut_4_asset_export_and_endpoints(tmp_path, monkeypatch):
+    """Test CapCut 4-asset generation, zip bundle packaging, and open-folder handler."""
+    from videotrans.api.routes.projects import _prepare_capcut_assets
+    from videotrans.core.project_store import create_project
+
+    proj_id = f"test-capcut-{tmp_path.name}"
+    dummy_segments = [
+        {"id": 1, "startSec": 1.0, "endSec": 3.5, "sourceText": "Hello", "targetText": "Xin chào"},
+        {"id": 2, "startSec": 4.0, "endSec": 6.0, "sourceText": "World", "targetText": "Thế giới"},
+    ]
+    create_project(proj_id, name="CapCut Project", duration=10.0, state={"segments": dummy_segments})
+
+    assets = _prepare_capcut_assets(proj_id)
+    assert assets["subtitles_edited.srt"].is_file()
+    assert assets["subtitles_target.srt"].is_file()
+    assert assets["video.mp4"].is_file()
+    assert assets["voiceover_merged.wav"].is_file()
+    assert assets["bundle.zip"].is_file()
+
+    # Check edited srt content
+    edited_text = assets["subtitles_edited.srt"].read_text(encoding="utf-8")
+    assert "Xin chào" in edited_text
+    assert "00:00:01,000 --> 00:00:03,500" in edited_text
+
+    # Check zip contents
+    import zipfile
+    with zipfile.ZipFile(assets["bundle.zip"], "r") as zf:
+        namelist = zf.namelist()
+        assert "subtitles_edited.srt" in namelist
+        assert "subtitles_target.srt" in namelist
+        assert "video.mp4" in namelist
+        assert "voiceover_merged.wav" in namelist

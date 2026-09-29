@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useDubDubStore } from '../store';
-import { Play, ArrowRight, Video, CheckCircle2, AlertCircle, Loader2, StopCircle, Sparkles } from 'lucide-react';
+import { Play, ArrowRight, Video, CheckCircle2, AlertCircle, Loader2, StopCircle, Sparkles, Layers } from 'lucide-react';
 
 export const StatusFooter: React.FC = () => {
+  const [showCapCutTooltip, setShowCapCutTooltip] = useState(false);
   const currentStep = useDubDubStore((s) => s.currentStep);
   const setStep = useDubDubStore((s) => s.setStep);
   const backend = useDubDubStore((s) => s.backend);
@@ -13,6 +14,7 @@ export const StatusFooter: React.FC = () => {
   const startPrepareJob = useDubDubStore((s) => s.startPrepareJob);
   const cancelActiveJob = useDubDubStore((s) => s.cancelActiveJob);
   const exportEditedVideo = useDubDubStore((s) => s.exportEditedVideo);
+  const setCapCutModalOpen = useDubDubStore((s) => s.setCapCutModalOpen);
   const dubbingStatus = useDubDubStore((s) => s.dubbingStatus);
   const runFullDubbing = useDubDubStore((s) => s.runFullDubbing);
 
@@ -145,8 +147,34 @@ export const StatusFooter: React.FC = () => {
         </div>
       </div>
 
-      {/* Right: Primary Action Button */}
+      {/* Right: Primary Action Button & CapCut Bridge */}
       <div className="flex items-center gap-3 flex-shrink-0">
+        {currentStep === 4 && (
+          <div className="relative flex items-center">
+            <button
+              type="button"
+              data-continue-in-capcut-btn="true"
+              onClick={() => setCapCutModalOpen(true)}
+              onMouseEnter={() => setShowCapCutTooltip(true)}
+              onMouseLeave={() => setShowCapCutTooltip(false)}
+              className="px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 border border-stone-200 bg-white hover:bg-stone-50 text-stone-800 shadow-2xs transition-all cursor-pointer"
+              title="Export your video, merged audio, and .srt subtitles, then import them directly into CapCut for advanced effects and transitions."
+            >
+              <Layers className="w-3.5 h-3.5 text-[#8D4B00]" />
+              <span>Continue in CapCut</span>
+            </button>
+            {showCapCutTooltip && (
+              <div
+                data-capcut-tooltip="true"
+                className="absolute bottom-full mb-2 right-0 w-64 p-2.5 bg-stone-900 text-white text-[11px] rounded-lg shadow-xl z-50 pointer-events-none"
+              >
+                <div className="font-semibold text-amber-300 mb-0.5">Edit in CapCut</div>
+                Export your video, merged audio, and .srt subtitles, then import them directly into CapCut for advanced effects and transitions.
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           onClick={handleAction}
           disabled={actionConfig.disabled}

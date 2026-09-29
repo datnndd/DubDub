@@ -13,6 +13,8 @@ import {
   Video,
   Mic,
   Subtitles,
+  Bold,
+  Italic,
 } from 'lucide-react';
 
 export const Stage4EditVideo: React.FC = () => {
@@ -229,6 +231,60 @@ export const Stage4EditVideo: React.FC = () => {
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Typography &amp; Style</h4>
 
                 <div className="space-y-3">
+                  {/* Font Family */}
+                  <div>
+                    <label className="text-[10px] text-stone-400 font-medium block mb-1">Font Family</label>
+                    <select
+                      data-subtitle-font-family="true"
+                      value={subtitleStyles.fontFamily || 'Arial'}
+                      onChange={(e) => updateSubtitleStyle('fontFamily', e.target.value)}
+                      className="w-full text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-stone-800 focus:outline-none focus:border-amber-400 cursor-pointer"
+                    >
+                      <option value="Arial">Arial</option>
+                      <option value="Inter">Inter</option>
+                      <option value="Impact">Impact</option>
+                      <option value="Roboto">Roboto</option>
+                      <option value="Georgia">Georgia</option>
+                      <option value="sans-serif">System Default</option>
+                    </select>
+                  </div>
+
+                  {/* Font Style Toggles (Bold, Italic) */}
+                  <div>
+                    <label className="text-[10px] text-stone-400 font-medium block mb-1">Font Style</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        data-subtitle-bold-toggle="true"
+                        onClick={() => updateSubtitleStyle('fontWeight', subtitleStyles.fontWeight === 'bold' ? 'normal' : 'bold')}
+                        className={`flex-1 py-1 px-2 rounded-lg border text-xs font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                          subtitleStyles.fontWeight === 'bold'
+                            ? 'bg-[#8D4B00] text-white border-amber-900 shadow-2xs'
+                            : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
+                        }`}
+                        title="Toggle Bold"
+                      >
+                        <Bold className="w-3.5 h-3.5" />
+                        <span>Bold</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-subtitle-italic-toggle="true"
+                        onClick={() => updateSubtitleStyle('fontStyle', subtitleStyles.fontStyle === 'italic' ? 'normal' : 'italic')}
+                        className={`flex-1 py-1 px-2 rounded-lg border text-xs font-semibold italic flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                          subtitleStyles.fontStyle === 'italic'
+                            ? 'bg-[#8D4B00] text-white border-amber-900 shadow-2xs'
+                            : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
+                        }`}
+                        title="Toggle Italic"
+                      >
+                        <Italic className="w-3.5 h-3.5" />
+                        <span>Italic</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Font Size */}
                   <div>
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="font-medium text-stone-700">Font Size</span>
@@ -236,10 +292,28 @@ export const Stage4EditVideo: React.FC = () => {
                     </div>
                     <input
                       type="range"
+                      data-subtitle-font-size="true"
                       min="12"
-                      max="48"
+                      max="64"
                       value={subtitleStyles.fontSize}
                       onChange={(e) => updateSubtitleStyle('fontSize', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* Opacity / Transparency */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="font-medium text-stone-700">Opacity / Transparency</span>
+                      <span className="font-mono font-bold text-[#8D4B00]">{subtitleStyles.opacity ?? 100}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      data-subtitle-opacity="true"
+                      min="0"
+                      max="100"
+                      value={subtitleStyles.opacity ?? 100}
+                      onChange={(e) => updateSubtitleStyle('opacity', parseInt(e.target.value))}
                       className="w-full"
                     />
                   </div>

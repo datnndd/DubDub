@@ -43,19 +43,41 @@ def set_ass_font(srtfile: str, style_override: dict | None = None) -> str:
         except Exception as e:
             logger.exception(f"[set_ass_font] 错误：无法读取或解析 JSON 文件 {JSON_FILE}: {e}", exc_info=True)
     if style_override:
-        def ass_color(value: str, fallback: str) -> str:
+        def ass_color(value: str, fallback: str, alpha: int = 0) -> str:
             match = re.fullmatch(r'#([0-9a-fA-F]{6})', str(value or ''))
             if not match:
                 return fallback
             rgb = match.group(1)
-            return f"&H00{rgb[4:6]}{rgb[2:4]}{rgb[0:2]}&"
+            alpha_hex = f"{max(0, min(255, alpha)):02X}"
+            return f"&H{alpha_hex}{rgb[4:6]}{rgb[2:4]}{rgb[0:2]}&"
+
+        opacity = style_override.get('opacity')
+        if opacity is not None:
+            try:
+                op_val = float(opacity)
+                alpha_val = int(round((1.0 - max(0.0, min(100.0, op_val)) / 100.0) * 255.0))
+            except (ValueError, TypeError):
+                alpha_val = 0
+        else:
+            alpha_val = 0
+
+        bold_raw = style_override.get('fontWeight', style_override.get('bold', False))
+        is_bold = str(bold_raw).lower() in {'bold', '700', '800', '900', 'true'} or bold_raw is True
+        bold_val = -1 if is_bold else 0
+
+        italic_raw = style_override.get('fontStyle', style_override.get('italic', False))
+        is_italic = str(italic_raw).lower() in {'italic', 'oblique', 'true'} or italic_raw is True
+        italic_val = -1 if is_italic else 0
+
         style.update({
             'Fontname': str(style_override.get('fontFamily') or style.get('Fontname', 'Arial')),
             'Fontsize': max(8, min(96, int(style_override.get('fontSize', style.get('Fontsize', 24))))),
-            'PrimaryColour': ass_color(style_override.get('color'), '&H00FFFFFF&'),
+            'PrimaryColour': ass_color(style_override.get('color'), f'&H{alpha_val:02X}FFFFFF&', alpha=alpha_val),
             'OutlineColour': ass_color(style_override.get('outlineColor'), '&H00000000&'),
             'Outline': max(0, min(10, int(style_override.get('outlineWidth', 2)))),
             'Shadow': max(0, min(10, int(style_override.get('shadowSize', 2)))),
+            'Bold': bold_val,
+            'Italic': italic_val,
         })
 
     default_style = (

@@ -12,6 +12,7 @@ import { Stage2ReviewTranscript } from './screens/Stage2ReviewTranscript';
 import { Stage3VoiceDubbing } from './screens/Stage3VoiceDubbing';
 import { Stage4EditVideo } from './screens/Stage4EditVideo';
 import { SettingsModal } from './components/settings/SettingsModal';
+import { CapCutExportModal } from './components/CapCutExportModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export const App: React.FC = () => {
@@ -83,6 +84,7 @@ export const App: React.FC = () => {
       <CreateVoiceModal />
       <FloatingPill />
       <SettingsModal />
+      <CapCutExportModal />
     </div>
   );
 };
