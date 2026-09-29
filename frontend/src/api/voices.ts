@@ -30,6 +30,46 @@ export interface CreateVoicePayload {
   external_voice_id?: string;
   tuning_params?: Record<string, any>;
   denoise?: boolean;
+  cut_start?: number;
+  cut_end?: number;
+}
+
+export interface TrimAudioPayload {
+  audio: Blob | File;
+  start_time?: number;
+  end_time?: number;
+  auto_detect?: boolean;
+  target_duration?: number;
+  provider?: number;
+}
+
+export interface TrimAudioResponse {
+  ok: boolean;
+  original_duration: number;
+  start_time: number;
+  end_time: number;
+  duration: number;
+  audio_url: string;
+  filename: string;
+}
+
+export async function trimAudio(payload: TrimAudioPayload): Promise<TrimAudioResponse> {
+  const formData = new FormData();
+  let filename = 'audio.wav';
+  if (payload.audio instanceof File) {
+    filename = payload.audio.name;
+  }
+  formData.append('audio', payload.audio, filename);
+  if (payload.start_time !== undefined) formData.append('start_time', String(payload.start_time));
+  if (payload.end_time !== undefined) formData.append('end_time', String(payload.end_time));
+  if (payload.auto_detect !== undefined) formData.append('auto_detect', String(payload.auto_detect));
+  if (payload.target_duration !== undefined) formData.append('target_duration', String(payload.target_duration));
+  if (payload.provider !== undefined) formData.append('provider', String(payload.provider));
+
+  return apiRequest<TrimAudioResponse>('/api/voices/trim-audio', {
+    method: 'POST',
+    body: formData,
+  });
 }
 
 export async function fetchCustomVoices(provider?: number): Promise<CustomVoice[]> {
@@ -54,6 +94,8 @@ export async function createCustomVoice(payload: CreateVoicePayload): Promise<Cu
   if (payload.external_voice_id) formData.append('external_voice_id', payload.external_voice_id);
   if (payload.tuning_params) formData.append('tuning_params', JSON.stringify(payload.tuning_params));
   if (payload.denoise !== undefined) formData.append('denoise', String(payload.denoise));
+  if (payload.cut_start !== undefined) formData.append('cut_start', String(payload.cut_start));
+  if (payload.cut_end !== undefined) formData.append('cut_end', String(payload.cut_end));
   if (payload.audio) {
     let filename = 'recording.wav';
     if (payload.audio instanceof File) {

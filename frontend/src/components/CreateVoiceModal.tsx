@@ -15,8 +15,10 @@ import {
   Sliders,
   Volume2,
   Wand2,
+  Scissors,
+  RotateCcw,
 } from 'lucide-react';
-import { requestVoiceDesignAssist, previewTTS } from '../api/voices';
+import { requestVoiceDesignAssist, previewTTS, trimAudio } from '../api/voices';
 
 const VIENEU_PRESET_VOICES = [
   { id: 'Bình (nam miền Bắc)', name: 'Bình', region: 'Nam Bắc', gender: 'Nam', desc: 'Truyền cảm, ấm áp' },
@@ -57,6 +59,18 @@ export const CreateVoiceModal: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
 
+  // Trimming specific
+  const [rawAudioFile, setRawAudioFile] = useState<File | null>(null);
+  const [rawAudioBlob, setRawAudioBlob] = useState<Blob | null>(null);
+  const [rawAudioUrl, setRawAudioUrl] = useState<string | null>(null);
+  const [rawAudioDuration, setRawAudioDuration] = useState<number | null>(null);
+  const [isTrimming, setIsTrimming] = useState(false);
+  const [trimStart, setTrimStart] = useState(0.0);
+  const [trimEnd, setTrimEnd] = useState(10.0);
+  const [isTrimmed, setIsTrimmed] = useState(false);
+  const [isAutoTrimming, setIsAutoTrimming] = useState(false);
+  const [isAuditioningTrim, setIsAuditioningTrim] = useState(false);
+
   // Design specific
   const [baseVoice, setBaseVoice] = useState('Bình (nam miền Bắc)');
   const [style, setStyle] = useState<'tu_nhien' | 'tin_tuc' | 'doc_truyen'>('tu_nhien');
@@ -93,6 +107,16 @@ export const CreateVoiceModal: React.FC = () => {
       setAudioFile(null);
       setAudioUrl(null);
       setAudioDuration(null);
+      setRawAudioFile(null);
+      setRawAudioBlob(null);
+      setRawAudioUrl(null);
+      setRawAudioDuration(null);
+      setIsTrimming(false);
+      setTrimStart(0.0);
+      setTrimEnd(10.0);
+      setIsTrimmed(false);
+      setIsAutoTrimming(false);
+      setIsAuditioningTrim(false);
       setErrorMsg(null);
       setSourceMode('upload');
       setBaseVoice('Bình (nam miền Bắc)');
@@ -110,33 +134,49 @@ export const CreateVoiceModal: React.FC = () => {
   useEffect(() => {
     return () => {
       if (audioUrl) URL.revokeObjectURL(audioUrl);
+      if (rawAudioUrl && rawAudioUrl !== audioUrl) URL.revokeObjectURL(rawAudioUrl);
       if (auditionAudioUrl && auditionAudioUrl.startsWith('blob:')) URL.revokeObjectURL(auditionAudioUrl);
     };
-  }, [audioUrl, auditionAudioUrl]);
+  }, [audioUrl, rawAudioUrl, auditionAudioUrl]);
 
   if (!isOpen) return null;
 
   const handleFileChange = (file: File) => {
     setErrorMsg(null);
     if (audioUrl) URL.revokeObjectURL(audioUrl);
+    if (rawAudioUrl && rawAudioUrl !== audioUrl) URL.revokeObjectURL(rawAudioUrl);
 
     const url = URL.createObjectURL(file);
     setAudioFile(file);
     setAudioBlob(file);
     setAudioUrl(url);
+    setRawAudioFile(file);
+    setRawAudioBlob(file);
+    setRawAudioUrl(url);
+    setIsTrimmed(false);
 
     const tempAudio = new Audio(url);
     tempAudio.onloadedmetadata = () => {
       const dur = tempAudio.duration;
       setAudioDuration(dur);
+      setRawAudioDuration(dur);
       if (dur < 2.0) {
         setErrorMsg(`Audio duration (${dur.toFixed(1)}s) is too short. Minimum duration is 2.0s.`);
+        setIsTrimming(false);
       } else if (dur > 30.0) {
-        setErrorMsg(`Audio duration (${dur.toFixed(1)}s) exceeds 30s limit. Please select a shorter sample.`);
+        setIsTrimming(true);
+        setTrimStart(0.0);
+        setTrimEnd(Math.min(10.0, dur));
+      } else {
+        setIsTrimming(false);
+        setTrimStart(0.0);
+        setTrimEnd(Math.min(10.0, dur));
       }
     };
     tempAudio.onerror = () => {
       setAudioDuration(5.0);
+      setRawAudioDuration(5.0);
+      setIsTrimming(false);
     };
   };
 
@@ -158,19 +198,32 @@ export const CreateVoiceModal: React.FC = () => {
         const actualType = mediaRecorder.mimeType || mimeType || 'audio/webm';
         const blob = new Blob(chunks, { type: actualType });
         if (audioUrl) URL.revokeObjectURL(audioUrl);
+        if (rawAudioUrl && rawAudioUrl !== audioUrl) URL.revokeObjectURL(rawAudioUrl);
         const url = URL.createObjectURL(blob);
         setAudioBlob(blob);
         setAudioFile(null);
         setAudioUrl(url);
+        setRawAudioBlob(blob);
+        setRawAudioFile(null);
+        setRawAudioUrl(url);
+        setIsTrimmed(false);
 
         const tempAudio = new Audio(url);
         tempAudio.onloadedmetadata = () => {
           const dur = tempAudio.duration;
           setAudioDuration(dur);
+          setRawAudioDuration(dur);
           if (dur < 2.0) {
             setErrorMsg(`Recording (${dur.toFixed(1)}s) is too short. Speak for at least 2.0 seconds.`);
+            setIsTrimming(false);
           } else if (dur > 30.0) {
-            setErrorMsg(`Recording (${dur.toFixed(1)}s) exceeds 30.0s. Please keep it concise.`);
+            setIsTrimming(true);
+            setTrimStart(0.0);
+            setTrimEnd(Math.min(10.0, dur));
+          } else {
+            setIsTrimming(false);
+            setTrimStart(0.0);
+            setTrimEnd(Math.min(10.0, dur));
           }
         };
 
@@ -203,6 +256,117 @@ export const CreateVoiceModal: React.FC = () => {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
+    }
+  };
+
+  const handleAutoDetectSpeech = async () => {
+    const sourceAudio = rawAudioFile || rawAudioBlob || audioBlob;
+    if (!sourceAudio) return;
+    setIsAutoTrimming(true);
+    setErrorMsg(null);
+    try {
+      const res = await trimAudio({
+        audio: sourceAudio,
+        auto_detect: true,
+        target_duration: 10.0,
+        provider,
+      });
+      if (res && res.ok) {
+        setTrimStart(res.start_time);
+        setTrimEnd(res.end_time);
+      }
+    } catch {
+      const maxDur = rawAudioDuration || audioDuration || 30.0;
+      setTrimStart(0.0);
+      setTrimEnd(Math.min(10.0, maxDur));
+    } finally {
+      setIsAutoTrimming(false);
+    }
+  };
+
+  const handleAuditionTrim = () => {
+    if (!audioPlayerRef.current) return;
+    const player = audioPlayerRef.current;
+    if (isAuditioningTrim) {
+      player.pause();
+      setIsAuditioningTrim(false);
+      return;
+    }
+
+    player.currentTime = trimStart;
+    player.play().catch(() => {});
+    setIsAuditioningTrim(true);
+
+    const onTimeUpdate = () => {
+      if (player.currentTime >= trimEnd || player.paused) {
+        player.pause();
+        setIsAuditioningTrim(false);
+        player.removeEventListener('timeupdate', onTimeUpdate);
+      }
+    };
+    player.addEventListener('timeupdate', onTimeUpdate);
+  };
+
+  const handleApplyTrim = async () => {
+    const sourceAudio = rawAudioFile || rawAudioBlob || audioBlob;
+    if (!sourceAudio) return;
+    const dur = trimEnd - trimStart;
+    if (dur < 2.0) {
+      setErrorMsg(`Trimmed selection (${dur.toFixed(1)}s) is too short. Minimum duration is 2.0s.`);
+      return;
+    }
+    if (dur > 30.0) {
+      setErrorMsg(`Trimmed selection (${dur.toFixed(1)}s) exceeds 30.0s. Please narrow the selection.`);
+      return;
+    }
+
+    setIsAutoTrimming(true);
+    setErrorMsg(null);
+    try {
+      const res = await trimAudio({
+        audio: sourceAudio,
+        start_time: trimStart,
+        end_time: trimEnd,
+        provider,
+      });
+      if (res && res.ok) {
+        setAudioDuration(res.duration);
+        setAudioUrl(res.audio_url);
+        try {
+          const fetchRes = await fetch(res.audio_url);
+          const blob = await fetchRes.blob();
+          setAudioBlob(blob);
+          setAudioFile(new File([blob], res.filename, { type: 'audio/wav' }));
+        } catch {
+          // Keep blob intact in test environments
+        }
+        setIsTrimmed(true);
+        setIsTrimming(false);
+      }
+    } catch {
+      // Offline/fallback handling
+      setAudioDuration(dur);
+      setIsTrimmed(true);
+      setIsTrimming(false);
+    } finally {
+      setIsAutoTrimming(false);
+    }
+  };
+
+  const handleResetTrim = () => {
+    if (rawAudioUrl) {
+      setAudioUrl(rawAudioUrl);
+      setAudioFile(rawAudioFile);
+      setAudioBlob(rawAudioBlob);
+      setAudioDuration(rawAudioDuration);
+    }
+    setIsTrimmed(false);
+    if (rawAudioDuration && rawAudioDuration > 30.0) {
+      setIsTrimming(true);
+      setTrimStart(0.0);
+      setTrimEnd(Math.min(10.0, rawAudioDuration));
+    } else {
+      setIsTrimming(false);
     }
   };
 
@@ -294,8 +458,13 @@ export const CreateVoiceModal: React.FC = () => {
         return;
       }
 
-      if (audioDuration !== null && (audioDuration < 2.0 || audioDuration > 30.0)) {
-        setErrorMsg(`Audio duration must be between 2.0s and 30.0s (currently ${audioDuration.toFixed(1)}s).`);
+      const effectiveDuration = isTrimmed
+        ? (audioDuration ?? 10)
+        : isTrimming
+        ? trimEnd - trimStart
+        : (audioDuration ?? 0);
+      if (effectiveDuration < 2.0 || effectiveDuration > 30.0) {
+        setErrorMsg(`Audio duration must be between 2.0s and 30.0s (currently ${effectiveDuration.toFixed(1)}s).`);
         return;
       }
 
@@ -306,7 +475,7 @@ export const CreateVoiceModal: React.FC = () => {
 
       setIsSubmitting(true);
       try {
-        await createVoice({
+        const payload: any = {
           name: cleanName,
           provider,
           description: description.trim(),
@@ -314,10 +483,15 @@ export const CreateVoiceModal: React.FC = () => {
           kind: 'clone',
           ref_text: refText.trim(),
           instruct: instruct.trim(),
-          audio: audioBlob,
+          audio: audioBlob || audioFile || undefined,
           denoise,
           tuning_params: { denoise },
-        });
+        };
+        if (isTrimming || isTrimmed) {
+          payload.cut_start = trimStart;
+          payload.cut_end = trimEnd;
+        }
+        await createVoice(payload);
         setIsOpen(false);
       } catch (err: any) {
         setErrorMsg(err.message || 'Failed to clone voice.');
@@ -352,7 +526,10 @@ export const CreateVoiceModal: React.FC = () => {
     }
   };
 
+  const trimDuration = Math.max(0, trimEnd - trimStart);
+  const isTrimValid = trimDuration >= 2.0 && trimDuration <= 30.0;
   const isDurationValid = audioDuration !== null && audioDuration >= 2.0 && audioDuration <= 30.0;
+  const canSubmitClone = isTrimmed ? isDurationValid : (isTrimming ? isTrimValid : isDurationValid);
 
   return (
     <div
@@ -601,41 +778,252 @@ export const CreateVoiceModal: React.FC = () => {
                 )}
 
                 {audioUrl && (
-                  <div className="p-3 rounded-xl border border-stone-200 bg-white flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <button
-                        type="button"
-                        onClick={togglePlayback}
-                        className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-700 shrink-0"
-                      >
-                        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                      </button>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-stone-800 truncate">Reference Sample Ready</div>
-                        <div className="text-[10px] text-stone-500">
-                          Duration: {audioDuration !== null ? `${audioDuration.toFixed(1)}s` : 'Analyzing...'}
+                  <div className="space-y-2.5">
+                    {rawAudioDuration !== null && rawAudioDuration > 30.0 && !isTrimmed && (
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>
+                            Audio length (<strong>{rawAudioDuration.toFixed(1)}s</strong>) exceeds 30s limit. Please trim a voice segment below.
+                          </span>
+                        </div>
+                        {!isTrimming && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsTrimming(true);
+                              setTrimStart(0.0);
+                              setTrimEnd(Math.min(10.0, rawAudioDuration));
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-[#8D4B00] text-white text-[11px] font-bold shrink-0 hover:bg-[#733D00] shadow-2xs"
+                          >
+                            Trim Now
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {isTrimming ? (
+                      <div className="p-3.5 rounded-xl border border-amber-300/80 bg-amber-50/40 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900">
+                            <Scissors className="w-4 h-4 text-[#8D4B00]" />
+                            <span>Trim Voice Selection</span>
+                            {isTrimValid ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                ✓ {trimDuration.toFixed(1)}s (Valid)
+                              </span>
+                            ) : trimDuration < 2.0 ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                                Min 2.0s ({trimDuration.toFixed(1)}s)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                Max 30s ({trimDuration.toFixed(1)}s)
+                              </span>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleAutoDetectSpeech}
+                            disabled={isAutoTrimming}
+                            className="text-[11px] font-bold text-[#8D4B00] hover:text-[#733D00] flex items-center gap-1 disabled:opacity-50"
+                            title="Auto-detect optimal 10-second speech segment"
+                          >
+                            {isAutoTrimming ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Wand2 className="w-3.5 h-3.5" />
+                            )}
+                            Auto-Detect (10s)
+                          </button>
+                        </div>
+
+                        {/* Timeline visual representation */}
+                        <div className="relative h-6 bg-stone-200 rounded-lg overflow-hidden flex items-center">
+                          <div
+                            className="absolute h-full bg-amber-400/60 border-x-2 border-[#8D4B00]"
+                            style={{
+                              left: `${Math.max(0, (trimStart / (rawAudioDuration || audioDuration || 1)) * 100)}%`,
+                              width: `${Math.min(100, (trimDuration / (rawAudioDuration || audioDuration || 1)) * 100)}%`,
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-between px-2 text-[10px] text-stone-600 pointer-events-none font-mono">
+                            <span>0.0s</span>
+                            <span className="font-bold text-[#8D4B00] bg-white/90 px-1.5 py-0.5 rounded shadow-2xs">
+                              Range: {trimStart.toFixed(1)}s - {trimEnd.toFixed(1)}s ({trimDuration.toFixed(1)}s)
+                            </span>
+                            <span>{(rawAudioDuration || audioDuration || 10).toFixed(1)}s</span>
+                          </div>
+                        </div>
+
+                        {/* Dual range sliders */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[11px] text-stone-600 font-semibold">
+                              <span>Start Time</span>
+                              <span className="font-mono text-stone-900 font-bold">{trimStart.toFixed(1)}s</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={Math.max(0, (rawAudioDuration || audioDuration || 10) - 1.0)}
+                              step={0.1}
+                              value={trimStart}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                setTrimStart(val);
+                                if (val >= trimEnd - 1.0) setTrimEnd(Math.min(rawAudioDuration || 30, val + 2.0));
+                              }}
+                              className="w-full accent-[#8D4B00] h-1.5 bg-stone-200 rounded-lg cursor-pointer"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[11px] text-stone-600 font-semibold">
+                              <span>End Time</span>
+                              <span className="font-mono text-stone-900 font-bold">{trimEnd.toFixed(1)}s</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={Math.min(rawAudioDuration || 30, trimStart + 1.0)}
+                              max={rawAudioDuration || audioDuration || 10}
+                              step={0.1}
+                              value={trimEnd}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                setTrimEnd(val);
+                                if (val <= trimStart + 1.0) setTrimStart(Math.max(0, val - 2.0));
+                              }}
+                              className="w-full accent-[#8D4B00] h-1.5 bg-stone-200 rounded-lg cursor-pointer"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Trimmer action row */}
+                        <div className="flex items-center justify-between pt-1 border-t border-amber-200/60">
+                          <button
+                            type="button"
+                            onClick={handleAuditionTrim}
+                            className="px-3 py-1.5 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-xs font-semibold text-stone-700 flex items-center gap-1.5 transition-colors"
+                          >
+                            {isAuditioningTrim ? (
+                              <Pause className="w-3.5 h-3.5 text-stone-700" />
+                            ) : (
+                              <Play className="w-3.5 h-3.5 text-stone-700" />
+                            )}
+                            {isAuditioningTrim ? 'Stop Preview' : 'Audition Selection'}
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            {(!rawAudioDuration || rawAudioDuration <= 30.0) && (
+                              <button
+                                type="button"
+                                onClick={() => setIsTrimming(false)}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-stone-500 hover:text-stone-700"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleApplyTrim}
+                              disabled={!isTrimValid || isAutoTrimming}
+                              className="px-3.5 py-1.5 rounded-lg bg-[#8D4B00] hover:bg-[#733D00] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                            >
+                              {isAutoTrimming ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Scissors className="w-3.5 h-3.5" />
+                              )}
+                              Apply Trim ({trimDuration.toFixed(1)}s)
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="p-3 rounded-xl border border-stone-200 bg-white flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <button
+                            type="button"
+                            onClick={togglePlayback}
+                            className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-700 shrink-0"
+                          >
+                            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                          </button>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-stone-800 truncate">
+                              {isTrimmed ? '✂️ Trimmed Voice Sample Ready' : 'Reference Sample Ready'}
+                            </div>
+                            <div className="text-[10px] text-stone-500">
+                              {isTrimmed
+                                ? `Duration: ${audioDuration !== null ? `${audioDuration.toFixed(1)}s` : '...'} (${trimStart.toFixed(1)}s - ${trimEnd.toFixed(1)}s)`
+                                : `Duration: ${audioDuration !== null ? `${audioDuration.toFixed(1)}s` : 'Analyzing...'}`}
+                            </div>
+                          </div>
+                        </div>
 
-                    <div className="shrink-0">
-                      {isDurationValid ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> Valid Duration
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> Must be 2-30s
-                        </span>
-                      )}
-                    </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isTrimmed ? (
+                            <>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Ready
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setIsTrimming(true)}
+                                className="px-2 py-1 rounded-md text-[11px] font-semibold text-[#8D4B00] hover:bg-amber-50"
+                              >
+                                Edit Trim
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleResetTrim}
+                                className="p-1 text-stone-400 hover:text-stone-600 rounded-md"
+                                title="Reset to original audio"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {isDurationValid ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> Valid Duration
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
+                                  <AlertCircle className="w-3 h-3" /> Must be 2-30s
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsTrimming(true);
+                                  setTrimStart(0.0);
+                                  setTrimEnd(Math.min(10.0, audioDuration || 10.0));
+                                }}
+                                className="px-2 py-1 rounded-md border border-stone-200 bg-white hover:bg-stone-50 text-[11px] font-semibold text-stone-700 flex items-center gap-1"
+                              >
+                                <Scissors className="w-3 h-3 text-[#8D4B00]" />
+                                Trim Audio
+                              </button>
+                            </>
+                          )}
+                        </div>
 
-                    <audio
-                      ref={audioPlayerRef}
-                      src={audioUrl}
-                      onEnded={() => setIsPlaying(false)}
-                      className="hidden"
-                    />
+                        <audio
+                          ref={audioPlayerRef}
+                          src={audioUrl}
+                          onEnded={() => {
+                            setIsPlaying(false);
+                            setIsAuditioningTrim(false);
+                          }}
+                          className="hidden"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -906,7 +1294,7 @@ export const CreateVoiceModal: React.FC = () => {
               disabled={
                 isSubmitting ||
                 !name.trim() ||
-                (creationMode === 'clone' && (!audioBlob || !isDurationValid))
+                (creationMode === 'clone' && (!audioBlob || !canSubmitClone))
               }
               className="px-5 py-2 rounded-xl bg-[#8D4B00] hover:bg-[#733D00] text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >

@@ -88,6 +88,13 @@ def test_audio_normalizer_duration_validation(tmp_path):
     assert meta["channels"] == 1
     assert out_wav3.is_file()
 
+    # 4. Long audio trimmed with start_time & end_time
+    out_wav4 = tmp_path / "out4.wav"
+    meta4 = normalize_reference_audio(long_wav, out_wav4, provider=tts.VIENEU_TTS, start_time=2.0, end_time=10.0)
+    assert meta4["sample_rate"] == 48000
+    assert 7.5 <= meta4["duration"] <= 8.5
+    assert out_wav4.is_file()
+
 
 def test_custom_voices_api_lifecycle(voice_api_env):
     app = voice_api_env["app"]
@@ -321,6 +328,66 @@ def test_bulk_delete_custom_voices_api(voice_api_env):
             deleted_v3 = voice_store.bulk_delete_voices([v3["id"]], db_path=db_path)
             assert deleted_v3 == [v3["id"]]
             assert len(voice_store.list_voices(db_path=db_path)) == 0
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_audio_trim_endpoints(voice_api_env):
+    app = voice_api_env["app"]
+    tmp_path = voice_api_env["tmp_path"]
+
+    async def scenario():
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            # 1. Create a 35-second test WAV file
+            long_wav = tmp_path / "sample_long.wav"
+            create_wav_file(long_wav, duration_sec=35.0)
+
+            # 2. Call /api/voices/trim-audio
+            form = aiohttp.FormData()
+            form.add_field(
+                "audio",
+                open(long_wav, "rb"),
+                filename="sample_long.wav",
+                content_type="audio/wav",
+            )
+            form.add_field("start_time", "5.0")
+            form.add_field("end_time", "15.0")
+
+            res_trim = await client.post("/api/voices/trim-audio", data=form)
+            assert res_trim.status == 200
+            trim_data = await res_trim.json()
+            assert trim_data["ok"] is True
+            assert trim_data["start_time"] == 5.0
+            assert trim_data["end_time"] == 15.0
+            assert 9.5 <= trim_data["duration"] <= 10.5
+            assert "audio_url" in trim_data
+
+            # 3. Retrieve the trimmed audio via GET
+            res_audio = await client.get(trim_data["audio_url"])
+            assert res_audio.status == 200
+            assert res_audio.headers.get("Content-Type") == "audio/wav"
+
+            # 4. Create custom voice with cut_start and cut_end from long audio
+            form2 = aiohttp.FormData()
+            form2.add_field("name", "Trimmed Cloned Voice")
+            form2.add_field("provider", "2")
+            form2.add_field("cut_start", "4.0")
+            form2.add_field("cut_end", "12.0")
+            form2.add_field(
+                "audio",
+                open(long_wav, "rb"),
+                filename="sample_long.wav",
+                content_type="audio/wav",
+            )
+            res_create = await client.post("/api/custom-voices", data=form2)
+            assert res_create.status == 201
+            v_data = await res_create.json()
+            assert v_data["name"] == "Trimmed Cloned Voice"
+            assert v_data["ref_audio_path"]
         finally:
             await client.close()
 

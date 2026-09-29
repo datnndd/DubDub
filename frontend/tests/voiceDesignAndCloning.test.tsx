@@ -132,4 +132,59 @@ describe('VieNeu-TTS Voice Design & Voice Cloning', () => {
     expect(html).toContain('+ [hắng giọng]');
     expect(html).toContain('data-segment-input="stage3-1"');
   });
+
+  test('CreateVoiceModal renders cloning audio dropzone and trimmer capabilities', () => {
+    const html = renderToStaticMarkup(<CreateVoiceModal />);
+    expect(html).toContain('Reference Audio Sample');
+    expect(html).toContain('Upload File');
+    expect(html).toContain('Record Mic');
+    expect(html).toContain('WAV, MP3, M4A, WebM');
+  });
+
+  test('trimAudio client function sends proper parameters', async () => {
+    const { trimAudio } = await import('../src/api/voices');
+    let capturedUrl = '';
+    let capturedBody: any = null;
+
+    const mockData = {
+      ok: true,
+      original_duration: 45.0,
+      start_time: 5.0,
+      end_time: 15.0,
+      duration: 10.0,
+      audio_url: '/api/voices/trimmed-audio/trim_test.wav',
+      filename: 'trim_test.wav',
+    };
+
+    (globalThis as any).fetch = async (url: string, init: any) => {
+      capturedUrl = url;
+      capturedBody = init?.body;
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null),
+        },
+        json: async () => mockData,
+        text: async () => JSON.stringify(mockData),
+      };
+    };
+
+    const dummyBlob = new Blob(['fake-audio-bytes'], { type: 'audio/wav' });
+    const res = await trimAudio({
+      audio: dummyBlob,
+      start_time: 5.0,
+      end_time: 15.0,
+      auto_detect: true,
+      provider: 2,
+    });
+
+    expect(capturedUrl).toBe('/api/voices/trim-audio');
+    expect(capturedBody).toBeInstanceOf(FormData);
+    expect(res.ok).toBe(true);
+    expect(res.duration).toBe(10.0);
+    expect(res.start_time).toBe(5.0);
+    expect(res.end_time).toBe(15.0);
+  });
 });
+

@@ -19,6 +19,8 @@ from videotrans.api.catalog import TTS_PROVIDER_ALIASES
 from videotrans.core import voice_store
 from videotrans.services.audio_normalizer import (
     normalize_reference_audio,
+    detect_optimal_speech_segment,
+    probe_audio_duration,
 )
 from videotrans.services.voice_preview import (
     synthesize_voice_preview,
@@ -174,6 +176,17 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
     denoise_flag = str(fields.get("denoise", "true")).strip().lower() not in {"false", "0", "no"}
     tuning_params["denoise"] = denoise_flag
 
+    cut_start_raw = fields.get("cut_start") or fields.get("start_time")
+    cut_end_raw = fields.get("cut_end") or fields.get("end_time")
+    try:
+        start_time = float(cut_start_raw) if cut_start_raw is not None and str(cut_start_raw).strip() != "" else None
+    except (ValueError, TypeError):
+        start_time = None
+    try:
+        end_time = float(cut_end_raw) if cut_end_raw is not None and str(cut_end_raw).strip() != "" else None
+    except (ValueError, TypeError):
+        end_time = None
+
     if audio_file_obj:
         ext = Path(audio_filename).suffix or ".wav"
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
@@ -184,7 +197,7 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
         try:
             dest_filename = f"{voice_id}.wav"
             dest_path = voice_store.VOICES_DIR / dest_filename
-            normalize_reference_audio(tmp_path, dest_path, provider=provider)
+            normalize_reference_audio(tmp_path, dest_path, provider=provider, start_time=start_time, end_time=end_time)
             ref_audio_rel = dest_filename
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -202,7 +215,7 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
         try:
             dest_filename = f"{voice_id}.wav"
             dest_path = voice_store.VOICES_DIR / dest_filename
-            normalize_reference_audio(tmp_path, dest_path, provider=provider)
+            normalize_reference_audio(tmp_path, dest_path, provider=provider, start_time=start_time, end_time=end_time)
             ref_audio_rel = dest_filename
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -507,6 +520,103 @@ async def get_tts_preview_audio_handler(id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail=f"Preview audio not found for ID: {id}")
 
     return FileResponse(audio_path, media_type="audio/wav")
+
+
+@router.post("/api/voices/trim-audio")
+async def trim_audio_handler(request: Request):
+    """
+    Trim or auto-detect speech segment for voice cloning.
+    Accepts multipart audio file and optional start_time, end_time, target_duration, auto_detect.
+    """
+    form = await request.form()
+    audio_file = form.get("audio") or form.get("file")
+    if not audio_file:
+        raise HTTPException(status_code=400, detail="Audio file is required for trimming")
+
+    cut_start_raw = form.get("start_time") or form.get("cut_start")
+    cut_end_raw = form.get("end_time") or form.get("cut_end")
+    target_dur_raw = form.get("target_duration")
+    auto_detect_raw = str(form.get("auto_detect", "false")).strip().lower() in {"true", "1", "yes"}
+
+    try:
+        provider = int(form.get("provider", tts.VIENEU_TTS))
+    except (ValueError, TypeError):
+        provider = tts.VIENEU_TTS
+
+    try:
+        target_duration = float(target_dur_raw) if target_dur_raw else 10.0
+    except (ValueError, TypeError):
+        target_duration = 10.0
+
+    filename = getattr(audio_file, "filename", "audio.wav") or "audio.wav"
+    ext = Path(filename).suffix or ".wav"
+
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
+        tmp_path = Path(tmp_file.name)
+        if hasattr(audio_file, "read"):
+            while chunk := await audio_file.read(4 * 1024 * 1024):
+                tmp_file.write(chunk)
+        elif isinstance(audio_file, bytes):
+            tmp_file.write(audio_file)
+
+    try:
+        orig_dur = probe_audio_duration(tmp_path)
+
+        if auto_detect_raw:
+            seg = detect_optimal_speech_segment(tmp_path, target_duration=target_duration)
+            start_time = seg["start_time"]
+            end_time = seg["end_time"]
+        else:
+            try:
+                start_time = float(cut_start_raw) if cut_start_raw is not None and str(cut_start_raw).strip() != "" else 0.0
+            except (ValueError, TypeError):
+                start_time = 0.0
+            try:
+                end_time = float(cut_end_raw) if cut_end_raw is not None and str(cut_end_raw).strip() != "" else min(orig_dur, start_time + target_duration)
+            except (ValueError, TypeError):
+                end_time = min(orig_dur, start_time + target_duration)
+
+        trim_id = f"trim_{uuid.uuid4().hex[:10]}"
+        trim_filename = f"{trim_id}.wav"
+        trim_dest = voice_store.PREVIEWS_DIR / trim_filename
+
+        meta = normalize_reference_audio(
+            tmp_path,
+            trim_dest,
+            provider=provider,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        return JSONResponse({
+            "ok": True,
+            "original_duration": round(orig_dur, 2),
+            "start_time": round(start_time, 2),
+            "end_time": round(end_time, 2),
+            "duration": round(meta["duration"], 2),
+            "filename": trim_filename,
+            "audio_url": f"/api/voices/trimmed-audio/{trim_filename}",
+        })
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to trim audio: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Audio trimming failed: {exc}") from exc
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@router.get("/api/voices/trimmed-audio/{filename}")
+async def get_trimmed_audio_handler(filename: str) -> FileResponse:
+    clean_name = Path(unquote(filename)).name
+    if not clean_name.startswith("trim_") or not clean_name.endswith(".wav"):
+        raise HTTPException(status_code=400, detail="Invalid trimmed audio filename")
+
+    target_path = voice_store.PREVIEWS_DIR / clean_name
+    if not target_path.is_file():
+        raise HTTPException(status_code=404, detail="Trimmed audio file not found")
+
+    return FileResponse(target_path, media_type="audio/wav")
 
 
 def register_routes(app) -> None:
