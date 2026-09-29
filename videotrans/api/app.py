@@ -122,8 +122,9 @@ async def lifespan(app: FastAPI):
     voice_store.init_voice_dirs()
     voice_store.migrate_legacy_voices()
     try:
+        import threading
         from videotrans.tts._vieneu_compat import setup_vieneu_environment
-        setup_vieneu_environment()
+        threading.Thread(target=setup_vieneu_environment, daemon=True, name="vieneu-warmup").start()
     except Exception:
         pass
     yield

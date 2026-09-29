@@ -7,10 +7,24 @@ export async function apiRequest<T = any>(url: string, options: RequestInit = {}
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+    if ((response.status === 502 || response.status === 504) && (!options.method || options.method.toUpperCase() === 'GET')) {
+      await new Promise((r) => setTimeout(r, 400));
+      response = await fetch(url, { ...options, headers });
+    }
+  } catch (err) {
+    if (!options.method || options.method.toUpperCase() === 'GET') {
+      await new Promise((r) => setTimeout(r, 400));
+      response = await fetch(url, { ...options, headers });
+    } else {
+      throw err;
+    }
+  }
 
   if (!response.ok) {
     let errorMsg = `Request failed: ${response.status} ${response.statusText}`;
