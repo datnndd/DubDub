@@ -19,6 +19,7 @@ import {
   Globe,
   ArrowRight,
 } from 'lucide-react';
+import { ProviderDocLink } from '../components/ProviderDocLink';
 
 const FALLBACK_TRANSLATION_PROVIDERS = [
   { id: 'google', label: 'Google Translate', translateType: 0, requiresSettings: false, configured: true },
@@ -166,6 +167,8 @@ export const Stage2ReviewTranscript: React.FC = () => {
               >
                 <Settings2 className="w-3.5 h-3.5 text-[#8D4B00]" />
               </button>
+
+              <ProviderDocLink providerId={selectedProvider.id} category="llm" />
 
               <div className="flex items-center gap-1 ml-1">
                 <span className="text-[10px] text-stone-500 font-semibold">Method:</span>

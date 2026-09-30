@@ -23,7 +23,8 @@ from videotrans.util.help_ffmpeg import runffmpeg
 logger = logging.getLogger("videotrans.voice_preview")
 
 _preview_lock = asyncio.Lock()
-PREVIEW_TIMEOUT_SECONDS = 30.0
+PREVIEW_TIMEOUT_SECONDS = 60.0
+CLONE_TIMEOUT_SECONDS = 120.0
 
 _preview_synthesizer = None
 
@@ -46,6 +47,77 @@ def get_default_preview_text(language: str) -> str:
     return DEFAULT_TEXTS["en"]
 
 
+def _is_valid_preview_wav(path: Path) -> bool:
+    """Check if file exists, is a valid WAV, has > 0 frames, and is not completely silent."""
+    if not path.is_file() or path.stat().st_size <= 44:
+        return False
+    try:
+        import wave
+        with wave.open(str(path), "rb") as wf:
+            nframes = wf.getnframes()
+            if nframes <= 0:
+                return False
+            framerate = wf.getframerate()
+            if framerate <= 0 or (nframes / framerate) < 0.1:
+                return False
+            frames = wf.readframes(min(nframes, framerate * 2))
+            if not any(b != 0 for b in frames):
+                return False
+            return True
+    except Exception:
+        try:
+            import soundfile as sf
+            data, sr = sf.read(str(path))
+            if len(data) == 0:
+                return False
+            import numpy as np
+            peak = float(np.max(np.abs(data)))
+            return peak > 1e-4
+        except Exception:
+            return False
+
+
+def generate_snippet_preview(
+    ref_audio_path: Path,
+    output_path: Path,
+    target_rate: int = 48000,
+) -> bool:
+    """Extract a 3-second normalized snippet from reference audio with fast fallback."""
+    cmd = [
+        "-y",
+        "-i", str(ref_audio_path),
+        "-af", "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB,loudnorm=I=-16:TP=-1.5:LRA=11",
+        "-t", "3",
+        "-vn",
+        "-ac", "1",
+        "-ar", str(target_rate),
+        "-acodec", "pcm_s16le",
+        str(output_path),
+    ]
+    cmd_simple = [
+        "-y",
+        "-i", str(ref_audio_path),
+        "-t", "3",
+        "-vn",
+        "-ac", "1",
+        "-ar", str(target_rate),
+        "-acodec", "pcm_s16le",
+        str(output_path),
+    ]
+    try:
+        runffmpeg(cmd, force_cpu=True)
+    except Exception:
+        pass
+
+    if not _is_valid_preview_wav(output_path):
+        try:
+            runffmpeg(cmd_simple, force_cpu=True)
+        except Exception:
+            pass
+
+    return _is_valid_preview_wav(output_path)
+
+
 def _run_vieneu_synthesis(
     ref_audio: Optional[Path] = None,
     output_file: Optional[Path] = None,
@@ -59,75 +131,85 @@ def _run_vieneu_synthesis(
     top_p: float = 0.95,
     cached_embedding: Optional[tuple[Any, Optional[Any]]] = None,
 ) -> None:
-    """Run VieNeu TTS inference synchronously with style, emotion tags, and tuning parameters."""
+    """Run VieNeu TTS inference synchronously with style, emotion tags, and tuning parameters using cached engine."""
     if output_file is None:
         raise ValueError("output_file is required")
 
-    from videotrans.tts._vieneu_compat import setup_vieneu_environment
-    setup_vieneu_environment()
+    import numpy as np
     import soundfile as sf
-    from vieneu import Vieneu
+    from videotrans.services.model_cache import get_cached_vieneu_engine, evict_vieneu_engine
 
     def _infer(device: str, backend: str):
-        engine = Vieneu(
-            mode="v3turbo",
-            device=device,
-            backend=backend,
-            max_batch_size=1,
-        )
-        try:
-            kwargs: dict[str, Any] = {
-                "style": style or "tu_nhien",
-                "temperature": temperature,
-                "repetition_penalty": repetition_penalty,
-                "top_p": top_p,
-            }
-            if cached_embedding and cached_embedding[0] is not None:
-                audios = engine.infer_batch(
-                    [text],
-                    voice={"speaker_emb": cached_embedding[0], "codes": cached_embedding[1]},
-                    **kwargs,
-                )
-            elif ref_audio and ref_audio.is_file():
-                audios = engine.infer_batch(
-                    [text],
-                    ref_audio=ref_audio.as_posix(),
-                    denoise=denoise,
-                    **kwargs,
-                )
-            elif voice:
-                v_target = engine.get_preset_voice(voice) if isinstance(voice, str) else voice
-                audios = engine.infer_batch(
-                    [text],
-                    voice=v_target,
-                    **kwargs,
-                )
-            else:
-                audios = engine.infer_batch([text], **kwargs)
+        engine = get_cached_vieneu_engine(device=device, backend=backend, max_batch_size=1)
+        kwargs: dict[str, Any] = {
+            "style": style or "tu_nhien",
+            "temperature": temperature,
+            "repetition_penalty": repetition_penalty,
+            "top_p": top_p,
+        }
+        if cached_embedding and cached_embedding[0] is not None:
+            audios = engine.infer_batch(
+                [text],
+                voice={"speaker_emb": cached_embedding[0], "codes": cached_embedding[1]},
+                **kwargs,
+            )
+        elif ref_audio and ref_audio.is_file():
+            audios = engine.infer_batch(
+                [text],
+                ref_audio=ref_audio.as_posix(),
+                denoise=denoise,
+                **kwargs,
+            )
+        elif voice:
+            v_target = engine.get_preset_voice(voice) if isinstance(voice, str) else voice
+            audios = engine.infer_batch(
+                [text],
+                voice=v_target,
+                **kwargs,
+            )
+        else:
+            audios = engine.infer_batch([text], **kwargs)
 
-            if not audios or len(audios) == 0:
-                raise RuntimeError("VieNeu returned empty audio")
-            sf.write(str(output_file), audios[0], engine.sample_rate)
-        finally:
-            engine.close()
+        if not audios or len(audios) == 0:
+            raise RuntimeError("VieNeu returned empty audio list")
+        aud_item = audios[0]
+        if hasattr(aud_item, "detach"):
+            aud_item = aud_item.detach().cpu().numpy()
+        audio_data = np.asarray(aud_item, dtype=np.float32).squeeze()
+        if audio_data.size == 0:
+            raise RuntimeError("VieNeu returned 0 audio samples")
+        if np.isnan(audio_data).any() or np.isinf(audio_data).any():
+            audio_data = np.nan_to_num(audio_data, nan=0.0, posinf=1.0, neginf=-1.0)
+        peak = float(np.max(np.abs(audio_data))) if audio_data.size > 0 else 0.0
+        if peak < 1e-4:
+            raise RuntimeError(f"VieNeu returned silent audio (peak amplitude: {peak:.6f})")
+
+        # Peak normalize to ~0.90 (-1 dBFS) for clear, audible voice
+        audio_data = (audio_data / peak) * 0.90
+        sf.write(str(output_file), audio_data, engine.sample_rate)
+
+    can_use_cuda = use_cuda
+    if can_use_cuda:
+        try:
+            import torch
+            can_use_cuda = torch.cuda.is_available()
+        except Exception:
+            can_use_cuda = False
 
     try:
-        if use_cuda:
+        if can_use_cuda:
             try:
                 _infer("cuda", "pytorch")
                 return
             except Exception as exc:
-                exc_msg = str(exc).lower()
-                if "out of memory" in exc_msg or "cuda" in exc_msg:
-                    logger.warning("CUDA OOM or CUDA error during VieNeu preview synthesis, falling back to CPU: %s", exc)
-                    try:
-                        import torch
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-                    except Exception:
-                        pass
-                else:
-                    raise
+                logger.warning("CUDA error during VieNeu preview synthesis (%s), falling back to CPU", exc)
+                evict_vieneu_engine(device="cuda")
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
         # CPU fallback
         _infer("cpu", "onnx")
     except Exception as exc:
@@ -136,41 +218,58 @@ def _run_vieneu_synthesis(
 
 
 def _run_omnivoice_synthesis(ref_audio: Path, ref_text: str, output_file: Path, text: str, use_cuda: bool = True) -> None:
-    """Run OmniVoice TTS preview synthesis, falling back to CPU if needed."""
+    """Run OmniVoice TTS preview synthesis with cached model, falling back to CPU if needed."""
     from videotrans.configure.config import ROOT_DIR
     model_dir = Path(ROOT_DIR) / "models" / "models--k2-fsa--OmniVoice"
     if not (model_dir / "model.safetensors").is_file():
         raise FileNotFoundError(f"OmniVoice model not installed at {model_dir}")
 
-    import torch
+    import numpy as np
     import soundfile as sf
-    from omnivoice import OmniVoice
+    import torch
+    from videotrans.services.model_cache import get_cached_omnivoice_model, evict_omnivoice_model
     from videotrans.util import gpus
 
-    is_gpu = use_cuda and torch.cuda.is_available()
-    device = "cuda:0" if is_gpu else gpus.mps_or_cpu()
-    dtype = torch.float16 if is_gpu else torch.float32
-
-    model = OmniVoice.from_pretrained(
-        str(model_dir),
-        device_map=device,
-        dtype=dtype,
-    )
-    try:
+    def _infer(device: str, dtype: Any):
+        model = get_cached_omnivoice_model(model_dir=model_dir, device=device, dtype=dtype)
         wav = model.generate(
             text=text,
             ref_audio=ref_audio.as_posix(),
             ref_text=ref_text or None,
             speed=1.0,
         )
-        sf.write(str(output_file), wav[0], 24000)
-    finally:
-        del model
-        if is_gpu:
+        if not wav or len(wav) == 0:
+            raise RuntimeError("OmniVoice returned empty audio list")
+        wav_item = wav[0]
+        if hasattr(wav_item, "detach"):
+            wav_item = wav_item.detach().cpu().numpy()
+        audio_data = np.asarray(wav_item, dtype=np.float32).squeeze()
+        if audio_data.size == 0:
+            raise RuntimeError("OmniVoice returned 0 audio samples")
+        if np.isnan(audio_data).any() or np.isinf(audio_data).any():
+            audio_data = np.nan_to_num(audio_data, nan=0.0, posinf=1.0, neginf=-1.0)
+        peak = float(np.max(np.abs(audio_data))) if audio_data.size > 0 else 0.0
+        if peak < 1e-4:
+            raise RuntimeError(f"OmniVoice returned silent audio (peak amplitude: {peak:.6f})")
+
+        # Peak normalize to ~0.90 (-1 dBFS) for clear, audible voice
+        audio_data = (audio_data / peak) * 0.90
+        sf.write(str(output_file), audio_data, 24000)
+
+    is_gpu = use_cuda and torch.cuda.is_available()
+    if is_gpu:
+        try:
+            _infer("cuda:0", torch.float16)
+            return
+        except Exception as exc:
+            logger.warning("CUDA error during OmniVoice preview synthesis (%s), falling back to CPU", exc)
+            evict_omnivoice_model(model_dir=model_dir, device="cuda")
             try:
                 torch.cuda.empty_cache()
             except Exception:
                 pass
+
+    _infer(gpus.mps_or_cpu(), torch.float32)
 
 
 async def synthesize_voice_preview(
@@ -194,8 +293,8 @@ async def synthesize_voice_preview(
     preview_path = voice_store.get_preview_audio_path(preview_filename)
 
     # 1. Return cached preview if valid and not force_refresh
-    if not force_refresh and preview_path.is_file() and preview_path.stat().st_size > 0:
-        if preview_path.stat().st_mtime >= voice.get("updated_at", 0):
+    if not force_refresh and _is_valid_preview_wav(preview_path):
+        if preview_path.stat().st_mtime >= (voice.get("updated_at", 0) - 2.0):
             return preview_path
 
     # 2. Determine sample utterance
@@ -226,8 +325,8 @@ async def synthesize_voice_preview(
 
     async with _preview_lock:
         # Re-check cache inside lock to avoid redundant concurrent synthesis
-        if not force_refresh and preview_path.is_file() and preview_path.stat().st_size > 0:
-            if preview_path.stat().st_mtime >= voice.get("updated_at", 0):
+        if not force_refresh and _is_valid_preview_wav(preview_path):
+            if preview_path.stat().st_mtime >= (voice.get("updated_at", 0) - 2.0):
                 return preview_path
 
         provider = voice.get("provider", tts.VIENEU_TTS)
@@ -294,32 +393,38 @@ async def synthesize_voice_preview(
 
             # Robust fallback: generate 3-second preview snippet from reference audio
             if ref_audio_path and ref_audio_path.is_file():
-                target_rate = 48000 if provider == tts.VIENEU_TTS else 24000
-                cmd = [
-                    "-y",
-                    "-ss", "0",
-                    "-t", "3",
-                    "-i", str(ref_audio_path),
-                    "-vn",
-                    "-ac", "1",
-                    "-ar", str(target_rate),
-                    "-acodec", "pcm_s16le",
-                    str(preview_path),
-                ]
-                await asyncio.to_thread(runffmpeg, cmd, force_cpu=True)
-                return
+                if await asyncio.to_thread(
+                    generate_snippet_preview,
+                    ref_audio_path,
+                    preview_path,
+                    48000 if provider == tts.VIENEU_TTS else 24000,
+                ):
+                    return
 
             # Pure synthetic wav fallback for design voices without source audio
             generate_fallback_preview_wav(preview_path)
             return
 
-        await asyncio.wait_for(_do_synthesis(), timeout=PREVIEW_TIMEOUT_SECONDS)
+        try:
+            await asyncio.wait_for(_do_synthesis(), timeout=PREVIEW_TIMEOUT_SECONDS)
+        except (asyncio.TimeoutError, TimeoutError, asyncio.CancelledError, Exception) as exc:
+            logger.warning("Voice preview synthesis timed out or failed (%s), generating fallback preview audio", exc)
+            if ref_audio_path and ref_audio_path.is_file():
+                await asyncio.to_thread(
+                    generate_snippet_preview,
+                    ref_audio_path,
+                    preview_path,
+                    48000 if provider == tts.VIENEU_TTS else 24000,
+                )
+            if not _is_valid_preview_wav(preview_path):
+                generate_fallback_preview_wav(preview_path)
 
-        if not preview_path.is_file() or preview_path.stat().st_size == 0:
-            raise RuntimeError(f"Preview synthesis produced no output file: {preview_path}")
+        if not _is_valid_preview_wav(preview_path):
+            generate_fallback_preview_wav(preview_path)
 
-        # Update voice record with cached preview path
-        voice_store.update_voice(voice_id, preview_audio_path=preview_filename, db_path=db_path)
+        # Update voice record with cached preview path if needed
+        if voice.get("preview_audio_path") != preview_filename:
+            voice_store.update_voice(voice_id, preview_audio_path=preview_filename, db_path=db_path)
 
         return preview_path
 
@@ -349,6 +454,7 @@ async def synthesize_clone_preview(
     use_cuda: bool = True,
     ref_text: Optional[str] = None,
     preview_id: Optional[str] = None,
+    denoise: bool = False,
 ) -> tuple[str, Path]:
     """
     Synthesize a voice preview directly from a reference audio file before saving the voice.
@@ -385,6 +491,7 @@ async def synthesize_clone_preview(
                         preview_path,
                         sample_text,
                         use_cuda,
+                        denoise=denoise,
                     )
                     return
                 except ImportError:
@@ -410,29 +517,34 @@ async def synthesize_clone_preview(
 
             # Robust snippet fallback from reference audio
             if ref_src.is_file():
-                target_rate = 48000 if provider == tts.VIENEU_TTS else 24000
-                cmd = [
-                    "-y",
-                    "-ss", "0",
-                    "-t", "3",
-                    "-i", str(ref_src),
-                    "-vn",
-                    "-ac", "1",
-                    "-ar", str(target_rate),
-                    "-acodec", "pcm_s16le",
-                    str(preview_path),
-                ]
-                await asyncio.to_thread(runffmpeg, cmd, force_cpu=True)
-                return
+                if await asyncio.to_thread(
+                    generate_snippet_preview,
+                    ref_src,
+                    preview_path,
+                    48000 if provider == tts.VIENEU_TTS else 24000,
+                ):
+                    return
 
             generate_fallback_preview_wav(preview_path)
 
-        await asyncio.wait_for(_do_synthesis(), timeout=PREVIEW_TIMEOUT_SECONDS)
+        try:
+            await asyncio.wait_for(_do_synthesis(), timeout=CLONE_TIMEOUT_SECONDS)
+        except (asyncio.TimeoutError, TimeoutError, asyncio.CancelledError, Exception) as exc:
+            logger.warning("Clone preview synthesis timed out or failed (%s), generating fallback preview audio", exc)
+            if ref_src and ref_src.is_file():
+                await asyncio.to_thread(
+                    generate_snippet_preview,
+                    ref_src,
+                    preview_path,
+                    48000 if provider == tts.VIENEU_TTS else 24000,
+                )
+            if not _is_valid_preview_wav(preview_path):
+                generate_fallback_preview_wav(preview_path)
 
-    if not preview_path.is_file() or preview_path.stat().st_size == 0:
-        generate_fallback_preview_wav(preview_path)
+        if not _is_valid_preview_wav(preview_path):
+            generate_fallback_preview_wav(preview_path)
 
-    return pid, preview_path
+        return pid, preview_path
 
 
 async def synthesize_unified_tts_preview(
@@ -448,6 +560,9 @@ async def synthesize_unified_tts_preview(
     tuning_params: Optional[dict[str, Any]] = None,
     use_cuda: bool = True,
     db_path: Optional[str | Path] = None,
+    auto_speed: bool = False,
+    slot_duration_s: Optional[float] = None,
+    max_speed_rate: Optional[float] = 1.25,
 ) -> tuple[str, Path]:
     """
     Unified voice preview generator supporting all 4 TTS providers
@@ -464,92 +579,131 @@ async def synthesize_unified_tts_preview(
     if not cv and voice_str:
         cv = voice_store.find_voice_by_name(voice_str, provider=provider, db_path=db_path)
 
+    cv_resolved = None
+    cv_ref_path: Optional[Path] = None
+    cv_cached_emb = None
     if cv:
-        custom_voice_id = cv["id"]
-        path = await synthesize_voice_preview(
-            custom_voice_id,
-            text=sample_text,
-            language=language or cv.get("language"),
-            use_cuda=use_cuda,
-            force_refresh=force_refresh,
-            db_path=db_path,
-        )
-        return custom_voice_id, path
+        cv_resolved = voice_store.resolve_voice_params(cv["id"], db_path=db_path) or cv
+        cv_tp = dict(cv_resolved.get("tuning_params") or {})
+        for k, v in cv_tp.items():
+            if k not in tp and v is not None:
+                tp[k] = v
+
+        ref_rel = cv_resolved.get("ref_audio_path", "")
+        if ref_rel:
+            try:
+                p = voice_store.get_voice_audio_path(ref_rel)
+                if p.is_file():
+                    cv_ref_path = p
+            except Exception:
+                pass
+
+        eff_vid = cv_resolved.get("effective_voice_id") or cv["id"]
+        cv_cached_emb = voice_store.get_voice_embedding(eff_vid)
+        if not language and cv.get("language"):
+            language = cv["language"]
+        if cv.get("provider") is not None:
+            provider = cv["provider"]
+        voice_str = cv["id"]
 
     # 2. If test double synthesizer is set, invoke it
     if _preview_synthesizer is not None:
-        key_raw = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}_{style}"
+        key_raw = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}_{style}_{auto_speed}_{slot_duration_s}_{max_speed_rate}"
         p_id = f"prev_{hashlib.md5(key_raw.encode('utf-8')).hexdigest()[:12]}"
         p_path = voice_store.get_preview_audio_path(f"{p_id}.wav")
         voice_dict = {
             "id": p_id,
-            "name": voice_str or "Default",
+            "name": (cv.get("name") if cv else None) or voice_str or "Default",
             "provider": provider,
             "language": language or "vi",
             "style": style,
         }
+        if cv_ref_path:
+            voice_dict["ref_audio_path"] = str(cv_ref_path)
         await asyncio.to_thread(_preview_synthesizer, voice_dict, p_path, sample_text)
         if not p_path.is_file() or p_path.stat().st_size == 0:
             generate_fallback_preview_wav(p_path)
+        if auto_speed and slot_duration_s and slot_duration_s > 0:
+            from videotrans.services.audio_fit import smart_fit_audio_file
+            await asyncio.to_thread(
+                smart_fit_audio_file,
+                p_path,
+                slot_duration_s,
+                max_speed_rate or 1.25,
+            )
         return p_id, p_path
 
-    # 3. Standard/Preset voice synthesis with deterministic cache
+    # 3. Standard/Preset or Custom voice synthesis with deterministic cache
     tuning_key = json.dumps(tp, sort_keys=True)
-    cache_seed = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}_{rate}_{pitch}_{style}_{tuning_key}"
+    cache_seed = f"{provider}_{voice_str}_{sample_text}_{language}_{speed}_{rate}_{pitch}_{style}_{tuning_key}_{auto_speed}_{slot_duration_s}_{max_speed_rate}"
     preview_id = f"prev_{hashlib.md5(cache_seed.encode('utf-8')).hexdigest()[:12]}"
     preview_filename = f"{preview_id}.wav"
     preview_path = voice_store.get_preview_audio_path(preview_filename)
 
     # Return cached if valid and not force_refresh
-    if not force_refresh and preview_path.is_file() and preview_path.stat().st_size > 0:
+    if not force_refresh and _is_valid_preview_wav(preview_path):
         return preview_id, preview_path
 
     async with _preview_lock:
-        if not force_refresh and preview_path.is_file() and preview_path.stat().st_size > 0:
+        if not force_refresh and _is_valid_preview_wav(preview_path):
             return preview_id, preview_path
 
         async def _do_synthesis() -> None:
             # VieNeu-TTS
             if provider == tts.VIENEU_TTS:
                 from videotrans.util.help_role import get_vieneu_custom_voice_path
-                custom_ref = get_vieneu_custom_voice_path(voice_str)
+                custom_ref = cv_ref_path or get_vieneu_custom_voice_path(voice_str)
                 selected_style = style or tp.get("style", "tu_nhien")
                 temp_val = float(tp.get("temperature", 0.8))
                 rep_pen = float(tp.get("repetition_penalty", 1.2))
+                top_p_val = float(tp.get("top_p", 0.95))
+                denoise_opt = bool(tp.get("denoise", True))
 
-                if custom_ref and Path(custom_ref).is_file():
+                if cv_resolved and cv_resolved.get("base_type") == "preset":
+                    preset_name = cv_resolved.get("preset_voice") or (cv.get("external_voice_id") if cv else None)
                     await asyncio.to_thread(
                         _run_vieneu_synthesis,
-                        Path(custom_ref),
+                        None,
+                        preview_path,
+                        sample_text,
+                        use_cuda,
+                        voice=preset_name,
+                        style=selected_style,
+                        temperature=temp_val,
+                        repetition_penalty=rep_pen,
+                        top_p=top_p_val,
+                    )
+                    return
+                elif (custom_ref and Path(custom_ref).is_file()) or cv_cached_emb:
+                    await asyncio.to_thread(
+                        _run_vieneu_synthesis,
+                        Path(custom_ref) if custom_ref else None,
                         preview_path,
                         sample_text,
                         use_cuda,
                         style=selected_style,
+                        denoise=denoise_opt,
                         temperature=temp_val,
                         repetition_penalty=rep_pen,
+                        top_p=top_p_val,
+                        cached_embedding=cv_cached_emb,
                     )
                     return
-                # Try VieNeu engine if installed
-                def _infer_vieneu_preset():
-                    from videotrans.tts._vieneu_compat import setup_vieneu_environment
-                    setup_vieneu_environment()
-                    from vieneu import Vieneu
-                    import soundfile as sf
-                    engine = Vieneu(mode="v3turbo", device="cuda" if use_cuda else "cpu", backend="pytorch" if use_cuda else "onnx", max_batch_size=1)
-                    try:
-                        preset_v = engine.get_preset_voice(voice_str) if (voice_str and voice_str.lower() not in ("no", "default", "clone")) else None
-                        audios = engine.infer_batch(
-                            [sample_text],
-                            voice=preset_v,
-                            style=selected_style,
-                            temperature=temp_val,
-                            repetition_penalty=rep_pen,
-                        )
-                        sf.write(str(preview_path), audios[0], engine.sample_rate)
-                    finally:
-                        if hasattr(engine, "close"):
-                            engine.close()
-                await asyncio.to_thread(_infer_vieneu_preset)
+
+                # Preset voice: leverage cached VieNeu engine with CUDA-to-CPU fallback
+                preset_v = voice_str if (voice_str and voice_str.lower() not in ("no", "default", "clone")) else None
+                await asyncio.to_thread(
+                    _run_vieneu_synthesis,
+                    None,
+                    preview_path,
+                    sample_text,
+                    use_cuda,
+                    voice=preset_v,
+                    style=selected_style,
+                    temperature=temp_val,
+                    repetition_penalty=rep_pen,
+                    top_p=top_p_val,
+                )
                 return
 
             # OmniVoice
@@ -558,6 +712,18 @@ async def synthesize_unified_tts_preview(
                 model_dir = Path(ROOT_DIR) / "models" / "models--k2-fsa--OmniVoice"
                 if not (model_dir / "model.safetensors").is_file():
                     raise FileNotFoundError(f"OmniVoice model not installed at {model_dir}")
+                omnivoice_ref = cv_ref_path
+                if omnivoice_ref and Path(omnivoice_ref).is_file():
+                    ref_text = (cv.get("ref_text") if cv else "") or ""
+                    await asyncio.to_thread(
+                        _run_omnivoice_synthesis,
+                        Path(omnivoice_ref),
+                        ref_text,
+                        preview_path,
+                        sample_text,
+                        use_cuda,
+                    )
+                    return
                 # OmniVoice requires reference audio, generate if available
                 raise NotImplementedError("OmniVoice preset preview requires clone audio")
 
@@ -603,7 +769,16 @@ async def synthesize_unified_tts_preview(
             logger.info("Direct TTS engine preview synthesis skipped or unavailable (%s), generating fallback preview audio", exc)
             generate_fallback_preview_wav(preview_path)
 
-        if not preview_path.is_file() or preview_path.stat().st_size == 0:
+        if not _is_valid_preview_wav(preview_path):
             generate_fallback_preview_wav(preview_path)
+
+        if auto_speed and slot_duration_s and slot_duration_s > 0:
+            from videotrans.services.audio_fit import smart_fit_audio_file
+            await asyncio.to_thread(
+                smart_fit_audio_file,
+                preview_path,
+                slot_duration_s,
+                max_speed_rate or 1.25,
+            )
 
         return preview_id, preview_path

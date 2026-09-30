@@ -21,6 +21,8 @@ export function buildRenderRequest(state: any) {
       segmentVoiceOverrides: state.segmentVoiceOverrides,
       backgroundAudioId: state.editVideo.backgroundAudio?.id,
       thumbnailId: state.editVideo.thumbnail?.id,
+      ...(state.autoFitVoiceSpeed !== undefined ? { autoFitVoiceSpeed: state.autoFitVoiceSpeed } : {}),
+      ...(state.maxSpeedRate !== undefined ? { maxSpeedRate: state.maxSpeedRate } : {}),
     },
   };
 }

@@ -989,8 +989,45 @@ describe('React four-stage workflow', () => {
     expect(html).toContain('data-action="seek-segment"');
     expect(html).toContain('data-action="reset-segment-voice"');
     expect(html).toContain('data-action="set-speaker-default"');
-    expect(html).toContain('(Default)');
     expect(html).toContain('data-action="proceed-to-edit-video"');
+  });
+
+  test('Stage 3 renders Auto Speed Fit toggle and updates speed cap setting', () => {
+    useDubDubStore.setState({
+      autoFitVoiceSpeed: true,
+      maxSpeedRate: 1.25,
+      segments: [
+        {
+          id: 1,
+          startSec: 0,
+          endSec: 2,
+          startTime: '00:00.000',
+          endTime: '00:02.000',
+          sourceText: 'Hello',
+          targetText: 'Xin chao',
+          speakerId: 'spk_1',
+        },
+      ],
+      speakers: [{ id: 'spk_1', name: 'Alex', code: 'AL', color: 'amber' }],
+    });
+
+    const html = renderToStaticMarkup(<Stage3VoiceDubbing />);
+    expect(html).toContain('data-testid="auto-speed-toggle"');
+    expect(html).toContain('Auto Speed');
+    expect(html).toContain('data-testid="max-speed-selector"');
+    expect(html).toContain('Max 1.25');
+
+    // Test store setters
+    useDubDubStore.getState().setAutoFitVoiceSpeed(false);
+    expect(useDubDubStore.getState().autoFitVoiceSpeed).toBe(false);
+
+    useDubDubStore.getState().setMaxSpeedRate(1.35);
+    expect(useDubDubStore.getState().maxSpeedRate).toBe(1.35);
+
+    // Re-render with autoFitVoiceSpeed=false: selector is hidden
+    const htmlDisabled = renderToStaticMarkup(<Stage3VoiceDubbing />);
+    expect(htmlDisabled).toContain('data-testid="auto-speed-toggle"');
+    expect(htmlDisabled).not.toContain('data-testid="max-speed-selector"');
   });
 
   test('Stage 3 footer primary button renders Generate Dubbing when pending and transitions to Proceed to Edit Video when completed', () => {

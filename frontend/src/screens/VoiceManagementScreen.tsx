@@ -40,6 +40,7 @@ import {
   getStandardSamplePhrase,
 } from '../services/voiceAuditionManager';
 import type { VoiceOption } from '../types/dubbing';
+import { ProviderDocLink } from '../components/ProviderDocLink';
 
 export type VoiceCategoryTab = 'all' | 'custom' | 'preset';
 
@@ -116,17 +117,6 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
     };
   }, [stopAudition]);
 
-  // Set default selected voice for lab when voices load
-  useEffect(() => {
-    if (!selectedLabVoiceId) {
-      if (customVoices.length > 0) {
-        setSelectedLabVoiceId(customVoices[0].id);
-      } else if (voices.length > 0) {
-        setSelectedLabVoiceId(voices[0].id);
-      }
-    }
-  }, [customVoices, voices, selectedLabVoiceId]);
-
   // Format preset voices vs custom voices
   const presetVoices: VoiceOption[] = useMemo(() => {
     return (voices || []).filter((v) => {
@@ -139,6 +129,17 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
       return !isClone && !isSystem;
     });
   }, [voices]);
+
+  // Set default selected voice for lab when voices load
+  useEffect(() => {
+    if (!selectedLabVoiceId) {
+      if (customVoices.length > 0) {
+        setSelectedLabVoiceId(customVoices[0].id);
+      } else if (presetVoices.length > 0) {
+        setSelectedLabVoiceId(presetVoices[0].id);
+      }
+    }
+  }, [customVoices, presetVoices, selectedLabVoiceId]);
 
   const handleStartEdit = (v: CustomVoice) => {
     setEditingVoiceId(v.id);
@@ -217,7 +218,6 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
       const targetLanguage = customMatch?.language ?? storeLanguage;
 
       const targetVoice = customMatch ? customMatch.id : selectedLabVoiceId;
-      let generatedAudioUrl = '';
       const ttsRes = await previewTTS({
         text: testPhrase.trim(),
         voice: targetVoice,
@@ -231,14 +231,24 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
         },
         force_refresh: true,
       });
-      generatedAudioUrl = ttsRes.preview_url || ttsRes.audio_url;
+      const generatedAudioUrl = ttsRes.preview_url || ttsRes.audio_url;
+      const bustedUrl = generatedAudioUrl.includes('?')
+        ? `${generatedAudioUrl}&_t=${Date.now()}`
+        : `${generatedAudioUrl}?_t=${Date.now()}`;
 
-      setTestAudioUrl(generatedAudioUrl);
+      setTestAudioUrl(bustedUrl);
 
       if (testAudioRef.current) {
-        testAudioRef.current.src = generatedAudioUrl;
-        await testAudioRef.current.play();
-        setIsTestPlaying(true);
+        testAudioRef.current.src = bustedUrl;
+        testAudioRef.current.load();
+        testAudioRef.current.volume = 1.0;
+        testAudioRef.current
+          .play()
+          .then(() => setIsTestPlaying(true))
+          .catch((playErr) => {
+            console.warn('Autoplay prevented or deferred:', playErr);
+            setIsTestPlaying(false);
+          });
       }
     } catch (err: any) {
       console.error('Test phrase synthesis failed:', err);
@@ -254,8 +264,13 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
       testAudioRef.current.pause();
       setIsTestPlaying(false);
     } else {
-      testAudioRef.current.play();
-      setIsTestPlaying(true);
+      testAudioRef.current
+        .play()
+        .then(() => setIsTestPlaying(true))
+        .catch((playErr) => {
+          console.warn('Test playback prevented:', playErr);
+          setIsTestPlaying(false);
+        });
     }
   };
 
@@ -538,18 +553,23 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
               </select>
 
               {/* Provider Filter */}
-              <select
-                data-testid="voice-provider-filter"
-                value={providerFilter}
-                onChange={(e) => setProviderFilter(e.target.value)}
-                className="px-2 py-1 bg-stone-50 border border-stone-200 rounded-lg text-xs font-medium text-stone-700 focus:outline-none cursor-pointer"
-              >
-                <option value="all">All Providers</option>
-                <option value="2">VieNeu-TTS (48k)</option>
-                <option value="1">OmniVoice (24k)</option>
-                <option value="0">ElevenLabs</option>
-                <option value="3">Gemini TTS</option>
-              </select>
+              <div className="flex items-center gap-1">
+                <select
+                  data-testid="voice-provider-filter"
+                  value={providerFilter}
+                  onChange={(e) => setProviderFilter(e.target.value)}
+                  className="px-2 py-1 bg-stone-50 border border-stone-200 rounded-lg text-xs font-medium text-stone-700 focus:outline-none cursor-pointer"
+                >
+                  <option value="all">All Providers</option>
+                  <option value="2">VieNeu-TTS (48k)</option>
+                  <option value="1">OmniVoice (24k)</option>
+                  <option value="0">ElevenLabs</option>
+                  <option value="3">Gemini TTS</option>
+                </select>
+                {providerFilter !== 'all' && (
+                  <ProviderDocLink providerId={Number(providerFilter)} category="tts" variant="icon" />
+                )}
+              </div>
 
               {/* Gender Filter */}
               <select
@@ -673,7 +693,8 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                           <div
                             key={voice.id}
                             data-voice-card={voice.id}
-                            className={`p-3 rounded-xl border transition-all bg-white shadow-2xs ${
+                            onClick={() => handleSelectForLab(voice.id)}
+                            className={`p-3 rounded-xl border transition-all bg-white shadow-2xs cursor-pointer ${
                               isSelected
                                 ? 'border-amber-400 ring-1 ring-amber-400/50 bg-amber-50/30'
                                 : isSelectedForLab
@@ -704,7 +725,10 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                                   type="button"
                                   data-action="audition-voice"
                                   data-voice-id={voice.id}
-                                  onClick={() => handleToggleAudition(voice.id, voice.name, voice.provider, true)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleAudition(voice.id, voice.name, voice.provider, true);
+                                  }}
                                   disabled={isLoading}
                                   className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
                                     isPlaying
@@ -771,7 +795,10 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                               {isEditing ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleSaveEdit(voice.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSaveEdit(voice.id);
+                                  }}
                                   className="p-1 rounded hover:bg-emerald-50 text-emerald-600 cursor-pointer"
                                   title="Save Changes"
                                 >
@@ -780,7 +807,10 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => handleStartEdit(voice)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartEdit(voice);
+                                  }}
                                   className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer"
                                   title="Rename / Edit Description"
                                 >
@@ -792,7 +822,10 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                                 <button
                                   type="button"
                                   data-testid={`delete-voice-${voice.id}`}
-                                  onClick={() => setConfirmDeleteId(voice.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmDeleteId(voice.id);
+                                  }}
                                   className="p-1 rounded hover:bg-rose-50 text-stone-400 hover:text-rose-600 cursor-pointer"
                                   title="Delete Custom Voice"
                                 >
@@ -803,14 +836,20 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                                   <span className="text-[9px] text-rose-700 font-bold px-0.5">Sure?</span>
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteCustomVoice(voice.id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteCustomVoice(voice.id);
+                                    }}
                                     className="px-1 py-0.5 rounded text-[9px] font-bold bg-rose-600 text-white hover:bg-rose-700 cursor-pointer"
                                   >
                                     Yes
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => setConfirmDeleteId(null)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setConfirmDeleteId(null);
+                                    }}
                                     className="px-1 py-0.5 rounded text-[9px] font-bold bg-stone-200 text-stone-700 cursor-pointer"
                                   >
                                     No
@@ -834,7 +873,10 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                             <button
                               type="button"
                               data-testid={`select-for-preview-${voice.id}`}
-                              onClick={() => handleSelectForLab(voice.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectForLab(voice.id);
+                              }}
                               className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer transition-colors ${
                                 isSelectedForLab
                                   ? 'bg-[#8D4B00] text-white font-bold'
@@ -873,7 +915,8 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                       <div
                         key={voice.id}
                         data-voice-card={voice.id}
-                        className={`p-3 rounded-xl border transition-all bg-white shadow-2xs ${
+                        onClick={() => handleSelectForLab(voice.id)}
+                        className={`p-3 rounded-xl border transition-all bg-white shadow-2xs cursor-pointer ${
                           isSelectedForLab
                             ? 'border-amber-400 ring-1 ring-amber-400/50 bg-amber-50/20'
                             : 'border-stone-200 hover:border-amber-200'
@@ -885,7 +928,10 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                               type="button"
                               data-action="audition-voice"
                               data-voice-id={voice.id}
-                              onClick={() => handleToggleAudition(voice.id, voice.name, voice.provider ?? storeProvider, false)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleAudition(voice.id, voice.name, voice.provider ?? storeProvider, false);
+                              }}
                               disabled={isLoading}
                               className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
                                 isPlaying
@@ -917,7 +963,10 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                           <button
                             type="button"
                             data-testid={`select-for-preview-${voice.id}`}
-                            onClick={() => handleSelectForLab(voice.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectForLab(voice.id);
+                            }}
                             className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer transition-colors ${
                               isSelectedForLab
                                 ? 'bg-[#8D4B00] text-white font-bold'
@@ -951,8 +1000,8 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
           </div>
 
           <div className="p-4 space-y-4 flex-1">
-            {/* Selected Voice Info Box */}
-            <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 space-y-1">
+            {/* Selected Voice Info Box & Direct Selector */}
+            <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/40 space-y-2">
               <div className="text-[11px] font-bold text-stone-700 flex items-center justify-between">
                 <span>Active Synthesis Voice:</span>
                 {selectedVoiceMeta?.isCustom ? (
@@ -965,11 +1014,37 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
                   </span>
                 )}
               </div>
-              <div className="font-bold text-sm text-stone-900 truncate">
-                {selectedVoiceMeta ? selectedVoiceMeta.name : 'No voice selected'}
-              </div>
+
+              {/* Direct Voice Picker Dropdown */}
+              <select
+                data-testid="lab-voice-picker"
+                value={selectedLabVoiceId}
+                onChange={(e) => handleSelectForLab(e.target.value)}
+                className="w-full text-xs px-2.5 py-1.5 bg-white rounded-lg border border-amber-200 text-stone-900 font-bold focus:outline-none focus:border-[#8D4B00] cursor-pointer shadow-2xs"
+              >
+                {!selectedLabVoiceId && <option value="">Select a voice to test...</option>}
+                {filteredCustomVoices.length > 0 && (
+                  <optgroup label="Custom Cloned Voices">
+                    {filteredCustomVoices.map((cv) => (
+                      <option key={cv.id} value={cv.id}>
+                        {cv.name} ({cv.kind === 'design' ? 'Designed' : 'Cloned'})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {filteredPresetVoices.length > 0 && (
+                  <optgroup label="Preset Voices">
+                    {filteredPresetVoices.map((pv) => (
+                      <option key={pv.id} value={pv.id}>
+                        {pv.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+
               <div className="text-[10px] text-stone-500">
-                Click "Test in Lab" on any voice card to select it for custom synthesis.
+                You can pick any voice above or click on a voice card in the library.
               </div>
             </div>
 
@@ -1156,6 +1231,8 @@ export const VoiceManagementScreen: React.FC<VoiceManagementScreenProps> = ({
               ref={testAudioRef}
               onEnded={() => setIsTestPlaying(false)}
               onError={() => setIsTestPlaying(false)}
+              onPlay={() => setIsTestPlaying(true)}
+              onPause={() => setIsTestPlaying(false)}
               className="hidden"
             />
           </div>

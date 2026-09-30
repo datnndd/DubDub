@@ -785,7 +785,8 @@ def test_unified_tts_preview_custom_voice(tmp_path, monkeypatch):
                 assert res.status == 200
                 data = await res.json()
                 assert data["ok"] is True
-                assert data["id"] == voice_id
+                assert data["voice"] == voice_id
+                assert data["id"] and data["preview_url"]
 
                 audio_res = await client.get(data["preview_url"])
                 assert audio_res.status == 200
@@ -943,5 +944,69 @@ def test_project_state_snapshot_post_alias(tmp_path):
             await client.close()
 
     asyncio.run(scenario())
+
+
+def test_unified_tts_preview_with_auto_speed(tmp_path, monkeypatch):
+    """Verify POST /api/tts/preview applies smart fit when auto_speed is enabled."""
+    from videotrans.core import voice_store
+    from videotrans.core.db import init_db
+    from videotrans.services import voice_preview
+    from videotrans.services.audio_fit import get_audio_duration_seconds
+
+    db_path = tmp_path / "test_stage3_auto_speed.db"
+    init_db(db_path)
+    monkeypatch.setattr("videotrans.core.db._current_db_path", db_path)
+
+    v_dir = tmp_path / "voices"
+    p_dir = tmp_path / "previews"
+    monkeypatch.setattr(voice_store, "VOICES_DIR", v_dir)
+    monkeypatch.setattr(voice_store, "PREVIEWS_DIR", p_dir)
+    voice_store.init_voice_dirs()
+
+    # Create synthetic 2.0s audio for preview synthesis
+    def fake_synthesizer(voice, preview_path, sample_text):
+        voice_preview.generate_fallback_preview_wav(preview_path, duration_sec=2.0)
+
+    voice_preview.set_preview_synthesizer(fake_synthesizer)
+    try:
+        app = create_app(upload_dir=tmp_path / "uploads")
+
+        async def scenario():
+            client = TestClient(TestServer(app))
+            await client.start_server()
+            try:
+                res = await client.post(
+                    "/api/tts/preview",
+                    json={
+                        "voice": "preset_voice_1",
+                        "provider": 2,
+                        "text": "Câu văn dài cần nén tốc độ để vừa khung phụ đề.",
+                        "auto_speed": True,
+                        "slot_duration_s": 1.6,
+                        "max_speed_rate": 1.3,
+                    },
+                )
+                assert res.status == 200
+                data = await res.json()
+                assert data["ok"] is True
+                assert "preview_url" in data
+
+                # Check downloaded audio is stretched
+                audio_res = await client.get(data["preview_url"])
+                assert audio_res.status == 200
+                wav_bytes = await audio_res.read()
+                out_wav = tmp_path / "downloaded_preview.wav"
+                out_wav.write_bytes(wav_bytes)
+
+                dur = get_audio_duration_seconds(out_wav)
+                # 2.0s audio fitted to 1.6s slot -> ~1.6s
+                assert dur == pytest.approx(1.6, rel=0.1)
+            finally:
+                await client.close()
+
+        asyncio.run(scenario())
+    finally:
+        voice_preview.set_preview_synthesizer(None)
+
 
 

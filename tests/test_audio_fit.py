@@ -1,0 +1,102 @@
+import math
+import wave
+from pathlib import Path
+import pytest
+
+from videotrans.services.audio_fit import (
+    FitParams,
+    calculate_slot_duration,
+    calculate_fit_rate,
+    build_atempo_chain,
+    get_audio_duration_seconds,
+    apply_pitch_preserving_stretch,
+    smart_fit_audio_file,
+)
+
+
+def test_calculate_slot_duration_base():
+    slot = calculate_slot_duration(0.0, 2.5)
+    assert slot == 2.5
+
+
+def test_calculate_slot_duration_with_slack():
+    # Slot absorbs gap up to next_start - gap_guard (0.05)
+    slot = calculate_slot_duration(1.0, 3.0, next_start_s=4.0, gap_guard_s=0.05)
+    assert slot == pytest.approx(2.95, rel=1e-3)
+
+
+def test_calculate_slot_duration_tail():
+    # Last segment absorbs slack up to total video duration
+    slot = calculate_slot_duration(5.0, 7.0, total_dur_s=10.0)
+    assert slot == 5.0
+
+
+def test_calculate_fit_rate_fits():
+    params = FitParams(max_audio_rate=1.25, min_audio_rate=1.0)
+    rate, status = calculate_fit_rate(2.0, 2.5, params)
+    assert rate == 1.0
+    assert status == "fits"
+
+
+def test_calculate_fit_rate_stretched():
+    params = FitParams(max_audio_rate=1.3)
+    rate, status = calculate_fit_rate(2.4, 2.0, params)
+    assert rate == pytest.approx(1.2, rel=1e-3)
+    assert status == "audio_stretched"
+
+
+def test_calculate_fit_rate_overflow_capped():
+    params = FitParams(max_audio_rate=1.25)
+    rate, status = calculate_fit_rate(3.5, 2.0, params)
+    # Capped at max_audio_rate
+    assert rate == 1.25
+    assert status == "overflow_trimmed"
+
+
+def test_build_atempo_chain_single():
+    res = build_atempo_chain(1.25)
+    assert res == "atempo=1.250000"
+
+
+def test_build_atempo_chain_multi():
+    res = build_atempo_chain(2.5)
+    assert "atempo=2.0" in res
+    assert "atempo=1.250000" in res
+
+
+def _create_synthetic_wav(file_path: Path, duration_s: float, sample_rate: int = 16000):
+    num_samples = int(duration_s * sample_rate)
+    with wave.open(str(file_path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        # Generate simple sine wave
+        samples = bytearray()
+        for i in range(num_samples):
+            val = int(3000 * math.sin(2 * math.pi * 440 * i / sample_rate))
+            samples.extend(val.to_bytes(2, byteorder="little", signed=True))
+        wf.writeframes(samples)
+
+
+def test_smart_fit_audio_file_execution(tmp_path):
+    input_wav = tmp_path / "test_input.wav"
+    output_wav = tmp_path / "test_output.wav"
+    # Create 2.0s audio
+    _create_synthetic_wav(input_wav, duration_s=2.0)
+
+    dur = get_audio_duration_seconds(input_wav)
+    assert dur == pytest.approx(2.0, rel=0.05)
+
+    # Fit into 1.6s slot (need = 2.0 / 1.6 = 1.25x)
+    res_path, applied_rate, status = smart_fit_audio_file(
+        input_wav,
+        slot_duration_s=1.6,
+        max_speed_rate=1.25,
+        output_wav=output_wav,
+    )
+    assert status == "audio_stretched"
+    assert applied_rate == pytest.approx(1.25, rel=0.01)
+    assert res_path.is_file()
+
+    new_dur = get_audio_duration_seconds(res_path)
+    assert new_dur == pytest.approx(1.6, rel=0.1)

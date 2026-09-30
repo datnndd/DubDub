@@ -206,6 +206,18 @@ def normalize_reference_audio(
             "-i", str(src),
             "-ss", f"{ss:.3f}",
             "-to", f"{to:.3f}",
+            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-vn",
+            "-ac", "1",
+            "-ar", str(target_rate),
+            "-acodec", "pcm_s16le",
+            str(dest),
+        ]
+        cmd_simple = [
+            "-y",
+            "-i", str(src),
+            "-ss", f"{ss:.3f}",
+            "-to", f"{to:.3f}",
             "-vn",
             "-ac", "1",
             "-ar", str(target_rate),
@@ -222,6 +234,16 @@ def normalize_reference_audio(
         cmd = [
             "-y",
             "-i", str(src),
+            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+            "-vn",
+            "-ac", "1",
+            "-ar", str(target_rate),
+            "-acodec", "pcm_s16le",
+            str(dest),
+        ]
+        cmd_simple = [
+            "-y",
+            "-i", str(src),
             "-vn",
             "-ac", "1",
             "-ar", str(target_rate),
@@ -231,9 +253,12 @@ def normalize_reference_audio(
 
     try:
         runffmpeg(cmd, force_cpu=True)
-    except Exception as exc:
-        logger.exception(f"Audio normalization failed for {src}: {exc}", exc_info=True)
-        raise FFmpegError(f"Audio normalization failed: {exc}") from exc
+    except Exception:
+        try:
+            runffmpeg(cmd_simple, force_cpu=True)
+        except Exception as exc:
+            logger.exception(f"Audio normalization failed for {src}: {exc}", exc_info=True)
+            raise FFmpegError(f"Audio normalization failed: {exc}") from exc
 
     if not dest.is_file() or dest.stat().st_size == 0:
         raise RuntimeError(f"Transcoded output WAV was not generated: {dest}")

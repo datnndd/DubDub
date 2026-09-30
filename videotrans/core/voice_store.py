@@ -226,7 +226,9 @@ def update_voice(
     if not updates:
         return get_voice(voice_id, db_path=db_path)
 
-    updates["updated_at"] = time.time()
+    # Only bump updated_at if fields other than preview_audio_path are changed
+    if set(updates.keys()) != {"preview_audio_path"}:
+        updates["updated_at"] = time.time()
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     vals = list(updates.values()) + [voice_id]
 
@@ -375,8 +377,12 @@ def cache_voice_embedding(
 
     save_dict = {}
     if speaker_emb is not None:
+        if hasattr(speaker_emb, "detach"):
+            speaker_emb = speaker_emb.detach().cpu().numpy()
         save_dict["speaker_emb"] = np.asarray(speaker_emb, dtype=np.float32)
     if ref_codes is not None:
+        if hasattr(ref_codes, "detach"):
+            ref_codes = ref_codes.detach().cpu().numpy()
         save_dict["ref_codes"] = np.asarray(ref_codes, dtype=np.int64)
 
     np.savez_compressed(out_file, **save_dict)

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ProviderStatus, updateProviderSettings, testProviderConnection, fetchProviderModels } from '../../../api/settingsApi';
 import { useDubDubStore } from '../../../store';
+import { ProviderDocLink } from '../../ProviderDocLink';
 
 interface ApiProvidersTabProps {
   providers: Record<string, ProviderStatus>;
@@ -246,7 +247,10 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
                       <Key className="w-3.5 h-3.5 text-[#8D4B00]" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-xs text-stone-900 leading-tight">{p.name}</h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="font-bold text-xs text-stone-900 leading-tight">{p.name}</h4>
+                        <ProviderDocLink providerId={p.id} category={p.category as any} variant="badge" />
+                      </div>
                       <span className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">
                         {p.category}
                       </span>

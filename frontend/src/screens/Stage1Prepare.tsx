@@ -19,6 +19,7 @@ import {
   StopCircle,
   FileVideo,
 } from 'lucide-react';
+import { ProviderDocLink } from '../components/ProviderDocLink';
 
 export const Stage1Prepare: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -414,9 +415,12 @@ export const Stage1Prepare: React.FC = () => {
           <div className="space-y-2.5 flex-1">
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] text-stone-500 font-semibold block mb-1">
-                  Engine Provider
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] text-stone-500 font-semibold">
+                    Engine Provider
+                  </label>
+                  <ProviderDocLink providerId={backend.config.recognType} category="asr" />
+                </div>
                 <select
                   value={backend.config.recognType}
                   onChange={(e) => {

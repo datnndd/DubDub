@@ -45,10 +45,24 @@ export interface DubbingSlice {
   getDistinctSpeakers: (customSegments?: Segment[], customSpeakers?: Speaker[]) => Speaker[];
   getResolvedVoiceForSegment: (segment: Segment) => string;
   updateSegmentVoicePreview: (segmentId: number, previewUrl: string, previewId?: string, voice?: string) => void;
+  autoFitVoiceSpeed: boolean;
+  maxSpeedRate: number;
+  setAutoFitVoiceSpeed: (enabled: boolean) => void;
+  setMaxSpeedRate: (rate: number) => void;
   runFullDubbing: () => Promise<void>;
 }
 
 export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set, get) => ({
+  autoFitVoiceSpeed: true,
+  maxSpeedRate: 1.25,
+  setAutoFitVoiceSpeed: (enabled: boolean) => {
+    set({ autoFitVoiceSpeed: enabled });
+    get().triggerAutosave?.();
+  },
+  setMaxSpeedRate: (rate: number) => {
+    set({ maxSpeedRate: rate });
+    get().triggerAutosave?.();
+  },
   speakers: [
     {
       id: "spk_1",
@@ -310,11 +324,29 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
       const ttsType = get().backend?.config?.ttsType ?? 2;
       const lang = get().languages?.target?.code || 'vi';
       const speed = get().tuning?.pace;
+      const autoFit = get().autoFitVoiceSpeed ?? true;
+      const maxRate = get().maxSpeedRate ?? 1.25;
+      const totalDur = get().project?.durationSec || 0;
 
       const updated = await Promise.all(
-        segments.map(async (seg) => {
+        segments.map(async (seg, idx) => {
           const activeVoice = get().getResolvedVoiceForSegment(seg);
           const text = seg.targetText || seg.sourceText || '';
+          const nextSeg = segments[idx + 1];
+          let slotDur: number | undefined = undefined;
+          if (autoFit && typeof seg.startSec === 'number' && typeof seg.endSec === 'number') {
+            const rawSlot = Math.max(0.001, seg.endSec - seg.startSec);
+            if (nextSeg && typeof nextSeg.startSec === 'number') {
+              const slackEnd = Math.max(seg.endSec, nextSeg.startSec - 0.05);
+              const clampedEnd = Math.min(Math.max(slackEnd, seg.startSec), Math.max(nextSeg.startSec, seg.endSec));
+              slotDur = Math.max(0.001, clampedEnd - seg.startSec);
+            } else if (totalDur > 0) {
+              slotDur = Math.max(0.001, Math.max(seg.endSec, totalDur) - seg.startSec);
+            } else {
+              slotDur = rawSlot;
+            }
+          }
+
           try {
             const res = await previewTTS({
               text,
@@ -324,6 +356,9 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
               speed,
               segment_id: seg.id,
               force_refresh: true,
+              auto_speed: autoFit,
+              slot_duration_s: slotDur,
+              max_speed_rate: maxRate,
             });
             return {
               ...seg,

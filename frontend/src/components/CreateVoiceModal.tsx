@@ -20,6 +20,7 @@ import {
   Headphones,
 } from 'lucide-react';
 import { requestVoiceDesignAssist, previewTTS, trimAudio, previewCloneVoice } from '../api/voices';
+import { ProviderDocLink } from './ProviderDocLink';
 
 const VIENEU_PRESET_VOICES = [
   { id: 'Bình (nam miền Bắc)', name: 'Bình', region: 'Nam Bắc', gender: 'Nam', desc: 'Truyền cảm, ấm áp' },
@@ -446,12 +447,25 @@ export const CreateVoiceModal: React.FC = () => {
         },
       });
       if (res.audio_url || res.preview_url) {
-        const url = res.audio_url || res.preview_url;
-        setAuditionAudioUrl(url);
+        const rawUrl = res.audio_url || res.preview_url;
+        const freshUrl = rawUrl.includes('?') ? `${rawUrl}&_t=${Date.now()}` : `${rawUrl}?_t=${Date.now()}`;
+        setAuditionAudioUrl(freshUrl);
         setIsAuditionPlaying(true);
         if (auditionAudioRef.current) {
-          auditionAudioRef.current.src = url;
-          auditionAudioRef.current.play().catch(() => {});
+          auditionAudioRef.current.src = freshUrl;
+          auditionAudioRef.current.currentTime = 0;
+          auditionAudioRef.current.muted = false;
+          if (auditionAudioRef.current.volume === 0) {
+            auditionAudioRef.current.volume = 1.0;
+          }
+          auditionAudioRef.current.load();
+          const p = auditionAudioRef.current.play();
+          if (p !== undefined) {
+            p.then(() => setIsAuditionPlaying(true)).catch((err) => {
+              console.warn('Autoplay prevented:', err);
+              setIsAuditionPlaying(false);
+            });
+          }
         }
       }
     } catch (err: any) {
@@ -503,13 +517,26 @@ export const CreateVoiceModal: React.FC = () => {
         ref_text: refText.trim() || undefined,
       });
       if (res && (res.preview_url || res.audio_url)) {
-        const url = res.preview_url || res.audio_url;
-        setCloneAuditionUrl(url);
+        const rawUrl = res.preview_url || res.audio_url;
+        const freshUrl = rawUrl.includes('?') ? `${rawUrl}&_t=${Date.now()}` : `${rawUrl}?_t=${Date.now()}`;
+        setCloneAuditionUrl(freshUrl);
         setClonePreviewFilename(res.preview_filename);
         setIsCloneAuditionPlaying(true);
         if (cloneAuditionAudioRef.current) {
-          cloneAuditionAudioRef.current.src = url;
-          cloneAuditionAudioRef.current.play().catch(() => {});
+          cloneAuditionAudioRef.current.src = freshUrl;
+          cloneAuditionAudioRef.current.currentTime = 0;
+          cloneAuditionAudioRef.current.muted = false;
+          if (cloneAuditionAudioRef.current.volume === 0) {
+            cloneAuditionAudioRef.current.volume = 1.0;
+          }
+          cloneAuditionAudioRef.current.load();
+          const p = cloneAuditionAudioRef.current.play();
+          if (p !== undefined) {
+            p.then(() => setIsCloneAuditionPlaying(true)).catch((err) => {
+              console.warn('Autoplay prevented:', err);
+              setIsCloneAuditionPlaying(false);
+            });
+          }
         }
       }
     } catch (err: any) {
@@ -724,7 +751,10 @@ export const CreateVoiceModal: React.FC = () => {
             <>
               {/* TTS Provider */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-stone-700">Cloning Model Backbone</label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-stone-700">Cloning Model Backbone</label>
+                  <ProviderDocLink providerId={provider} category="tts" />
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { id: 2, label: 'VieNeu-TTS', desc: '48kHz Turbo (Recommended)' },
@@ -741,7 +771,10 @@ export const CreateVoiceModal: React.FC = () => {
                           : 'border-stone-200 bg-white hover:border-stone-300'
                       }`}
                     >
-                      <div className="font-bold text-xs text-stone-900">{item.label}</div>
+                      <div className="flex items-center justify-between">
+                        <div className="font-bold text-xs text-stone-900">{item.label}</div>
+                        <ProviderDocLink providerId={item.id} category="tts" variant="icon" />
+                      </div>
                       <div className="text-[10px] text-stone-500">{item.desc}</div>
                     </button>
                   ))}
@@ -1171,18 +1204,15 @@ export const CreateVoiceModal: React.FC = () => {
                       )}
                     </button>
 
-                    {cloneAuditionUrl && (
-                      <audio
-                        ref={cloneAuditionAudioRef}
-                        src={cloneAuditionUrl}
-                        controls
-                        autoPlay
-                        className="h-7 w-48"
-                        onPlay={() => setIsCloneAuditionPlaying(true)}
-                        onPause={() => setIsCloneAuditionPlaying(false)}
-                        onEnded={() => setIsCloneAuditionPlaying(false)}
-                      />
-                    )}
+                    <audio
+                      ref={cloneAuditionAudioRef}
+                      src={cloneAuditionUrl || undefined}
+                      controls={Boolean(cloneAuditionUrl)}
+                      className={cloneAuditionUrl ? "h-7 w-48" : "hidden"}
+                      onPlay={() => setIsCloneAuditionPlaying(true)}
+                      onPause={() => setIsCloneAuditionPlaying(false)}
+                      onEnded={() => setIsCloneAuditionPlaying(false)}
+                    />
                   </div>
                 </div>
               )}
@@ -1386,18 +1416,15 @@ export const CreateVoiceModal: React.FC = () => {
                     )}
                   </button>
 
-                  {auditionAudioUrl && (
-                    <audio
-                      ref={auditionAudioRef}
-                      src={auditionAudioUrl}
-                      controls
-                      autoPlay
-                      className="h-7 w-48"
-                      onPlay={() => setIsAuditionPlaying(true)}
-                      onPause={() => setIsAuditionPlaying(false)}
-                      onEnded={() => setIsAuditionPlaying(false)}
-                    />
-                  )}
+                  <audio
+                    ref={auditionAudioRef}
+                    src={auditionAudioUrl || undefined}
+                    controls={Boolean(auditionAudioUrl)}
+                    className={auditionAudioUrl ? "h-7 w-48" : "hidden"}
+                    onPlay={() => setIsAuditionPlaying(true)}
+                    onPause={() => setIsAuditionPlaying(false)}
+                    onEnded={() => setIsAuditionPlaying(false)}
+                  />
                 </div>
               </div>
             </>

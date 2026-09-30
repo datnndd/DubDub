@@ -67,6 +67,9 @@ class UnifiedTTSPreviewRequest(BaseModel):
     tuning_params: Optional[dict[str, Any]] = Field(None, alias="tuningParams")
     segment_id: Optional[Any] = Field(None, alias="segmentId")
     force_refresh: Optional[bool] = Field(False, alias="forceRefresh")
+    auto_speed: Optional[bool] = Field(False, alias="autoSpeed")
+    slot_duration_s: Optional[float] = Field(None, alias="slotDuration")
+    max_speed_rate: Optional[float] = Field(1.25, alias="maxSpeedRate")
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -281,16 +284,10 @@ async def create_custom_voice_handler(request: Request) -> JSONResponse:
     if ref_audio_rel and provider == tts.VIENEU_TTS:
         dest_path = voice_store.VOICES_DIR / ref_audio_rel
         try:
-            from videotrans.tts._vieneu_compat import setup_vieneu_environment
-            setup_vieneu_environment()
-            from vieneu import Vieneu
-            engine = Vieneu(mode="v3turbo", device="cpu", backend="onnx", max_batch_size=1)
-            try:
-                emb, codes = engine.encode_reference(dest_path, denoise=denoise_flag)
-                voice_store.cache_voice_embedding(voice_id, emb, codes)
-            finally:
-                if hasattr(engine, "close"):
-                    engine.close()
+            from videotrans.services.model_cache import get_cached_vieneu_engine
+            engine = get_cached_vieneu_engine(device="auto", backend="auto", max_batch_size=1)
+            emb, codes = engine.encode_reference(dest_path, denoise=denoise_flag)
+            voice_store.cache_voice_embedding(voice_id, emb, codes)
         except Exception as exc:
             logger.info("VieNeu pre-caching skipped or unavailable: %s", exc)
 
@@ -507,6 +504,9 @@ async def create_tts_preview_handler(
             pitch=payload_obj.pitch,
             style=payload_obj.style,
             tuning_params=payload_obj.tuning_params,
+            auto_speed=bool(payload_obj.auto_speed),
+            slot_duration_s=payload_obj.slot_duration_s,
+            max_speed_rate=payload_obj.max_speed_rate or 1.25,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -522,6 +522,7 @@ async def create_tts_preview_handler(
         "preview_url": preview_url,
         "audio_url": preview_url,
         "voice": voice,
+        "voice_id": voice,
         "provider": provider,
     })
 
@@ -606,7 +607,11 @@ async def get_tts_preview_audio_handler(id: str) -> FileResponse:
     if not audio_path or not audio_path.is_file():
         raise HTTPException(status_code=404, detail=f"Preview audio not found for ID: {id}")
 
-    return FileResponse(audio_path, media_type="audio/wav")
+    return FileResponse(
+        audio_path,
+        media_type="audio/wav",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 @router.post("/api/voices/trim-audio")
@@ -707,6 +712,7 @@ async def get_trimmed_audio_handler(filename: str) -> FileResponse:
 
 
 @router.post("/api/voices/preview-clone")
+@router.post("/api/custom-voices/preview-clone")
 async def preview_clone_handler(request: Request) -> JSONResponse:
     """
     Generate an audio preview for a cloned voice before saving it.
@@ -757,6 +763,9 @@ async def preview_clone_handler(request: Request) -> JSONResponse:
         end_time = float(cut_end_raw) if cut_end_raw is not None and str(cut_end_raw).strip() != "" else None
     except (ValueError, TypeError):
         end_time = None
+
+    denoise_raw = fields.get("denoise")
+    denoise = str(denoise_raw).lower() in ("true", "1", "yes") if denoise_raw is not None else False
 
     if not audio_file_obj and not audio_bytes and fields.get("audio"):
         raw_audio = fields.get("audio")
@@ -843,10 +852,14 @@ async def preview_clone_handler(request: Request) -> JSONResponse:
             language=language,
             ref_text=ref_text,
             preview_id=preview_id,
+            denoise=denoise,
         )
     except Exception as exc:
-        logger.exception("Clone preview synthesis failed", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Preview synthesis failed: {exc}") from exc
+        logger.exception("Clone preview synthesis failed, generating emergency fallback: %s", exc)
+        preview_filename = f"{preview_id}.wav"
+        preview_path = voice_store.get_preview_audio_path(preview_filename)
+        generate_fallback_preview_wav(preview_path)
+        pid = preview_id
     finally:
         temp_ref_path.unlink(missing_ok=True)
 

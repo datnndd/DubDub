@@ -231,6 +231,8 @@ def build_task_params(
         "source_audio_volume": _safe_volume(options.get("originalAudioVolume"), 0.0),
         "thumbnail": None if is_asr_only else options.get("thumbnailPath"),
         "subtitle_style": options.get("subtitleStyle") if isinstance(options.get("subtitleStyle"), dict) else None,
+        "auto_speed": bool(options.get("autoFitVoiceSpeed", options.get("auto_speed", True))),
+        "max_speed_rate": float(options.get("maxSpeedRate", options.get("max_speed_rate", 1.25))),
         "clear_cache": job_type not in {"render", "translation"},
         "embed_bgm": not is_asr_only,
         "project_id": str(pid) if pid else None,

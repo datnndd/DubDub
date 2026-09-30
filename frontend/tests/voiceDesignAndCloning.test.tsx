@@ -286,6 +286,32 @@ describe('VieNeu-TTS Voice Design & Voice Cloning', () => {
     expect(html).toContain('data-modal="create-voice"');
     expect(html).toContain('Save Cloned Voice');
   });
+
+  test('VoiceManagementScreen Synthesis Lab renders direct voice picker and selects voice properly', () => {
+    useDubDubStore.setState({
+      customVoices: [
+        {
+          id: 'voice_custom_1',
+          name: 'Custom Character Voice',
+          provider: 2,
+          kind: 'clone',
+          ref_audio_path: 'ref.wav',
+        },
+      ],
+      voices: [
+        { id: 'No', name: 'No Dubbing (Mute/Retain)', provider: 2, kind: 'preset' },
+        { id: 'Minh Đức', name: 'Minh Đức', provider: 2, kind: 'preset' },
+      ],
+    });
+
+    const html = renderToStaticMarkup(<VoiceManagementScreen initialTab="all" />);
+    // Verify Lab panel header and components
+    expect(html).toContain('Synthesis Lab &amp; Preview');
+    expect(html).toContain('data-testid="lab-voice-picker"');
+    expect(html).toContain('Custom Character Voice');
+    expect(html).toContain('Minh Đức');
+    expect(html).toContain('Synthesize &amp; Audition');
+  });
 });
 
 

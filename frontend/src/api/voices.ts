@@ -239,6 +239,12 @@ export interface TTSPreviewPayload {
   segment_id?: number | string;
   segmentId?: number | string;
   force_refresh?: boolean;
+  auto_speed?: boolean;
+  autoSpeed?: boolean;
+  slot_duration_s?: number;
+  slotDuration?: number;
+  max_speed_rate?: number;
+  maxSpeedRate?: number;
 }
 
 export interface TTSPreviewResponse {

@@ -16,9 +16,11 @@ import {
   Users,
   Filter,
   X,
+  Gauge,
 } from 'lucide-react';
 import { previewTTS } from '../api/voices';
 import { useVoiceAudition, auditionVoice } from '../services/voiceAuditionManager';
+import { ProviderDocLink } from '../components/ProviderDocLink';
 import type { Segment } from '../types/segment';
 
 const TTS_PROVIDERS = [
@@ -75,6 +77,11 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const setActiveView = useDubDubStore((s) => s.setActiveView);
   const loadVoices = useDubDubStore((s) => s.loadVoices);
   const updateBackendConfig = useDubDubStore((s) => (s as any).updateBackendConfig);
+  const project = useDubDubStore((s) => s.project);
+  const autoFitVoiceSpeed = useDubDubStore((s) => s.autoFitVoiceSpeed);
+  const maxSpeedRate = useDubDubStore((s) => s.maxSpeedRate);
+  const setAutoFitVoiceSpeed = useDubDubStore((s) => s.setAutoFitVoiceSpeed);
+  const setMaxSpeedRate = useDubDubStore((s) => s.setMaxSpeedRate);
 
   const [loadingPreviewMap, setLoadingPreviewMap] = useState<Record<number, boolean>>({});
   const [selectedSpeakerFilter, setSelectedSpeakerFilter] = useState<string>('all');
@@ -184,6 +191,23 @@ export const Stage3VoiceDubbing: React.FC = () => {
       const resolvedVoice = matchedCustom ? matchedCustom.id : (matchedPreset ? matchedPreset.id : activeVoice);
       const targetProvider = matchedCustom?.provider ?? matchedPreset?.provider ?? currentProvider;
 
+      let slotDur: number | undefined = undefined;
+      if (autoFitVoiceSpeed && typeof seg.startSec === 'number' && typeof seg.endSec === 'number') {
+        const segIdx = segments.findIndex((s) => s.id === seg.id);
+        const nextSeg = segIdx >= 0 ? segments[segIdx + 1] : undefined;
+        const totalDur = project?.durationSec || 0;
+        const rawSlot = Math.max(0.001, seg.endSec - seg.startSec);
+        if (nextSeg && typeof nextSeg.startSec === 'number') {
+          const slackEnd = Math.max(seg.endSec, nextSeg.startSec - 0.05);
+          const clampedEnd = Math.min(Math.max(slackEnd, seg.startSec), Math.max(nextSeg.startSec, seg.endSec));
+          slotDur = Math.max(0.001, clampedEnd - seg.startSec);
+        } else if (totalDur > 0) {
+          slotDur = Math.max(0.001, Math.max(seg.endSec, totalDur) - seg.startSec);
+        } else {
+          slotDur = rawSlot;
+        }
+      }
+
       const res = await previewTTS({
         text: textToSynthesize,
         voice: resolvedVoice,
@@ -192,6 +216,9 @@ export const Stage3VoiceDubbing: React.FC = () => {
         speed: tuning?.pace,
         segment_id: seg.id,
         force_refresh: true,
+        auto_speed: autoFitVoiceSpeed,
+        slot_duration_s: slotDur,
+        max_speed_rate: maxSpeedRate,
       });
 
       const audioUrl = res.audio_url || res.preview_url;
@@ -223,6 +250,38 @@ export const Stage3VoiceDubbing: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Auto Speed Fit Controls */}
+            <div className="flex items-center gap-1 bg-stone-100/90 p-0.5 rounded-lg border border-stone-200 shadow-2xs">
+              <button
+                type="button"
+                data-testid="auto-speed-toggle"
+                onClick={() => setAutoFitVoiceSpeed(!autoFitVoiceSpeed)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                  autoFitVoiceSpeed
+                    ? 'bg-amber-100 text-[#8D4B00] border border-amber-300 shadow-2xs font-bold'
+                    : 'text-stone-500 hover:text-stone-800'
+                }`}
+                title="Automatically adjust voice speed (pitch-preserving) to fit subtitle duration"
+              >
+                <Gauge className="w-3.5 h-3.5 text-[#8D4B00]" />
+                <span>Auto Speed</span>
+              </button>
+              {autoFitVoiceSpeed && (
+                <select
+                  data-testid="max-speed-selector"
+                  value={maxSpeedRate}
+                  onChange={(e) => setMaxSpeedRate(parseFloat(e.target.value))}
+                  className="text-[10px] font-mono font-semibold bg-white border border-stone-200 text-stone-700 rounded px-1.5 py-0.5 cursor-pointer focus:outline-none focus:border-[#8D4B00]"
+                  title="Maximum speech speedup ceiling (Smart Fit)"
+                >
+                  <option value={1.15}>Max 1.15×</option>
+                  <option value={1.25}>Max 1.25×</option>
+                  <option value={1.35}>Max 1.35×</option>
+                  <option value={1.50}>Max 1.50×</option>
+                </select>
+              )}
+            </div>
+
             <button
               data-action="proceed-to-edit-video"
               onClick={() => {
@@ -276,6 +335,7 @@ export const Stage3VoiceDubbing: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <ProviderDocLink providerId={currentProvider} category="tts" />
               </div>
             </div>
 
