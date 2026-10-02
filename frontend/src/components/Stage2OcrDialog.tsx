@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import type { Segment } from '../types/segment';
+import type { Segment, OcrSubtitleEntry } from '../types/segment';
 
 type Roi = [number, number, number, number];
 
@@ -30,15 +30,17 @@ interface Props {
   roi: Roi;
   onRoiChange: (roi: Roi) => void;
   onExtract: () => void;
+  onConfirmReplace?: (entries: OcrSubtitleEntry[]) => void;
   onClose: () => void;
   loading: boolean;
-  result: { text: string; confidence?: number; applied?: boolean } | null;
+  entries?: OcrSubtitleEntry[] | null;
+  result?: { text: string; confidence?: number; applied?: boolean } | null;
   error: string | null;
 }
 
 export const Stage2OcrDialog: React.FC<Props> = ({
   segment, batchSegments, batchResults = [], currentSegments = [], progress = 0,
-  videoUrl, roi, onRoiChange, onExtract, onClose, loading, result, error,
+  videoUrl, roi, onRoiChange, onExtract, onConfirmReplace, onClose, loading, entries, result, error,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const dragStart = useRef<[number, number] | null>(null);
@@ -138,7 +140,56 @@ export const Stage2OcrDialog: React.FC<Props> = ({
             })}
           </div>
         )}
-        {!isBatch && result && (
+        {!isBatch && entries && entries.length > 0 && (
+          <div className="space-y-3 border-t border-stone-200 pt-3" data-testid="ocr-detected-entries">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <p className="text-xs font-bold text-stone-900">
+                  Detected Subtitles ({entries.length} {entries.length === 1 ? 'entry' : 'entries'})
+                </p>
+                <p className="text-[11px] text-stone-500">
+                  Recognized subtitles automatically align with the timeline. Click below to replace this ASR segment.
+                </p>
+              </div>
+              {onConfirmReplace && (
+                <button
+                  type="button"
+                  data-testid="confirm-replace-ocr-btn"
+                  onClick={() => onConfirmReplace(entries)}
+                  className="rounded bg-emerald-700 hover:bg-emerald-800 px-3 py-1.5 text-xs font-bold text-white shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Confirm &amp; Replace</span>
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {entries.map((entry, idx) => (
+                <div key={idx} className="rounded-lg border border-amber-200 bg-amber-50/50 p-2.5 text-xs space-y-1">
+                  <div className="flex items-center justify-between font-mono text-[10px] text-stone-500">
+                    <span className="font-semibold text-[#8D4B00]">
+                      #{idx + 1} · {entry.startTime} ➔ {entry.endTime}
+                    </span>
+                    <span>
+                      {(entry.endSec - entry.startSec).toFixed(2)}s
+                      {entry.confidence != null ? ` · ${Math.round(entry.confidence * 100)}% confidence` : ''}
+                    </span>
+                  </div>
+                  <p className="text-stone-900 font-medium text-xs whitespace-pre-wrap">{entry.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!isBatch && entries && entries.length === 0 && !loading && (
+          <div className="space-y-2 border-t border-stone-200 pt-3">
+            <p className="text-xs text-stone-600">No text was found in this region. Adjust the crop and try again.</p>
+            <p className="text-[11px] text-amber-800">The original ASR segment is preserved in the timeline automatically.</p>
+          </div>
+        )}
+
+        {!isBatch && !entries && result && (
           <div className="space-y-2 border-t border-stone-200 pt-3">
             <p className="text-xs text-stone-600">Recognized text{result.confidence != null ? ` · ${Math.round(result.confidence * 100)}% confidence` : ''}</p>
             {result.text ? (

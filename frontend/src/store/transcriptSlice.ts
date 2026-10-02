@@ -1,5 +1,5 @@
 import { StateCreator } from 'zustand';
-import type { Segment } from '../types/segment';
+import type { Segment, OcrSubtitleEntry } from '../types/segment';
 import { formatTimecode } from './playbackSlice';
 import { requestTranslate, requestOcrExtract } from '../api/stages';
 
@@ -35,8 +35,9 @@ export interface TranscriptSlice {
   splitSegment: (id: number, splitTime?: number) => void;
   deleteSegment: (id: number) => void;
   mergeWithNextSegment: (id: number) => void;
-  extractOcrForSegment: (segmentId: number, roi: [number, number, number, number], interval?: { startSec: number; endSec: number }) => Promise<{ text: string; confidence?: number }>;
+  extractOcrForSegment: (segmentId: number, roi: [number, number, number, number], interval?: { startSec: number; endSec: number }) => Promise<{ text: string; confidence?: number; entries?: OcrSubtitleEntry[] }>;
   applyOcrText: (segmentId: number, text: string, confidence?: number) => Promise<void>;
+  replaceSegmentWithOcrEntries: (segmentId: number, ocrEntries: OcrSubtitleEntry[]) => Promise<void>;
   runBatchTranslation: (sourceLang?: string, targetLang?: string) => Promise<void>;
   translateSingleSegment: (segmentId: number) => Promise<void>;
   closeTranslationModal: () => void;
@@ -258,7 +259,7 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
       language: get().languages?.source?.code,
     });
     if (!result.ok) throw new Error('OCR extraction failed');
-    return { text: result.text || '', confidence: result.confidence };
+    return { text: result.text || '', confidence: result.confidence, entries: result.entries || [] };
   },
 
   applyOcrText: async (segmentId: number, text: string, confidence?: number) => {
@@ -270,6 +271,7 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
         if (segment.id !== segmentId || segment.sourceText === recognized) return segment;
         return {
           ...segment, sourceText: recognized, text: recognized, targetText: '',
+          sourceType: 'ocr',
           hasOcrDiff: true, ocrSlideText: recognized, ocrConfidence: confidence,
           previewAudioUrl: undefined, previewAudioId: undefined,
           previewSpeedFactor: undefined, previewVoice: undefined,
@@ -286,6 +288,74 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
         } : null,
       };
     });
+    await get().triggerAutosave(true);
+  },
+
+  replaceSegmentWithOcrEntries: async (segmentId: number, ocrEntries: OcrSubtitleEntry[]) => {
+    if (!ocrEntries || ocrEntries.length === 0) return;
+    const currentState = get();
+    const idx = currentState.segments.findIndex((s: Segment) => s.id === segmentId);
+    if (idx === -1) return;
+    const original = currentState.segments[idx];
+
+    const newSegments: Segment[] = ocrEntries.map((entry, entryIdx) => {
+      const dur = Math.max(0.1, entry.endSec - entry.startSec);
+      const text = entry.text.trim();
+      const cps = Number((text.length / dur).toFixed(1));
+      const cpsStatus = cps <= 14.5 ? 'Optimal' : cps <= 18.0 ? 'Good' : 'Warning';
+      const startTime = entry.startTime || formatTimecode(entry.startSec);
+      const endTime = entry.endTime || formatTimecode(entry.endSec);
+
+      return {
+        ...original,
+        id: original.id + entryIdx,
+        speakerId: original.speakerId || 'speaker-1',
+        speakerName: original.speakerName || 'Speaker 1',
+        speakerCode: original.speakerCode,
+        speakerLabel: original.speakerLabel || original.speakerName,
+        speakerColor: original.speakerColor,
+        startTime,
+        endTime,
+        startSec: entry.startSec,
+        endSec: entry.endSec,
+        sourceText: text,
+        text,
+        targetText: '',
+        sourceType: 'ocr',
+        hasOcrDiff: true,
+        ocrSlideText: text,
+        ocrConfidence: entry.confidence,
+        cps,
+        cpsStatus,
+        previewAudioUrl: undefined,
+        previewAudioId: undefined,
+        previewSpeedFactor: undefined,
+        previewVoice: undefined,
+      };
+    });
+
+    const next = [...currentState.segments];
+    next.splice(idx, 1, ...newSegments);
+
+    next.sort((a, b) => a.startSec - b.startSec);
+    const reindexed = next.map((seg, i) => ({ ...seg, id: i + 1 }));
+
+    const activeSeg = reindexed.find(
+      (s) => s.startSec === newSegments[0].startSec && s.sourceText === newSegments[0].sourceText
+    ) || reindexed[Math.min(idx, reindexed.length - 1)];
+
+    set((state: any) => ({
+      segments: reindexed,
+      activeSegmentId: activeSeg?.id || 1,
+      dubbingStatus: 'idle',
+      assembledDubUrl: null,
+      stage3Baseline: null,
+      transcriptOptions: state.transcriptOptions ? {
+        ...state.transcriptOptions,
+        [state.selectedSegmentOption]: reindexed,
+      } : null,
+    }));
+
     await get().triggerAutosave(true);
   },
 

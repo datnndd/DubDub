@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import type { OcrSubtitleEntry } from '../types/segment';
 
 export async function requestTranslate(payload: {
   segments: any[];
@@ -22,7 +23,7 @@ export async function requestOcrExtract(payload: {
   endSec: number;
   segmentId?: number;
   language?: string;
-}): Promise<{ ok: boolean; text: string; confidence?: number; boxNumber?: string }> {
+}): Promise<{ ok: boolean; text: string; confidence?: number; boxNumber?: string; entries?: OcrSubtitleEntry[] }> {
   return apiRequest('/api/ocr/extract', {
     method: 'POST',
     body: JSON.stringify(payload),

@@ -25,6 +25,16 @@ export interface Segment {
   ocrConfidence?: number;
   ocrSlideText?: string;
   ocrResolved?: boolean;
+  sourceType?: 'asr' | 'ocr';
+}
+
+export interface OcrSubtitleEntry {
+  startSec: number;
+  endSec: number;
+  startTime: string;
+  endTime: string;
+  text: string;
+  confidence?: number;
 }
 
 export interface OcrCropState {

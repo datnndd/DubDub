@@ -23,7 +23,7 @@ import {
 import { ProviderDocLink } from '../components/ProviderDocLink';
 import { generateSrtContent, triggerBlobDownload } from '../components/CapCutExportModal';
 import { Stage2OcrDialog, type BatchOcrResult } from '../components/Stage2OcrDialog';
-import type { Segment } from '../types/segment';
+import type { Segment, OcrSubtitleEntry } from '../types/segment';
 
 export function untranslatedSegmentNumbers(segments: Array<{ targetText?: string }>): number[] {
   return segments.flatMap((segment, index) => segment.targetText?.trim() ? [] : [index + 1]);
@@ -122,6 +122,7 @@ export const Stage2ReviewTranscript: React.FC = () => {
   const mergeWithNextSegment = useDubDubStore((s) => s.mergeWithNextSegment);
   const extractOcrForSegment = useDubDubStore((s) => s.extractOcrForSegment);
   const applyOcrText = useDubDubStore((s) => s.applyOcrText);
+  const replaceSegmentWithOcrEntries = useDubDubStore((s) => s.replaceSegmentWithOcrEntries);
   const ocrRoi = useDubDubStore((s) => s.ocrCrop.roi);
   const setOcrCropRoi = useDubDubStore((s) => s.setOcrCropRoi);
   const project = useDubDubStore((s) => s.project);
@@ -132,6 +133,7 @@ export const Stage2ReviewTranscript: React.FC = () => {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [ocrResult, setOcrResult] = useState<{ text: string; confidence?: number; applied?: boolean } | null>(null);
+  const [ocrDetectedEntries, setOcrDetectedEntries] = useState<OcrSubtitleEntry[] | null>(null);
   const [ocrBatchResults, setOcrBatchResults] = useState<BatchOcrResult[]>([]);
   const [ocrProgress, setOcrProgress] = useState(0);
   const ocrRequestId = useRef(0);
@@ -200,6 +202,7 @@ export const Stage2ReviewTranscript: React.FC = () => {
     ocrRequestId.current += 1;
     setOcrDialogSegments(chosen);
     setOcrResult(null);
+    setOcrDetectedEntries(null);
     setOcrBatchResults([]);
     setOcrProgress(0);
     setOcrError(null);
@@ -211,8 +214,19 @@ export const Stage2ReviewTranscript: React.FC = () => {
     setOcrLoading(false);
     setOcrError(null);
     setOcrResult(null);
+    setOcrDetectedEntries(null);
     setOcrBatchResults([]);
     setOcrProgress(0);
+  };
+
+  const handleConfirmReplace = async (entries: OcrSubtitleEntry[]) => {
+    if (!ocrSegment || !entries || entries.length === 0) return;
+    try {
+      await replaceSegmentWithOcrEntries(ocrSegment.id, entries);
+      closeOcr();
+    } catch (err: any) {
+      setOcrError(err?.message || 'Failed to replace segment with OCR');
+    }
   };
 
   const runOcr = async () => {
@@ -227,20 +241,33 @@ export const Stage2ReviewTranscript: React.FC = () => {
     setOcrLoading(true);
     setOcrError(null);
     setOcrResult(null);
+    setOcrDetectedEntries(null);
     setOcrBatchResults([]);
     setOcrProgress(0);
     setOcrDialogSegments(snapshot);
+
+    if (snapshot.length === 1) {
+      const seg = snapshot[0];
+      try {
+        const res = await extractOcrForSegment(seg.id, ocrRoi, seg);
+        if (requestId !== ocrRequestId.current) return;
+        const entries = res.entries || [];
+        setOcrDetectedEntries(entries);
+        setOcrResult({ text: res.text || '', confidence: res.confidence, applied: false });
+      } catch (err: any) {
+        if (requestId !== ocrRequestId.current) return;
+        setOcrError(err instanceof Error ? err.message : 'OCR extraction failed');
+      } finally {
+        if (requestId === ocrRequestId.current) setOcrLoading(false);
+      }
+      return;
+    }
+
     await extractSelectedOcrSegments(snapshot, ocrRoi, extractOcrForSegment, async (entry) => {
       const applied = await applyExtractedOcrResult(entry, () => useDubDubStore.getState().segments, applyOcrText);
       if (requestId !== ocrRequestId.current) return;
-      if (snapshot.length === 1) {
-        setOcrResult(applied.error && !applied.text ? null :
-          { text: applied.text || '', confidence: applied.confidence, applied: applied.applied });
-        setOcrError(applied.error || null);
-      } else {
-        setOcrBatchResults((results) => [...results, applied]);
-        setOcrProgress((progress) => progress + 1);
-      }
+      setOcrBatchResults((results) => [...results, applied]);
+      setOcrProgress((progress) => progress + 1);
     }, () => requestId === ocrRequestId.current);
     if (requestId === ocrRequestId.current) setOcrLoading(false);
   };
@@ -455,21 +482,42 @@ export const Stage2ReviewTranscript: React.FC = () => {
           </div>
         </div>
 
-        <div className="px-3 py-2 border-b border-amber-200 bg-amber-50 shrink-0 space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-stone-900">Video text OCR</span>
-            <span className="text-[11px] font-semibold text-[#8D4B00]">{selectedOcrIds.length} selected</span>
+        <div className="px-3 py-1.5 border-b border-stone-200 bg-stone-50/90 shrink-0 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#8D4B00]" />
+              <span>Video text OCR</span>
+            </span>
+            <span className="text-[11px] text-stone-500 hidden sm:inline">
+              Select segment checkboxes below to read video text only within their time ranges.
+            </span>
           </div>
-          <p className="text-[11px] text-stone-700">Select segment checkboxes below to read video text only within their time ranges.</p>
-          <button type="button" data-testid="ocr-selected-btn"
-            onClick={() => selectedOcrIds.length
-              ? openOcr(selectedOcrSegments(segments, selectedOcrIds))
-              : setOcrSelectionHint(true)}
-            className="w-full px-3 py-2 rounded-md bg-[#8D4B00] hover:bg-[#743D00] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-2xs cursor-pointer">
-            <Sparkles className="w-3.5 h-3.5" />
-            Run OCR on Selected Segments
-          </button>
-          {ocrSelectionHint && <p role="alert" className="text-[11px] font-semibold text-amber-900">Check one or more segments below, then run OCR.</p>}
+
+          <div className="flex items-center gap-2">
+            {selectedOcrIds.length > 0 && (
+              <span className="text-[11px] font-semibold text-[#8D4B00]">
+                {selectedOcrIds.length} selected
+              </span>
+            )}
+            <button
+              type="button"
+              data-testid="ocr-selected-btn"
+              onClick={() =>
+                selectedOcrIds.length
+                  ? openOcr(selectedOcrSegments(segments, selectedOcrIds))
+                  : setOcrSelectionHint(true)
+              }
+              className="px-2.5 py-1 rounded bg-[#8D4B00] hover:bg-[#743D00] text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>Run OCR on Selected Segments</span>
+            </button>
+          </div>
+          {ocrSelectionHint && (
+            <p role="alert" className="w-full text-[11px] font-semibold text-amber-900 mt-0.5">
+              Check one or more segments below, then run OCR.
+            </p>
+          )}
         </div>
 
         {/* Segment Cards List */}
@@ -491,20 +539,50 @@ export const Stage2ReviewTranscript: React.FC = () => {
                     : 'border-stone-200 hover:border-stone-300 bg-white'
                 }`}
               >
-                {/* Card Header: Speaker, Timecode, CPS */}
+                {/* Card Header: Checkbox, Source Badge, Speaker, Timecode, CPS, and Actions */}
                 <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1 text-[11px] font-semibold text-[#8D4B00] cursor-pointer shrink-0"
-                      onClick={(event) => event.stopPropagation()}>
-                      <input type="checkbox" aria-label={`Select segment ${seg.id} for OCR`}
-                        data-testid={`ocr-select-${seg.id}`} checked={selectedOcrIds.includes(seg.id)}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <label
+                      className="flex items-center gap-1 text-[11px] font-semibold text-[#8D4B00] cursor-pointer shrink-0"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Select segment ${seg.id} for OCR`}
+                        data-testid={`ocr-select-${seg.id}`}
+                        checked={selectedOcrIds.includes(seg.id)}
                         onChange={(event) => {
                           setOcrSelectionHint(false);
-                          setSelectedOcrIds((ids) => event.target.checked
-                            ? [...ids, seg.id] : ids.filter((id) => id !== seg.id));
-                        }} className="h-4 w-4 accent-[#8D4B00]" />
-                      OCR
+                          setSelectedOcrIds((ids) =>
+                            event.target.checked
+                              ? [...ids, seg.id]
+                              : ids.filter((id) => id !== seg.id)
+                          );
+                        }}
+                        className="h-3.5 w-3.5 accent-[#8D4B00]"
+                      />
+                      <span className="text-[10px] text-stone-500 font-mono">#{seg.id}</span>
                     </label>
+
+                    {seg.sourceType === 'ocr' ? (
+                      <span
+                        data-testid={`source-badge-${seg.id}`}
+                        className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-0.5"
+                        title="Transcription Source: Hard-Subtitle Video OCR"
+                      >
+                        <Sparkles className="w-2.5 h-2.5 text-[#8D4B00]" />
+                        <span>OCR</span>
+                      </span>
+                    ) : (
+                      <span
+                        data-testid={`source-badge-${seg.id}`}
+                        className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider bg-stone-100 text-stone-700 border border-stone-200"
+                        title="Transcription Source: Audio Speech Recognition (ASR)"
+                      >
+                        ASR
+                      </span>
+                    )}
+
                     <span className="px-2 py-0.5 rounded-full bg-[#8D4B00] text-white text-[9px] font-bold uppercase tracking-wide">
                       {seg.speakerName || seg.speakerId || 'Speaker 1'}
                     </span>
@@ -514,6 +592,20 @@ export const Stage2ReviewTranscript: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      data-testid={`replace-ocr-btn-${seg.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openOcr([seg]);
+                      }}
+                      className="text-[10px] font-bold text-[#8D4B00] hover:text-white hover:bg-[#8D4B00] px-2 py-0.5 rounded border border-[#8D4B00]/40 bg-amber-50/60 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs mr-1"
+                      title="Replace this ASR segment with video OCR subtitles"
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>Replace with OCR</span>
+                    </button>
+
                     <span
                       data-cps-badge="true"
                       className={`px-1.5 py-0.2 rounded text-[9px] font-bold font-mono border ${
@@ -613,19 +705,33 @@ export const Stage2ReviewTranscript: React.FC = () => {
       </div>
 
       {ocrSegment && (
-        <Stage2OcrDialog key={`${ocrSegment.id}-${ocrResult?.text ?? ''}`} segment={ocrSegment} videoUrl={project.previewUrl || ''}
-          batchSegments={ocrDialogSegments || undefined} batchResults={ocrBatchResults} currentSegments={segments} progress={ocrProgress}
-          roi={ocrRoi} onRoiChange={(roi) => {
+        <Stage2OcrDialog
+          key={`${ocrSegment.id}-${ocrResult?.text ?? ''}`}
+          segment={ocrSegment}
+          videoUrl={project.previewUrl || ''}
+          batchSegments={ocrDialogSegments || undefined}
+          batchResults={ocrBatchResults}
+          currentSegments={segments}
+          progress={ocrProgress}
+          roi={ocrRoi}
+          entries={ocrDetectedEntries}
+          onRoiChange={(roi) => {
             ocrRequestId.current += 1;
             setOcrCropRoi(roi);
             setOcrLoading(false);
             setOcrError(null);
             setOcrResult(null);
+            setOcrDetectedEntries(null);
             setOcrBatchResults([]);
             setOcrProgress(0);
           }}
           onExtract={() => void runOcr()}
-          onClose={closeOcr} loading={ocrLoading} result={ocrResult} error={ocrError} />
+          onConfirmReplace={handleConfirmReplace}
+          onClose={closeOcr}
+          loading={ocrLoading}
+          result={ocrResult}
+          error={ocrError}
+        />
       )}
 
       {/* Translation Progress Modal */}

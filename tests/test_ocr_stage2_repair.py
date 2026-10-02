@@ -128,3 +128,101 @@ def test_stage2_ocr_decoder_excludes_next_frame_at_boundary(tmp_path):
     second_result = extract_ocr_segment_text(video, 2, 4, (0, 0, 1, 1), ocr_runner=color_text)
     assert first_result["text"] == "FIRST"
     assert second_result["text"] == "SECOND"
+
+
+def test_stage2_ocr_extracts_multiple_entries_when_subtitles_change():
+    def frame_at_time(_path, seconds):
+        return Image.new("RGB", (200, 100), color="white")
+
+    def mock_ocr(frame_crop):
+        return {"text": "dummy", "confidence": 1.0}
+
+    # Custom runner returning different subtitles based on timestamp simulated through frame_fetcher
+    times = []
+
+    def frame_fetcher(_path, seconds):
+        times.append(seconds)
+        color = 1 if seconds < 72.0 else (2 if seconds < 74.0 else 3)
+        img = Image.new("RGB", (200, 100), color=(color, 0, 0))
+        return img
+
+    def ocr_runner(frame):
+        val = frame[0, 0, 0] if hasattr(frame, "shape") else 1
+        if val == 1:
+            return {"text": "OCR subtitle line 1", "confidence": 0.95}
+        elif val == 2:
+            return {"text": "OCR subtitle line 2", "confidence": 0.92}
+        else:
+            return {"text": "OCR subtitle line 3", "confidence": 0.90}
+
+    result = extract_ocr_segment_text(
+        "unused.mp4",
+        70.0,
+        75.0,
+        (0.1, 0.7, 0.8, 0.2),
+        frame_fetcher=frame_fetcher,
+        ocr_runner=ocr_runner,
+    )
+
+    assert result["ok"] is True
+    entries = result.get("entries", [])
+    assert len(entries) == 3
+    assert entries[0]["text"] == "OCR subtitle line 1"
+    assert entries[0]["startSec"] == 70.0
+    assert entries[0]["endSec"] == 72.0
+    assert entries[0]["startTime"] == "00:01:10,000"
+    assert entries[0]["endTime"] == "00:01:12,000"
+
+    assert entries[1]["text"] == "OCR subtitle line 2"
+    assert entries[1]["startSec"] == 72.0
+    assert entries[1]["endSec"] == 74.0
+    assert entries[1]["startTime"] == "00:01:12,000"
+    assert entries[1]["endTime"] == "00:01:14,000"
+
+    assert entries[2]["text"] == "OCR subtitle line 3"
+    assert entries[2]["startSec"] == 74.0
+    assert entries[2]["endSec"] == 75.0
+    assert entries[2]["startTime"] == "00:01:14,000"
+    assert entries[2]["endTime"] == "00:01:15,000"
+
+
+def test_stage2_ocr_single_entry_when_subtitle_constant():
+    def frame_fetcher(_path, seconds):
+        return Image.new("RGB", (200, 100), color="white")
+
+    def ocr_runner(_frame):
+        return {"text": "Single constant subtitle", "confidence": 0.98}
+
+    result = extract_ocr_segment_text(
+        "unused.mp4",
+        10.0,
+        15.0,
+        (0.1, 0.7, 0.8, 0.2),
+        frame_fetcher=frame_fetcher,
+        ocr_runner=ocr_runner,
+    )
+
+    assert result["ok"] is True
+    entries = result.get("entries", [])
+    assert len(entries) == 1
+    assert entries[0]["text"] == "Single constant subtitle"
+    assert entries[0]["startSec"] == 10.0
+    assert entries[0]["endSec"] == 15.0
+    assert entries[0]["startTime"] == "00:00:10,000"
+    assert entries[0]["endTime"] == "00:00:15,000"
+    assert entries[0]["confidence"] == 0.98
+
+
+def test_stage2_ocr_empty_returns_empty_entries(monkeypatch):
+    import videotrans.ocr as ocr
+
+    class EmptyProvider:
+        def recognize(self, image, language):
+            return {"text": "", "confidence": 0.0}
+
+    monkeypatch.setattr(ocr, "get_provider", lambda **_kwargs: EmptyProvider())
+    result = extract_ocr_segment_text("unused.mp4", 1, 2, (0.1, 0.7, 0.8, 0.2), frame_fetcher=_frame)
+    assert result["ok"] is True
+    assert result["text"] == ""
+    assert result["entries"] == []
+

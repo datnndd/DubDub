@@ -211,4 +211,139 @@ describe('Stage 2 segment OCR', () => {
     expect(html).not.toContain('Apply Reviewed Text');
     expect(useDubDubStore.getState().segments[0].sourceText).toBe('old source');
   });
+
+  test('replaceSegmentWithOcrEntries replaces 1 ASR segment with multiple OCR entries and preserves speaker', async () => {
+    const ocrEntries = [
+      { startSec: 70.0, endSec: 72.0, startTime: '00:01:10,000', endTime: '00:01:12,000', text: 'OCR subtitle line 1', confidence: 0.95 },
+      { startSec: 72.0, endSec: 74.0, startTime: '00:01:12,000', endTime: '00:01:14,000', text: 'OCR subtitle line 2', confidence: 0.92 },
+      { startSec: 74.0, endSec: 75.0, startTime: '00:01:14,000', endTime: '00:01:15,000', text: 'OCR subtitle line 3', confidence: 0.90 },
+    ];
+
+    const initialSegment = {
+      ...segment,
+      id: 1,
+      startSec: 70.0,
+      endSec: 75.0,
+      startTime: '00:01:10,000',
+      endTime: '00:01:15,000',
+      sourceText: 'ASR-generated text',
+      targetText: 'Translated text',
+      speakerId: 'spk_1',
+      speakerName: 'Narrator',
+      sourceType: 'asr' as const,
+    };
+    const subsequentSegment = {
+      ...segment,
+      id: 2,
+      startSec: 75.0,
+      endSec: 80.0,
+      startTime: '00:01:15,000',
+      endTime: '00:01:20,000',
+      sourceText: 'Next segment',
+    };
+
+    useDubDubStore.setState({ segments: [initialSegment, subsequentSegment] });
+
+    await useDubDubStore.getState().replaceSegmentWithOcrEntries(1, ocrEntries);
+
+    const updated = useDubDubStore.getState().segments;
+    // 1 segment replaced with 3, plus subsequent segment = 4 total segments
+    expect(updated).toHaveLength(4);
+
+    // Sequential IDs 1..4
+    expect(updated.map((s) => s.id)).toEqual([1, 2, 3, 4]);
+
+    // Check entry 1
+    expect(updated[0]).toMatchObject({
+      id: 1,
+      startSec: 70.0,
+      endSec: 72.0,
+      startTime: '00:01:10,000',
+      endTime: '00:01:12,000',
+      sourceText: 'OCR subtitle line 1',
+      targetText: '',
+      speakerId: 'spk_1',
+      speakerName: 'Narrator',
+      sourceType: 'ocr',
+    });
+
+    // Check entry 2
+    expect(updated[1]).toMatchObject({
+      id: 2,
+      startSec: 72.0,
+      endSec: 74.0,
+      startTime: '00:01:12,000',
+      endTime: '00:01:14,000',
+      sourceText: 'OCR subtitle line 2',
+      targetText: '',
+      speakerId: 'spk_1',
+      speakerName: 'Narrator',
+      sourceType: 'ocr',
+    });
+
+    // Check entry 3
+    expect(updated[2]).toMatchObject({
+      id: 3,
+      startSec: 74.0,
+      endSec: 75.0,
+      startTime: '00:01:14,000',
+      endTime: '00:01:15,000',
+      sourceText: 'OCR subtitle line 3',
+      targetText: '',
+      speakerId: 'spk_1',
+      speakerName: 'Narrator',
+      sourceType: 'ocr',
+    });
+
+    // Check subsequent segment retained
+    expect(updated[3]).toMatchObject({
+      id: 4,
+      startSec: 75.0,
+      endSec: 80.0,
+      sourceText: 'Next segment',
+    });
+  });
+
+  test('Stage 2 UI renders source badges and Replace with OCR action', () => {
+    const ocrSeg = { ...segment, id: 1, sourceType: 'ocr' as const, sourceText: 'OCR line' };
+    const asrSeg = { ...segment, id: 2, sourceType: 'asr' as const, sourceText: 'ASR line' };
+    useDubDubStore.setState({ segments: [ocrSeg, asrSeg] });
+
+    const html = renderToStaticMarkup(<Stage2ReviewTranscript />);
+    expect(html).toContain('Replace with OCR');
+    expect(html).toContain('data-testid="source-badge-1"');
+    expect(html).toContain('data-testid="source-badge-2"');
+    expect(html).toContain('OCR');
+    expect(html).toContain('ASR');
+  });
+
+  test('Stage 2 OCR dialog displays detected entries and Confirm & Replace action', () => {
+    let replacedEntries: any[] | null = null;
+    const entries = [
+      { startSec: 70.0, endSec: 72.0, startTime: '00:01:10,000', endTime: '00:01:12,000', text: 'OCR subtitle line 1', confidence: 0.95 },
+      { startSec: 72.0, endSec: 75.0, startTime: '00:01:12,000', endTime: '00:01:15,000', text: 'OCR subtitle line 2', confidence: 0.91 },
+    ];
+
+    const html = renderToStaticMarkup(
+      <Stage2OcrDialog
+        segment={segment}
+        videoUrl="/api/media/media-1/file"
+        roi={[0.1, 0.7, 0.8, 0.2]}
+        entries={entries}
+        onRoiChange={() => {}}
+        onExtract={() => {}}
+        onConfirmReplace={(e) => { replacedEntries = e; }}
+        onClose={() => {}}
+        loading={false}
+        error={null}
+      />
+    );
+
+    expect(html).toContain('Detected Subtitles (2 entries)');
+    expect(html).toContain('Confirm &amp; Replace');
+    expect(html).toContain('OCR subtitle line 1');
+    expect(html).toContain('OCR subtitle line 2');
+    expect(html).toContain('00:01:10,000 ➔ 00:01:12,000');
+    expect(html).toContain('00:01:12,000 ➔ 00:01:15,000');
+  });
 });

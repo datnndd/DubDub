@@ -71,9 +71,23 @@ def extract_ocr_segment_text(
     last_ms = max(start_ms, end_ms - 1)
 
     mid_ms = (start_ms + end_ms) // 2
+    step = 250 if (end_ms - start_ms) <= 6000 else 400
     sample_times = sorted(set([start_ms, min(mid_ms, last_ms), max(start_ms, end_ms - 100)]))
-    if end_ms - start_ms >= 1000:
-        sample_times = sorted(set(list(range(start_ms, end_ms, 500)) + [last_ms]))
+    if end_ms - start_ms >= 500:
+        sample_times = sorted(set(list(range(start_ms, end_ms, step)) + [last_ms]))
+
+    from videotrans.ocr._segment import SegmentBuilder
+    from videotrans.ocr._types import OcrConfig, OcrResult
+    from videotrans.util._srt_parse import ms_to_time_string
+
+    builder = SegmentBuilder(
+        OcrConfig(
+            min_stable_samples=1,
+            similarity_threshold=0.95,
+            grace_gap_ms=350,
+            coarse_interval_ms=step,
+        )
+    )
 
     observations = []
     decoded_frames = 0
@@ -119,13 +133,27 @@ def extract_ocr_segment_text(
                     provider = get_provider(provider=PADDLE_OCR)
                 ocr_res = provider.recognize(cropped, language)
             successful_ocr_calls += 1
+
+            frame_text = ""
+            frame_conf = 0.0
             if ocr_res:
                 if isinstance(ocr_res, list):
                     observations.extend(ocr_res)
+                    texts = [str(x.get("text") if isinstance(x, dict) else getattr(x, "text", x) or "").strip() for x in ocr_res]
+                    texts = [t for t in texts if t]
+                    frame_text = " ".join(texts)
+                    confs = [float(x.get("confidence") if isinstance(x, dict) else getattr(x, "confidence", 0.0) or 0.0) for x in ocr_res]
+                    frame_conf = sum(confs) / len(confs) if confs else 0.0
                 elif isinstance(ocr_res, dict):
                     observations.append(ocr_res)
+                    frame_text = str(ocr_res.get("text") or "").strip()
+                    frame_conf = float(ocr_res.get("confidence") or 0.0)
                 elif getattr(ocr_res, "text", None):
                     observations.append(ocr_res)
+                    frame_text = str(getattr(ocr_res, "text", "") or "").strip()
+                    frame_conf = float(getattr(ocr_res, "confidence", 0.0) or 0.0)
+
+            builder.observe(ts, OcrResult(text=frame_text, confidence=frame_conf))
         except Exception as exc:
             if first_ocr_error is None:
                 first_ocr_error = exc
@@ -160,6 +188,41 @@ def extract_ocr_segment_text(
         text = ""
         avg_conf = 0.0
 
+    raw_segments = builder.finalize()
+    entries: list[dict[str, Any]] = []
+
+    if raw_segments:
+        for i, seg in enumerate(raw_segments):
+            seg_text = str(seg.text or "").strip()
+            if not seg_text:
+                continue
+            s_ms = max(start_ms, int(seg.start_ms))
+            e_ms = min(end_ms, int(seg.end_ms))
+            if i == len(raw_segments) - 1:
+                e_ms = end_ms
+            if i == 0 and s_ms - start_ms <= 500:
+                s_ms = start_ms
+            if e_ms <= s_ms:
+                e_ms = end_ms
+
+            entries.append({
+                "startSec": round(s_ms / 1000.0, 3),
+                "endSec": round(e_ms / 1000.0, 3),
+                "startTime": ms_to_time_string(ms=s_ms),
+                "endTime": ms_to_time_string(ms=e_ms),
+                "text": seg_text,
+                "confidence": round(float(seg.confidence or avg_conf or 0.0), 2),
+            })
+    elif normalized_obs and text:
+        entries.append({
+            "startSec": round(start_sec, 3),
+            "endSec": round(end_sec, 3),
+            "startTime": ms_to_time_string(ms=start_ms),
+            "endTime": ms_to_time_string(ms=end_ms),
+            "text": text,
+            "confidence": round(avg_conf, 2),
+        })
+
     return {
         "ok": True,
         "text": text,
@@ -167,4 +230,5 @@ def extract_ocr_segment_text(
         "startSec": start_sec,
         "endSec": end_sec,
         "samples": len(observations),
+        "entries": entries,
     }
