@@ -174,8 +174,11 @@ def test_api_unified_preview_with_style(temp_db, monkeypatch):
 
 def test_api_unified_preview_unmocked_standard_cache(temp_db, monkeypatch):
     from videotrans.services import voice_preview
-    # Ensure test synthesizer is None to exercise standard serialization and synthesis/fallback path
+    # A failed VieNeu engine must not be reported as a successful preview.
     monkeypatch.setattr(voice_preview, "_preview_synthesizer", None)
+    def fail_synthesis(*args, **kwargs):
+        raise RuntimeError("VieNeu engine unavailable")
+    monkeypatch.setattr(voice_preview, "_run_vieneu_synthesis", fail_synthesis)
     client = TestClient(app)
     resp = client.post("/api/tts/preview", json={
         "voice": "Bình (nam miền Bắc)",
@@ -184,11 +187,8 @@ def test_api_unified_preview_unmocked_standard_cache(temp_db, monkeypatch):
         "style": "doc_truyen",
         "tuningParams": {"temperature": 0.85},
     })
-    assert resp.status_code == 200
-    res_data = resp.json()
-    assert res_data["ok"] is True
-    assert "preview_url" in res_data
-    assert "preview_id" in res_data
+    assert resp.status_code == 500
+    assert "VieNeu engine unavailable" in resp.json()["detail"]
 
 
 def test_vieneu_tts_inference_options(temp_db, monkeypatch):

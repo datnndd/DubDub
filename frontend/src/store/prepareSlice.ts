@@ -34,7 +34,6 @@ export interface PrepareSlice {
   engines: {
     speakerDiarization: boolean;
     speakerCount: number;
-    removeNoise: boolean;
     ocrSlideEngine: boolean;
   };
   backend: {
@@ -67,7 +66,7 @@ export interface PrepareSlice {
   updateDeepgramOptions: (opts: Partial<DeepgramConfigOptions>) => void;
   updateUseCuda: (useCuda: boolean) => void;
   updateTimingMode: (timingMode: string) => void;
-  updateEngineConfig: (key: 'speakerDiarization' | 'speakerCount' | 'removeNoise' | 'ocrSlideEngine', value: any) => void;
+  updateEngineConfig: (key: 'speakerDiarization' | 'speakerCount' | 'ocrSlideEngine', value: any) => void;
   setOcrCropRoi: (roi: [number, number, number, number]) => void;
   setOcrCropActive: (active: boolean, segmentId?: number | null) => void;
 }
@@ -99,7 +98,6 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
   engines: {
     speakerDiarization: false,
     speakerCount: 0,
-    removeNoise: false,
     ocrSlideEngine: true,
   },
   backend: {
@@ -359,7 +357,7 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
     get().triggerAutosave?.();
   },
 
-  updateEngineConfig: (key: 'speakerDiarization' | 'speakerCount' | 'removeNoise' | 'ocrSlideEngine', value: any) => {
+  updateEngineConfig: (key: 'speakerDiarization' | 'speakerCount' | 'ocrSlideEngine', value: any) => {
     set((state: any) => ({
       engines: {
         ...state.engines,
@@ -376,6 +374,7 @@ export const createPrepareSlice: StateCreator<any, [], [], PrepareSlice> = (set,
         roi,
       },
     }));
+    get().triggerAutosave();
   },
 
   setOcrCropActive: (active: boolean, segmentId: number | null = null) => {

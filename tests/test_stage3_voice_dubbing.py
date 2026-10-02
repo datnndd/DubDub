@@ -990,6 +990,7 @@ def test_unified_tts_preview_with_auto_speed(tmp_path, monkeypatch):
                 data = await res.json()
                 assert data["ok"] is True
                 assert "preview_url" in data
+                assert data["applied_speed"] == pytest.approx(1.25)
 
                 # Check downloaded audio is stretched
                 audio_res = await client.get(data["preview_url"])
@@ -1007,6 +1008,28 @@ def test_unified_tts_preview_with_auto_speed(tmp_path, monkeypatch):
         asyncio.run(scenario())
     finally:
         voice_preview.set_preview_synthesizer(None)
+
+
+def test_vieneu_preview_reports_synthesis_failure(tmp_path, monkeypatch):
+    from videotrans.core import voice_store
+    from videotrans.services import voice_preview
+
+    monkeypatch.setattr(voice_store, "PREVIEWS_DIR", tmp_path / "previews")
+    voice_preview.set_preview_synthesizer(None)
+    monkeypatch.setattr("videotrans.util.help_role.get_vieneu_custom_voice_path", lambda voice: None)
+
+    def fail_synthesis(*args, **kwargs):
+        raise RuntimeError("VieNeu engine failed")
+
+    monkeypatch.setattr(voice_preview, "_run_vieneu_synthesis", fail_synthesis)
+
+    with pytest.raises(RuntimeError, match="VieNeu engine failed"):
+        asyncio.run(voice_preview.synthesize_unified_tts_preview(
+            provider=tts.VIENEU_TTS,
+            voice="test-preset",
+            text="Hello",
+            force_refresh=True,
+        ))
 
 
 

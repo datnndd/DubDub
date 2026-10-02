@@ -4,7 +4,6 @@ import {
   X,
   Download,
   FileText,
-  Video,
   Music,
   FolderOpen,
   ExternalLink,
@@ -44,7 +43,7 @@ export function generateSrtContent(segments: any[], field: 'targetText' | 'sourc
   );
 }
 
-function triggerBlobDownload(content: string, filename: string, mimeType: string = 'text/plain;charset=utf-8') {
+export function triggerBlobDownload(content: string, filename: string, mimeType: string = 'text/plain;charset=utf-8') {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -60,7 +59,6 @@ export const CapCutExportModal: React.FC = () => {
   const isOpen = useDubDubStore((s) => s.editVideo?.isCapCutModalOpen);
   const setCapCutModalOpen = useDubDubStore((s) => s.setCapCutModalOpen);
   const segments = useDubDubStore((s) => s.segments || []);
-  const project = useDubDubStore((s) => s.project);
   const activeProjectId = useDubDubStore((s) => s.activeProjectId);
 
   const [downloadingZip, setDownloadingZip] = useState(false);
@@ -76,19 +74,6 @@ export const CapCutExportModal: React.FC = () => {
   const handleDownloadTargetSrt = () => {
     const srt = generateSrtContent(segments, 'sourceText');
     triggerBlobDownload(srt, 'subtitles_target.srt');
-  };
-
-  const handleDownloadVideo = () => {
-    if (activeProjectId) {
-      window.open(`/api/projects/${activeProjectId}/export-capcut/video.mp4`, '_blank');
-    } else if (project?.previewUrl) {
-      const a = document.createElement('a');
-      a.href = project.previewUrl;
-      a.download = project.filename || 'video.mp4';
-      a.click();
-    } else {
-      triggerBlobDownload('', 'video.mp4', 'video/mp4');
-    }
   };
 
   const handleDownloadAudio = () => {
@@ -114,7 +99,6 @@ export const CapCutExportModal: React.FC = () => {
         handleDownloadEditedSrt();
         setTimeout(handleDownloadTargetSrt, 300);
         setTimeout(handleDownloadAudio, 600);
-        setTimeout(handleDownloadVideo, 900);
       }
     } catch (err) {
       console.warn('ZIP download failed, downloading individual files:', err);
@@ -225,7 +209,7 @@ export const CapCutExportModal: React.FC = () => {
                   <span>Import &amp; Style</span>
                 </div>
                 <p className="text-[11px] text-stone-600 leading-relaxed">
-                  Drop video/audio on tracks. Go to <span className="font-semibold">Text &gt; Local Captions</span> and select <span className="font-mono">subtitles_edited.srt</span>.
+                  Import your original video and the downloaded voiceover. Go to <span className="font-semibold">Text &gt; Local Captions</span> and select <span className="font-mono">subtitles_edited.srt</span>.
                 </p>
               </div>
             </div>
@@ -235,7 +219,7 @@ export const CapCutExportModal: React.FC = () => {
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider">
-                Exported Project Assets (4 Files)
+                Exported Project Assets (3 Files)
               </h4>
               <button
                 data-download-zip-btn="true"
@@ -291,28 +275,7 @@ export const CapCutExportModal: React.FC = () => {
                 </button>
               </div>
 
-              {/* Asset 3: Video File */}
-              <div className="p-3 rounded-xl border border-stone-200 bg-stone-50/50 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
-                    <Video className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-stone-900 truncate">video.mp4</div>
-                    <div className="text-[10px] text-stone-500">{project?.filename || 'Clean video track'}</div>
-                  </div>
-                </div>
-                <button
-                  data-download-video="true"
-                  onClick={handleDownloadVideo}
-                  className="px-2.5 py-1 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
-                >
-                  <Download className="w-3 h-3" />
-                  <span>Download</span>
-                </button>
-              </div>
-
-              {/* Asset 4: Merged Audio */}
+              {/* Asset 3: Merged Audio */}
               <div className="p-3 rounded-xl border border-stone-200 bg-stone-50/50 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">

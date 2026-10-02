@@ -27,18 +27,21 @@ def _cmd(ffmpeg):
     return 0
 
 
-def frame_at(ffmpeg_exe: str, video: str, ts_ms: int):
+def frame_at(ffmpeg_exe: str, video: str, ts_ms: int, *, end_ms: int | None = None):
     """Decode one BGR frame at ts_ms using ffmpeg.
 
     Returns (frame, width, height) as a numpy (H, W, 3) uint8 BGR array, or
     (None, w, h) when no frame could be decoded.
     """
     ts = _ts_arg(ts_ms)
-    cmd = [
-        ffmpeg_exe, "-hide_banner", "-nostdin", "-loglevel", "error",
-        "-ss", ts, "-i", video,
-        "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1",
-    ]
+    cmd = [ffmpeg_exe, "-hide_banner", "-nostdin", "-loglevel", "error"]
+    if end_ms is not None:
+        cmd.append("-copyts")
+    cmd += ["-ss", ts, "-i", video]
+    if end_ms is not None:
+        # A seek just before the boundary may decode the following frame.
+        cmd += ["-vf", f"select='gte(t,{ts_ms / 1000:.3f})*lt(t,{end_ms / 1000:.3f})'"]
+    cmd += ["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"]
     proc = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,

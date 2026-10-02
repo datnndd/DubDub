@@ -110,7 +110,7 @@ def test_build_task_params_maps_supported_frontend_fields(tmp_path, monkeypatch)
     assert params["aisendsrt"] is False
     assert params["tts_type"] == 3
     assert params["voice_role"] == "No"
-    assert params["remove_noise"] is False
+    assert "remove_noise" not in params
     assert params["enable_diariz"] is True
     assert params["nums_diariz"] == 2
     assert params["voice_rate"] == "+10%"
@@ -180,6 +180,23 @@ def test_build_task_params_rejects_removed_provider_and_mismatched_model(tmp_pat
             "translateType": 99,
             "ttsType": 0,
         })
+
+
+def test_build_task_params_accepts_loaded_deepgram_model(tmp_path, monkeypatch):
+    source = tmp_path / "sample.mp4"
+    source.write_bytes(b"video")
+    monkeypatch.setattr(runtime_config.settings, "deepgram_model", "nova-3-general", raising=False)
+
+    params = build_task_params(source, {
+        "sourceLanguage": "zh-cn",
+        "targetLanguage": "vi",
+        "recognType": recognition.Deepgram,
+        "modelName": "nova-3-general",
+        "translateType": 0,
+        "ttsType": 0,
+    }, job_type="asr")
+
+    assert params["model_name"] == "nova-3-general"
 
 
 def test_build_task_params_maps_each_timing_mode(tmp_path):

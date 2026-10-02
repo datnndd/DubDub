@@ -22,6 +22,24 @@ import {
 import { ProviderDocLink } from '../components/ProviderDocLink';
 
 export const Stage1Prepare: React.FC = () => {
+  const help = {
+    source: 'Language spoken in the source media. Choose it to improve transcription accuracy.',
+    target: 'Language for translated subtitles and dubbed speech.',
+    timing: 'Choose whether speech, video speed, or subtitles handle timing differences.',
+    provider: 'Speech recognition service that turns the source audio into text.',
+    model: 'Recognition model used by the selected provider. Choose one suited to your audio.',
+    deepgram: 'Adjust Deepgram transcription and speaker grouping settings for this video.',
+    smartFormat: 'Format recognized dates, numbers, and similar speech for easier reading.',
+    punctuate: 'Add punctuation to recognized speech for more readable subtitles.',
+    diarization: 'Identify who is speaking. Enable for conversations with multiple voices.',
+    speakerCount: 'Expected number of speakers. Leave on Auto-detect if unsure.',
+    cuda: 'Use a supported NVIDIA GPU for local processing when available.',
+    uttSplit: 'Silence threshold for splitting speech into subtitle segments.',
+    diarizeModel: 'Deepgram speaker identification model. Keep the default unless you need a specific model.',
+    paragraphs: 'Group recognized speech into paragraphs for longer passages.',
+    utterances: 'Return individual speech turns for more precise speaker timing.',
+    extra: 'Optional advanced Deepgram settings. Leave blank for the standard behavior.',
+  };
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDeepgramModalOpen, setIsDeepgramModalOpen] = useState(false);
@@ -323,10 +341,11 @@ export const Stage1Prepare: React.FC = () => {
 
           <div className="space-y-2.5 flex-1">
             <div>
-              <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+              <label title={help.source} className="text-[10px] text-stone-500 font-semibold block mb-1">
                 Source Spoken Language
               </label>
               <select
+                title={help.source}
                 value={languages?.source?.code || 'zh-cn'}
                 onChange={(e) => {
                   const opt = options.languages?.find((l: any) => l.code === e.target.value);
@@ -343,10 +362,11 @@ export const Stage1Prepare: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+              <label title={help.target} className="text-[10px] text-stone-500 font-semibold block mb-1">
                 Target Dubbing Language
               </label>
               <select
+                title={help.target}
                 value={languages?.target?.code || 'vi'}
                 onChange={(e) => {
                   const opt = options.languages?.find((l: any) => l.code === e.target.value);
@@ -363,10 +383,11 @@ export const Stage1Prepare: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+              <label title={help.timing} className="text-[10px] text-stone-500 font-semibold block mb-1">
                 Timing Synchronization Mode
               </label>
               <select
+                title={help.timing}
                 value={languages.timingMode || 'voice'}
                 onChange={(e) => updateTimingMode?.(e.target.value)}
                 className="w-full text-xs font-semibold p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
@@ -416,12 +437,13 @@ export const Stage1Prepare: React.FC = () => {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] text-stone-500 font-semibold">
+                  <label title={help.provider} className="text-[10px] text-stone-500 font-semibold">
                     Engine Provider
                   </label>
                   <ProviderDocLink providerId={backend.config.recognType} category="asr" />
                 </div>
                 <select
+                  title={help.provider}
                   value={backend.config.recognType}
                   onChange={(e) => {
                     const p = options.asrProviders?.find((x: any) => x.recognType === Number(e.target.value));
@@ -438,10 +460,11 @@ export const Stage1Prepare: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-[10px] text-stone-500 font-semibold block mb-1">
+                <label title={help.model} className="text-[10px] text-stone-500 font-semibold block mb-1">
                   Model Variant
                 </label>
                 <select
+                  title={help.model}
                   value={backend.config.modelName}
                   onChange={(e) => updateAsrProvider(backend.config.recognType, e.target.value)}
                   className="w-full text-xs font-semibold p-2 bg-stone-50 rounded-lg border border-stone-200 focus:bg-white focus:outline-none focus:border-amber-400"
@@ -461,6 +484,7 @@ export const Stage1Prepare: React.FC = () => {
                 <button
                   type="button"
                   data-testid="deepgram-options-btn"
+                  title={help.deepgram}
                   onClick={() => setIsDeepgramModalOpen(true)}
                   className="w-full py-1.5 px-2.5 rounded-lg border border-amber-300 bg-amber-50/70 hover:bg-amber-100 text-[#8D4B00] text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer shadow-2xs"
                 >
@@ -475,7 +499,7 @@ export const Stage1Prepare: React.FC = () => {
 
                 {/* Inline Quick Switches for Deepgram */}
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <label className="flex items-center justify-between p-1.5 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                  <label title={help.smartFormat} className="flex items-center justify-between p-1.5 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
                     <span className="text-stone-700 font-medium">Smart Format</span>
                     <input
                       type="checkbox"
@@ -484,7 +508,7 @@ export const Stage1Prepare: React.FC = () => {
                       className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
                     />
                   </label>
-                  <label className="flex items-center justify-between p-1.5 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                  <label title={help.punctuate} className="flex items-center justify-between p-1.5 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
                     <span className="text-stone-700 font-medium">Punctuate</span>
                     <input
                       type="checkbox"
@@ -509,7 +533,7 @@ export const Stage1Prepare: React.FC = () => {
           <div className="space-y-2.5 flex-1">
             {/* Speaker Diarization with Speaker Count */}
             <div className="p-2 rounded-lg bg-stone-50 border border-stone-200 flex flex-col gap-2">
-              <label className="flex items-center justify-between text-xs cursor-pointer">
+              <label title={help.diarization} className="flex items-center justify-between text-xs cursor-pointer">
                 <div className="flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-[#8D4B00]" />
                   <span className="font-semibold text-stone-800">Speaker Diarization</span>
@@ -523,9 +547,10 @@ export const Stage1Prepare: React.FC = () => {
               </label>
 
               {engines.speakerDiarization && (
-                <div className="flex items-center justify-between pt-1 border-t border-stone-200/80 text-[11px]">
+                <div title={help.speakerCount} className="flex items-center justify-between pt-1 border-t border-stone-200/80 text-[11px]">
                   <span className="text-stone-600 font-medium">Expected Speakers:</span>
                   <select
+                    title={help.speakerCount}
                     value={engines.speakerCount ?? 0}
                     onChange={(e) => updateEngineConfig('speakerCount', Number(e.target.value))}
                     className="font-mono text-xs p-1 bg-white rounded border border-stone-300 font-bold"
@@ -541,22 +566,8 @@ export const Stage1Prepare: React.FC = () => {
               )}
             </div>
 
-            {/* Denoise Background Audio */}
-            <label className="flex items-center justify-between text-xs cursor-pointer p-2 rounded-lg bg-stone-50 border border-stone-200">
-              <div className="flex items-center gap-1.5">
-                <Volume2 className="w-3.5 h-3.5 text-[#8D4B00]" />
-                <span className="font-semibold text-stone-800">Denoise Background Audio</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={engines.removeNoise}
-                onChange={(e) => updateEngineConfig('removeNoise', e.target.checked)}
-                className="rounded text-[#8D4B00] focus:ring-[#8D4B00]"
-              />
-            </label>
-
             {/* GPU / CUDA Acceleration */}
-            <label className="flex items-center justify-between text-xs cursor-pointer p-2 rounded-lg bg-stone-50 border border-stone-200">
+            <label title={help.cuda} className="flex items-center justify-between text-xs cursor-pointer p-2 rounded-lg bg-stone-50 border border-stone-200">
               <div className="flex items-center gap-1.5">
                 <Cpu className="w-3.5 h-3.5 text-[#8D4B00]" />
                 <span className="font-semibold text-stone-800">Hardware CUDA Acceleration</span>
@@ -597,10 +608,11 @@ export const Stage1Prepare: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-semibold text-stone-600 block mb-1">
+                  <label title={help.uttSplit} className="text-[10px] font-semibold text-stone-600 block mb-1">
                     utt_split (split threshold in s)
                   </label>
                   <input
+                    title={help.uttSplit}
                     type="number"
                     step="0.1"
                     min="0"
@@ -616,10 +628,11 @@ export const Stage1Prepare: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-semibold text-stone-600 block mb-1">
+                  <label title={help.diarizeModel} className="text-[10px] font-semibold text-stone-600 block mb-1">
                     diarize_model
                   </label>
                   <input
+                    title={help.diarizeModel}
                     type="text"
                     placeholder="latest"
                     value={backend.config.deepgramOptions?.diarize_model ?? 'latest'}
@@ -630,7 +643,7 @@ export const Stage1Prepare: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                <label title={help.smartFormat} className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={backend.config.deepgramOptions?.smart_format ?? true}
@@ -640,7 +653,7 @@ export const Stage1Prepare: React.FC = () => {
                   <span className="text-[11px] font-medium text-stone-700">smart_format</span>
                 </label>
 
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                <label title={help.punctuate} className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={backend.config.deepgramOptions?.punctuate ?? true}
@@ -650,7 +663,7 @@ export const Stage1Prepare: React.FC = () => {
                   <span className="text-[11px] font-medium text-stone-700">punctuate</span>
                 </label>
 
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                <label title={help.paragraphs} className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={backend.config.deepgramOptions?.paragraphs ?? true}
@@ -660,7 +673,7 @@ export const Stage1Prepare: React.FC = () => {
                   <span className="text-[11px] font-medium text-stone-700">paragraphs</span>
                 </label>
 
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
+                <label title={help.utterances} className="flex items-center gap-2 p-2 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={backend.config.deepgramOptions?.utterances ?? true}
@@ -672,10 +685,11 @@ export const Stage1Prepare: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-[10px] font-semibold text-stone-600 block mb-1">
+                <label title={help.extra} className="text-[10px] font-semibold text-stone-600 block mb-1">
                   Extra Deepgram Parameters (URL Query or JSON)
                 </label>
                 <input
+                  title={help.extra}
                   type="text"
                   placeholder="e.g. keywords=term1,term2&numerals=true"
                   value={backend.config.deepgramOptions?.extra || ''}

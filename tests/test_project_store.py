@@ -12,6 +12,7 @@ from videotrans.core.project_store import (
     find_project_by_audio_hash,
     get_project_dir,
 )
+from videotrans.util._srt_parse import get_subtitle_from_srt
 
 
 @pytest.fixture(autouse=True)
@@ -65,6 +66,50 @@ def test_update_project_state_and_stage():
     assert updated["stage"] == 2
     assert updated["status"] == "completed"
     assert updated["state"]["segments"][0]["text"] == "translated"
+
+
+def test_source_srt_replaces_only_changed_cue_with_canonical_timestamps(tmp_path, monkeypatch):
+    monkeypatch.setattr("videotrans.core.project_store.get_projects_root", lambda: tmp_path)
+    project = create_project(name="OCR subtitles")
+    segments = [
+        {"id": 10, "startSec": 1.25, "endSec": 2.5, "startTime": "00:01.250", "endTime": "00:02.500", "sourceText": "Old", "targetText": "Target"},
+        {"id": 30, "startSec": 2.5, "endSec": 3.75, "startTime": "00:02.500", "endTime": "00:03.750", "sourceText": "Keep"},
+    ]
+    update_project_state(project["id"], {"segments": segments})
+    segments[0] = {**segments[0], "sourceText": "Xin chào"}
+    update_project_state(project["id"], {"segments": segments})
+
+    srt = (get_project_dir(project["id"]) / "transcripts" / "source.srt").read_text(encoding="utf-8")
+    assert srt == "1\n00:00:01,250 --> 00:00:02,500\nXin chào\n\n2\n00:00:02,500 --> 00:00:03,750\nKeep\n"
+    parsed = get_subtitle_from_srt(srt, is_file=False)
+    assert [cue["text"] for cue in parsed] == ["Xin chào", "Keep"]
+    assert get_project(project["id"])["state"]["segments"] == segments
+
+
+def test_source_srt_write_failure_is_not_reported_as_saved(tmp_path, monkeypatch):
+    monkeypatch.setattr("videotrans.core.project_store.get_projects_root", lambda: tmp_path)
+    project = create_project(name="OCR save failure", state={"segments": []})
+    original_write = Path.write_text
+
+    def fail_srt_write(path, *args, **kwargs):
+        if path.name == "source.srt":
+            raise OSError("disk unavailable")
+        return original_write(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_srt_write)
+    with pytest.raises(OSError, match="disk unavailable"):
+        update_project_state(project["id"], {"segments": [{"id": 1, "startSec": 0, "endSec": 1, "sourceText": "OCR"}]})
+    assert get_project(project["id"])["state"] == {"segments": []}
+
+
+def test_source_srt_normalizes_legacy_time_strings(tmp_path, monkeypatch):
+    monkeypatch.setattr("videotrans.core.project_store.get_projects_root", lambda: tmp_path)
+    project = create_project(name="Legacy OCR subtitles")
+    update_project_state(project["id"], {"segments": [
+        {"id": 9, "startTime": "00:01.250", "endTime": "00:02.500", "sourceText": "Legacy"},
+    ]})
+    srt = (get_project_dir(project["id"]) / "transcripts" / "source.srt").read_text(encoding="utf-8")
+    assert srt == "1\n00:00:01,250 --> 00:00:02,500\nLegacy\n"
 
 
 def test_list_projects_order():

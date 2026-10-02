@@ -5,6 +5,18 @@ import { requestRender } from '../api/stages';
 
 const DEFAULT_AUDIO_MIX: AudioMixSettings = { original: 0, dubbed: 100, background: 35 };
 
+export const DEFAULT_SUBTITLE_STYLES: SubtitleStyleSettings = {
+  preset: 'clean', fontFamily: 'Arial', fontSize: 22, color: '#FFFFFF',
+  outlineColor: '#000000', outlineWidth: 2, shadowColor: 'rgba(0,0,0,.75)',
+  shadowSize: 2, fontWeight: 'normal', fontStyle: 'normal', opacity: 100,
+  aiLipSync: true, deReverb: true, faceRetouch: false, superRes4K: true,
+};
+
+export const DEFAULT_EDIT_VIDEO: EditVideoState = {
+  audioMix: { ...DEFAULT_AUDIO_MIX }, backgroundAudio: null, thumbnail: null,
+  exporting: false, error: null, activeTab: 'audio', isCapCutModalOpen: false,
+};
+
 export function buildRenderRequest(state: any) {
   return {
     mediaId: state.backend.mediaId,
@@ -45,32 +57,8 @@ export interface EditVideoSlice {
 }
 
 export const createEditVideoSlice: StateCreator<any, [], [], EditVideoSlice> = (set, get) => ({
-  subtitleStyles: {
-    preset: 'clean',
-    fontFamily: 'Arial',
-    fontSize: 22,
-    color: '#FFFFFF',
-    outlineColor: '#000000',
-    outlineWidth: 2,
-    shadowColor: 'rgba(0,0,0,.75)',
-    shadowSize: 2,
-    fontWeight: 'normal',
-    fontStyle: 'normal',
-    opacity: 100,
-    aiLipSync: true,
-    deReverb: true,
-    faceRetouch: false,
-    superRes4K: true,
-  },
-  editVideo: {
-    audioMix: { ...DEFAULT_AUDIO_MIX },
-    backgroundAudio: null,
-    thumbnail: null,
-    exporting: false,
-    error: null,
-    activeTab: 'audio',
-    isCapCutModalOpen: false,
-  },
+  subtitleStyles: { ...DEFAULT_SUBTITLE_STYLES },
+  editVideo: { ...DEFAULT_EDIT_VIDEO },
   muteCache: {},
 
   setAudioMix: (channel: 'original' | 'dubbed' | 'background', val: any) => {

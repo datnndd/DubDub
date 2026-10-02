@@ -4,8 +4,58 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { useDubDubStore } from '../src/store';
 import { Header } from '../src/components/Header';
 import { SettingsModal } from '../src/components/settings/SettingsModal';
+import { saveProviderAndLoadModels } from '../src/api/settingsApi';
 
 describe('Settings Modal & Store integration', () => {
+  test('saving a provider refreshes its models with the new credential', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Array<{ url: string; method: string }> = [];
+    try {
+      globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({ url: String(url), method: init?.method || 'GET' });
+        return new Response(JSON.stringify(requests.length === 1
+          ? { ok: true, configured: true, message: 'Saved' }
+          : { ok: true, models: ['nova-3-general'], message: 'Loaded' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      const result = await saveProviderAndLoadModels('asr', 'deepgram', { apiKey: 'new-key', model: 'nova-3' });
+      expect(result.models).toEqual(['nova-3-general']);
+      expect(requests).toEqual([
+        { url: '/api/settings/providers/asr/deepgram', method: 'PUT' },
+        { url: '/api/settings/providers/asr/deepgram/models', method: 'POST' },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a model refresh error still reports the credential as saved', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async (url: string | URL | Request) => {
+        if (String(url).endsWith('/models')) {
+          return new Response(JSON.stringify({ detail: 'Model service unavailable' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true, configured: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      const result = await saveProviderAndLoadModels('asr', 'deepgram', { apiKey: 'new-key' });
+      expect(result.models).toEqual([]);
+      expect(result.modelError).toBe('Model service unavailable');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   beforeEach(() => {
     useDubDubStore.setState({
       isSettingsOpen: false,

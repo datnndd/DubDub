@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import type { Speaker, VoiceOption, DubbingTuning } from '../types/dubbing';
 import type { Segment } from '../types/segment';
 import { fetchVoices } from '../api/settings';
+import { assembleProjectDubbing } from '../api/projects';
 import {
   type CustomVoice,
   type CreateVoicePayload,
@@ -20,6 +21,9 @@ export interface DubbingSlice {
   speakerVoiceMap: Record<string, string>;
   segmentVoiceOverrides: Record<number, string>;
   dubbingStatus: 'idle' | 'running' | 'completed' | 'failed';
+  dubbingError: string | null;
+  assemblingDubbing: boolean;
+  assembledDubUrl: string | null;
   tuning: DubbingTuning;
   voices: VoiceOption[];
   customVoices: CustomVoice[];
@@ -44,16 +48,20 @@ export interface DubbingSlice {
   updateTuning: (key: keyof DubbingTuning, value: any) => void;
   getDistinctSpeakers: (customSegments?: Segment[], customSpeakers?: Speaker[]) => Speaker[];
   getResolvedVoiceForSegment: (segment: Segment) => string;
-  updateSegmentVoicePreview: (segmentId: number, previewUrl: string, previewId?: string, voice?: string) => void;
+  updateSegmentVoicePreview: (segmentId: number, previewUrl: string, previewId?: string, voice?: string, appliedSpeed?: number) => void;
   autoFitVoiceSpeed: boolean;
   maxSpeedRate: number;
   setAutoFitVoiceSpeed: (enabled: boolean) => void;
   setMaxSpeedRate: (rate: number) => void;
   runFullDubbing: () => Promise<void>;
+  enterStage4: () => Promise<void>;
 }
 
 export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set, get) => ({
   autoFitVoiceSpeed: true,
+  dubbingError: null,
+  assemblingDubbing: false,
+  assembledDubUrl: null,
   maxSpeedRate: 1.25,
   setAutoFitVoiceSpeed: (enabled: boolean) => {
     set({ autoFitVoiceSpeed: enabled });
@@ -293,7 +301,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
     return voices[0]?.id || 'default';
   },
 
-  updateSegmentVoicePreview: (segmentId: number, previewUrl: string, previewId?: string, voice?: string) => {
+  updateSegmentVoicePreview: (segmentId: number, previewUrl: string, previewId?: string, voice?: string, appliedSpeed?: number) => {
     set((state: any) => {
       const segs = (state.segments || []).map((seg: Segment) => {
         if (seg.id === segmentId) {
@@ -301,6 +309,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
             ...seg,
             previewAudioUrl: previewUrl,
             previewAudioId: previewId,
+            previewSpeedFactor: appliedSpeed,
             previewVoice: voice || seg.previewVoice,
           };
         }
@@ -312,7 +321,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
   },
 
   runFullDubbing: async () => {
-    set({ dubbingStatus: 'running' });
+    set({ dubbingStatus: 'running', dubbingError: null });
     try {
       if (!get().activeProjectId && get().createNewProject) {
         const projName = get().project?.filename || 'Untitled Video Project';
@@ -347,8 +356,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
             }
           }
 
-          try {
-            const res = await previewTTS({
+          const res = await previewTTS({
               text,
               voice: activeVoice,
               provider: ttsType,
@@ -360,28 +368,52 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
               slot_duration_s: slotDur,
               max_speed_rate: maxRate,
             });
-            return {
+          if (!(res.audio_url || res.preview_url)) {
+            throw new Error(`No preview audio was returned for segment ${seg.id}`);
+          }
+          return {
               ...seg,
               previewAudioUrl: res.preview_url || res.audio_url,
               previewAudioId: res.id || res.preview_id,
+              previewSpeedFactor: res.applied_speed,
               previewVoice: activeVoice,
-            };
-          } catch (e) {
-            console.warn(`Failed preview for segment ${seg.id}:`, e);
-            return seg;
-          }
+          };
         })
       );
 
       set({
         segments: updated,
+        stage3Baseline: updated.map((segment) => ({ ...segment })),
         dubbingStatus: 'completed',
         maxUnlockedStep: Math.max(get().maxUnlockedStep || 1, 4),
       });
       get().triggerAutosave();
     } catch (err: any) {
       console.error('Full dubbing failed:', err);
-      set({ dubbingStatus: 'failed' });
+      set({ dubbingStatus: 'failed', dubbingError: err instanceof Error ? err.message : 'Voice dubbing failed' });
+    }
+  },
+
+  enterStage4: async () => {
+    const id = get().activeProjectId;
+    if (get().assemblingDubbing) return;
+    if (get().dubbingStatus === 'running') {
+      set({ dubbingError: 'Wait for voice generation to finish before opening Stage 4' });
+      return;
+    }
+    if (!id) {
+      set({ dubbingError: 'Save this project before opening Stage 4' });
+      return;
+    }
+    set({ assemblingDubbing: true, dubbingError: null });
+    try {
+      const result = await assembleProjectDubbing(id, get().segments || []);
+      set({ assembledDubUrl: `${result.audio_url}?v=${Date.now()}` });
+      await get().setStep(4);
+    } catch (error) {
+      set({ dubbingError: error instanceof Error ? error.message : 'Could not assemble dubbing audio' });
+    } finally {
+      set({ assemblingDubbing: false });
     }
   },
 });

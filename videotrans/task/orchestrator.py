@@ -231,7 +231,7 @@ def run(
                 send(EventKind.CANCELLED, "Task cancelled")
                 return TaskResult(job_id, TaskStatus.CANCELLED, output_dir)
 
-            if stage_name == "recogn" and task.should_recogn and getattr(task.cfg, "project_id", None):
+            if stage_name == "recogn" and task.should_recogn and getattr(task.cfg, "project_id", None) and not task.cfg.force_recogn:
                 from videotrans.core.content_hash import compute_content_hash
                 from videotrans.core.project_store import find_project_by_audio_hash
                 audio_path = getattr(task.cfg, "shibie_audio", None) or getattr(task.cfg, "name", None)
@@ -266,6 +266,11 @@ def run(
         outputs = _collect_outputs(task.cfg)
         segments = extract_transcript_segments(task)
         transcript_options = extract_transcript_options(task)
+        if stage_limit == "asr" and segments and getattr(task.cfg, "project_id", None):
+            import json
+            from videotrans.core.project_store import init_project_dirs
+            baseline = init_project_dirs(task.cfg.project_id)["transcripts"] / "asr_baseline.json"
+            baseline.write_text(json.dumps({"segments": segments, "transcriptOptions": transcript_options}, ensure_ascii=False), encoding="utf-8")
         if asr_duration_val is None:
             asr_duration_val = getattr(task, "asr_duration", None)
         detected_lang = getattr(task, "detect_language", None) or getattr(task.cfg, "source_code", None)
@@ -389,6 +394,8 @@ def _persist_stage_artifacts(task: Any, stage_name: str) -> None:
                 p = get_project(pid)
                 cur_state = dict(p.get("state") or {}) if p else {}
                 cur_state["segments"] = list(segments)
+                if stage_name == "diariz":
+                    cur_state["forceAsr"] = False
                 if transcript_options:
                     cur_state["transcript_options"] = transcript_options
                     cur_state["selected_segment_option"] = cur_state.get("selected_segment_option", "utterances")

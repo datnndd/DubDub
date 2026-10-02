@@ -5,6 +5,7 @@ export interface AuditionState {
   activeKey: string | null;
   isPlaying: boolean;
   loadingKey: string | null;
+  error: string | null;
 }
 
 type AuditionListener = (state: AuditionState) => void;
@@ -44,6 +45,7 @@ export class VoiceAuditionManager {
   private activeKey: string | null = null;
   private isPlaying: boolean = false;
   private loadingKey: string | null = null;
+  private error: string | null = null;
   private cache = new Map<string, string>();
   private listeners = new Set<AuditionListener>();
   private pendingToken: number = 0;
@@ -89,6 +91,15 @@ export class VoiceAuditionManager {
     return this.loadingKey;
   }
 
+  public getError(): string | null {
+    return this.error;
+  }
+
+  public setError(message: string): void {
+    this.error = message;
+    this.notify();
+  }
+
   public isKeyPlaying(key: string): boolean {
     return this.isPlaying && this.activeKey === key;
   }
@@ -109,6 +120,7 @@ export class VoiceAuditionManager {
       activeKey: this.isPlaying ? this.activeKey : null,
       isPlaying: this.isPlaying,
       loadingKey: this.loadingKey,
+      error: this.error,
     };
     this.listeners.forEach((listener) => {
       try {
@@ -181,6 +193,7 @@ export class VoiceAuditionManager {
 
   public stop(): void {
     this.cancelPending(false);
+    this.error = null;
     if (this.audio) {
       try {
         this.audio.pause();
@@ -247,10 +260,12 @@ export class VoiceAuditionManager {
     // Single active audio player instance across all buttons:
     // halt any currently playing audio immediately and cancel any pending loading
     this.stop();
+    this.error = null;
 
     if (typeof Audio === 'undefined') {
       this.isPlaying = false;
       this.activeKey = null;
+      this.setError('Audio playback is unavailable in this browser');
       return;
     }
 
@@ -275,16 +290,16 @@ export class VoiceAuditionManager {
         if (this.activeKey === currentKey) {
           this.isPlaying = false;
           this.activeKey = null;
-          this.notify();
+          this.setError('Preview audio could not be loaded. Try generating it again.');
         }
       };
       const playPromise = this.audio.play();
       if (playPromise && typeof playPromise.catch === 'function') {
-        playPromise.catch(() => {
+        playPromise.catch((err) => {
           if (this.activeKey === currentKey) {
             this.isPlaying = false;
             this.activeKey = null;
-            this.notify();
+            this.setError(`Could not play preview audio: ${err instanceof Error ? err.message : 'Playback was blocked'}`);
           }
         });
       }
@@ -292,6 +307,7 @@ export class VoiceAuditionManager {
       console.error('Failed to play audio:', err);
       this.isPlaying = false;
       this.activeKey = null;
+      this.setError('Could not start preview audio playback');
     }
 
     this.notify();
@@ -381,6 +397,7 @@ export async function auditionVoice(options: {
   } catch (err: any) {
     if (err?.name !== 'AbortError') {
       console.error(`Failed to audition voice preview for ${voice}:`, err);
+      manager.setError(err instanceof Error ? err.message : 'Voice audition failed');
     }
   } finally {
     manager.finishLoading(token);
@@ -394,16 +411,19 @@ export function useVoiceAudition() {
   const [activeKey, setActiveKey] = useState<string | null>(() => manager.getActiveKey());
   const [isPlaying, setIsPlaying] = useState<boolean>(() => manager.isPlayingState());
   const [loadingKey, setLoadingKey] = useState<string | null>(() => manager.getLoadingKey());
+  const [error, setError] = useState<string | null>(() => manager.getError());
 
   useEffect(() => {
     setActiveKey(manager.getActiveKey());
     setIsPlaying(manager.isPlayingState());
     setLoadingKey(manager.getLoadingKey());
+    setError(manager.getError());
 
     return manager.subscribe((state) => {
       setActiveKey(state.activeKey);
       setIsPlaying(state.isPlaying);
       setLoadingKey(state.loadingKey);
+      setError(state.error);
     });
   }, [manager]);
 
@@ -427,6 +447,7 @@ export function useVoiceAudition() {
     activeKey,
     isPlaying,
     loadingKey,
+    error,
     isKeyPlaying,
     isKeyLoading,
     stop,

@@ -139,6 +139,7 @@ class TaskCfgSTT(TaskCfgBase):
     model_name: str = None  # 模型名字
     shibie_audio: Union[os.PathLike,str]=None  # 转为 pcm_s16le  16k 作为语音识别的音频文件
     remove_noise: bool = False  # 是否移除噪声
+    force_recogn: bool = False  # Re-run ASR after an explicit stage reset.
     enable_diariz: bool = False  # 是否进行说话人识别
     nums_diariz: int = 0  # 是否进行说话人识别
     rephrase: int = 0  # 0 默认断句不处理 1=LLM重新断句

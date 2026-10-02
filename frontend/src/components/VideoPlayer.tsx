@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useDubDubStore } from '../store';
 import { Tv as VideoIcon, Subtitles } from 'lucide-react';
+import { voiceAuditionManager } from '../services/voiceAuditionManager';
 
 interface VideoPlayerProps {
   title?: string;
@@ -18,7 +19,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   initialSubtitlesVisible = true,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const dubAudioRef = useRef<HTMLAudioElement | null>(null);
   const [subtitlesVisible, setSubtitlesVisible] = useState(initialSubtitlesVisible);
+  const [dubPlaybackError, setDubPlaybackError] = useState<string | null>(null);
 
   const project = useDubDubStore((s) => s.project);
   const playback = useDubDubStore((s) => s.playback);
@@ -26,6 +29,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const segments = useDubDubStore((s) => s.segments);
   const subtitleStyles = useDubDubStore((s) => s.subtitleStyles);
   const editVideo = useDubDubStore((s) => s.editVideo);
+  const assembledDubUrl = useDubDubStore((s) => s.assembledDubUrl);
   const currentStep = useDubDubStore((s) => s.currentStep);
   const updatePlaybackTime = useDubDubStore((s) => s.updatePlaybackTime);
   const setAudioChannel = useDubDubStore((s) => s.setAudioChannel);
@@ -40,12 +44,75 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Synchronize audio mix and volume
   useEffect(() => {
     if (!videoRef.current) return;
-    if (currentStep === 4 && editVideo?.audioMix) {
+    if (currentStep === 3) {
+      videoRef.current.muted = true;
+      videoRef.current.volume = 0;
+    } else if (currentStep === 4 && editVideo?.audioMix) {
       const origVol = Number(editVideo.audioMix.original) || 0;
       videoRef.current.volume = Math.max(0, Math.min(1, origVol / 100));
       videoRef.current.muted = origVol === 0;
     }
   }, [currentStep, editVideo?.audioMix]);
+
+  useEffect(() => {
+    if ((currentStep !== 3 && currentStep !== 4) || typeof Audio === 'undefined') return;
+    dubAudioRef.current = new Audio();
+    dubAudioRef.current.onerror = () => setDubPlaybackError('Generated dubbing audio could not be loaded. Regenerate its preview.');
+    return () => {
+      dubAudioRef.current?.pause();
+      if (dubAudioRef.current) dubAudioRef.current.src = '';
+      dubAudioRef.current = null;
+      setDubPlaybackError(null);
+    };
+  }, [currentStep, assembledDubUrl]);
+
+  useEffect(() => {
+    if (dubAudioRef.current && currentStep === 4) {
+      dubAudioRef.current.volume = Math.max(0, Math.min(1, Number(editVideo?.audioMix?.dubbed || 0) / 100));
+    }
+  }, [currentStep, editVideo?.audioMix?.dubbed]);
+
+  useEffect(() => {
+    if (dubAudioRef.current) dubAudioRef.current.playbackRate = playbackSpeed || 1.0;
+  }, [currentStep, playbackSpeed]);
+
+  const syncDubAudio = () => {
+    const video = videoRef.current;
+    const audio = dubAudioRef.current;
+    if ((currentStep !== 3 && currentStep !== 4) || !video || !audio) return;
+    if (currentStep === 4) {
+      if (!assembledDubUrl || video.paused || Number(editVideo?.audioMix?.dubbed || 0) <= 0) {
+        audio.pause();
+        return;
+      }
+      const url = new URL(assembledDubUrl, window.location.href).href;
+      if (audio.src !== url) audio.src = url;
+      if (Math.abs(audio.currentTime - video.currentTime) > 0.3) audio.currentTime = video.currentTime;
+      if (audio.paused) audio.play().catch((error) => setDubPlaybackError(
+        `Could not play assembled dubbing audio: ${error instanceof Error ? error.message : 'Playback was blocked'}`
+      ));
+      return;
+    }
+    const segment = useDubDubStore.getState().segments.find(
+      (item) => item.previewAudioUrl && video.currentTime >= item.startSec && video.currentTime < item.endSec
+    );
+    if (!segment || video.paused || voiceAuditionManager.isPlayingState()) {
+      audio.pause();
+      return;
+    }
+    const url = new URL(segment.previewAudioUrl!, window.location.href).href;
+    if (audio.src !== url) {
+      audio.src = url;
+      audio.currentTime = Math.max(0, video.currentTime - segment.startSec);
+    } else if (Math.abs(audio.currentTime - (video.currentTime - segment.startSec)) > 0.3) {
+      audio.currentTime = Math.max(0, video.currentTime - segment.startSec);
+    }
+    if (audio.paused) {
+      audio.play().catch((error) => setDubPlaybackError(
+        `Could not play generated dubbing audio: ${error instanceof Error ? error.message : 'Playback was blocked'}`
+      ));
+    }
+  };
 
   // Synchronize seek & play commands from store
   useEffect(() => {
@@ -82,14 +149,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
 
     updatePlaybackTime(curTime, dur);
+    syncDubAudio();
   };
 
   const handlePlay = () => {
     setPlaying(true);
+    syncDubAudio();
   };
 
   const handlePause = () => {
     setPlaying(false);
+    dubAudioRef.current?.pause();
   };
 
   // Subtitle dynamic styles for CapCut canvas
@@ -153,6 +223,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   return (
     <div className="h-full w-full bg-white rounded-xl border border-[#E7E4DC] shadow-xs flex flex-col min-h-0 overflow-hidden">
+      {(currentStep === 3 || currentStep === 4) && dubPlaybackError && <div role="alert" className="bg-red-50 px-3 py-1 text-xs text-red-800">{dubPlaybackError}</div>}
       {/* Player Header Strip */}
       <div className="h-7.5 px-3 border-b border-[#E7E4DC] flex items-center justify-between bg-[#FAF9F6] shrink-0">
         <div className="flex items-center gap-2">
@@ -223,9 +294,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             data-source-preview="true"
             className="w-full h-full object-contain bg-black"
             src={previewUrl}
+            muted={currentStep === 3}
             controls
             preload="metadata"
             onTimeUpdate={handleTimeUpdate}
+            onSeeked={syncDubAudio}
             onLoadedMetadata={handleTimeUpdate}
             onPlay={handlePlay}
             onPause={handlePause}

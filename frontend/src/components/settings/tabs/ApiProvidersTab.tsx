@@ -12,7 +12,7 @@ import {
   Check,
   RefreshCw,
 } from 'lucide-react';
-import { ProviderStatus, updateProviderSettings, testProviderConnection, fetchProviderModels } from '../../../api/settingsApi';
+import { ProviderStatus, updateProviderSettings, testProviderConnection, fetchProviderModels, saveProviderAndLoadModels } from '../../../api/settingsApi';
 import { useDubDubStore } from '../../../store';
 import { ProviderDocLink } from '../../ProviderDocLink';
 
@@ -98,7 +98,23 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
         payload.mirrorUrl = form.mirrorUrl.trim();
       }
 
-      await updateProviderSettings(initial.category || 'general', id, payload);
+      const category = initial.category || 'general';
+      const refreshed = await saveProviderAndLoadModels(category, id, payload);
+      const models = refreshed.models;
+      let selectedModel = form.model;
+      if (models.length > 0) {
+        setModelsMap((prev) => ({ ...prev, [id]: models }));
+        if (!selectedModel || !models.includes(selectedModel)) {
+          selectedModel = models[0];
+          await updateProviderSettings(category, id, { model: selectedModel });
+        }
+      } else {
+        setModelsMap((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }
       // Clear entered secret key and reset local form dirty state for this provider
       setFormState((prev) => {
         const next = { ...prev };
@@ -106,14 +122,16 @@ export const ApiProvidersTab: React.FC<ApiProvidersTabProps> = ({
         return next;
       });
 
-      if (id === 'deepgram' && form.model) {
-        useDubDubStore.getState().updateAsrProvider(1, form.model);
+      if (id === 'deepgram' && selectedModel) {
+        useDubDubStore.getState().updateAsrProvider(1, selectedModel);
       }
 
       await onRefresh();
       setFeedbackMap((prev) => ({
         ...prev,
-        [id]: { type: 'success', message: 'Settings saved securely' },
+        [id]: { type: 'success', message: refreshed.modelError
+          ? `Settings saved. Models could not be refreshed: ${refreshed.modelError}`
+          : 'Settings saved and models refreshed' },
       }));
     } catch (err: any) {
       setFeedbackMap((prev) => ({

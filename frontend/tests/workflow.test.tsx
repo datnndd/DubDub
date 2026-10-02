@@ -84,7 +84,7 @@ describe('React four-stage workflow', () => {
         target: { code: 'vi', name: 'Vietnamese' },
         timingMode: 'voice',
       },
-      engines: { speakerDiarization: true, speakerCount: 2, removeNoise: true, ocrSlideEngine: false },
+      engines: { speakerDiarization: true, speakerCount: 2, ocrSlideEngine: false },
     });
 
     expect(buildPrepareJobRequest(useDubDubStore.getState())).toMatchObject({
@@ -96,11 +96,11 @@ describe('React four-stage workflow', () => {
         sourceLanguage: 'en',
         targetLanguage: 'vi',
         timingMode: 'voice',
-        removeNoise: true,
         speakerDiarization: true,
         speakerCount: 2,
       },
     });
+    expect(buildPrepareJobRequest(useDubDubStore.getState()).options).not.toHaveProperty('removeNoise');
   });
 
   test('Stage 1 renders Deepgram Parameters button and preserves custom deepgramOptions', () => {
@@ -123,6 +123,69 @@ describe('React four-stage workflow', () => {
       diarize_model: 'latest',
       extra: 'keywords=AI,DubDub&numerals=true',
     });
+  });
+
+  test('Reset is available on all four stages and Stage 1 explains its options without Denoise', () => {
+    const html = renderToStaticMarkup(<Stage1Prepare />);
+    expect(html).not.toContain('Denoise Background Audio');
+    for (const explanation of [
+      'Language spoken in the source media',
+      'Language for translated subtitles',
+      'Choose whether speech, video speed',
+      'Speech recognition service',
+      'Recognition model used',
+      'Adjust Deepgram transcription',
+      'Format recognized dates',
+      'Add punctuation',
+      'Identify who is speaking',
+      'supported NVIDIA GPU',
+    ]) expect(html).toContain(explanation);
+    for (const step of [1, 2, 3, 4]) {
+      useDubDubStore.setState({ currentStep: step, activeProjectId: 'project-1' });
+      expect(renderToStaticMarkup(<StatusFooter />)).toContain(`data-testid="reset-stage-${step}-btn"`);
+    }
+  });
+
+  test('reset waits for pending autosave, then reloads cleared project state', async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    let finishSave!: () => void;
+    const saveGate = new Promise<void>((resolve) => { finishSave = resolve; });
+    const project = {
+      id: 'reset-project', name: 'Reset project', media_id: 'media-1', stage: 1,
+      state: {
+        currentStep: 1, forceAsr: true, segments: [],
+        backend: { mediaId: 'media-1', config: { recognType: 1, modelName: 'nova-3' } },
+        project: { verified: true, filename: 'source.mp4' },
+      },
+    };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        calls.push('save');
+        await saveGate;
+      } else if (url.includes('/stages/1/reset')) {
+        calls.push('reset');
+      }
+      const body = url === '/api/projects' ? { projects: [project] } : project;
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as any;
+
+    try {
+      useDubDubStore.setState({ activeProjectId: 'reset-project', segments: [segment], forceAsr: false });
+      useDubDubStore.getState().triggerAutosave();
+      const reset = useDubDubStore.getState().resetStage(1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(calls).not.toContain('reset');
+      finishSave();
+      await reset;
+      expect(calls).toEqual(['save', 'reset']);
+      expect(useDubDubStore.getState().segments).toEqual([]);
+      expect(useDubDubStore.getState().forceAsr).toBe(true);
+      expect(useDubDubStore.getState().backend.mediaId).toBe('media-1');
+    } finally {
+      finishSave();
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test('builds the Stage 2 translation request with the selected method', () => {
@@ -1044,6 +1107,48 @@ describe('React four-stage workflow', () => {
     useDubDubStore.setState({ dubbingStatus: 'completed' });
     footerHtml = renderToStaticMarkup(<StatusFooter />);
     expect(footerHtml).toContain('Proceed to Edit Video');
+  });
+
+  test('Stage 3 waits for stitched audio before opening Stage 4', async () => {
+    const originalFetch = globalThis.fetch;
+    let finishAssembly!: (response: Response) => void;
+    const assembly = new Promise<Response>((resolve) => { finishAssembly = resolve; });
+    const calls: string[] = [];
+    try {
+      globalThis.fetch = async (url: string | URL | Request) => {
+        calls.push(String(url));
+        if (String(url).endsWith('/dubbing/assemble')) return assembly;
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      };
+      useDubDubStore.setState({ activeProjectId: 'stage3-project', currentStep: 3, segments: [{ ...segment, previewAudioId: 'prev_aaaaaaaaaaaa' }] });
+      const pending = useDubDubStore.getState().enterStage4();
+      expect(useDubDubStore.getState().currentStep).toBe(3);
+      finishAssembly(new Response(JSON.stringify({ ok: true, audio_url: '/api/projects/stage3-project/dubbing/audio' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }));
+      await pending;
+      expect(useDubDubStore.getState().currentStep).toBe(4);
+      expect(useDubDubStore.getState().assembledDubUrl).toContain('/api/projects/stage3-project/dubbing/audio');
+      expect(calls[0]).toBe('/api/projects/stage3-project/dubbing/assemble');
+      expect(renderToStaticMarkup(<Stage4EditVideo />)).toContain('Stitched Stage 3 voiceover loaded');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('Stage 3 stays open when voiceover assembly fails', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => new Response(JSON.stringify({ detail: 'Generate a voice preview for segment 1' }), {
+        status: 400, headers: { 'Content-Type': 'application/json' },
+      });
+      useDubDubStore.setState({ activeProjectId: 'stage3-project', currentStep: 3 });
+      await useDubDubStore.getState().enterStage4();
+      expect(useDubDubStore.getState().currentStep).toBe(3);
+      expect(useDubDubStore.getState().dubbingError).toContain('segment 1');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test('Stage 3 synchronizes segmentVoiceOverrides and segment.voiceOverride, and resets dubbingStatus on edit', () => {

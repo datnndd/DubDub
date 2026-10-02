@@ -66,7 +66,9 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const seek = useDubDubStore((s) => s.seek);
   const seekAndPlay = useDubDubStore((s) => s.seekAndPlay);
   const activeSegmentId = useDubDubStore((s) => s.activeSegmentId);
-  const setStep = useDubDubStore((s) => s.setStep);
+  const enterStage4 = useDubDubStore((s) => s.enterStage4);
+  const assemblingDubbing = useDubDubStore((s) => s.assemblingDubbing);
+  const dubbingStatus = useDubDubStore((s) => s.dubbingStatus);
   const triggerAutosave = useDubDubStore((s) => s.triggerAutosave);
   const setSpeakerVoice = useDubDubStore((s) => s.setSpeakerVoice);
   const setSegmentVoiceOverride = useDubDubStore((s) => s.setSegmentVoiceOverride);
@@ -80,14 +82,16 @@ export const Stage3VoiceDubbing: React.FC = () => {
   const project = useDubDubStore((s) => s.project);
   const autoFitVoiceSpeed = useDubDubStore((s) => s.autoFitVoiceSpeed);
   const maxSpeedRate = useDubDubStore((s) => s.maxSpeedRate);
+  const dubbingError = useDubDubStore((s) => s.dubbingError);
   const setAutoFitVoiceSpeed = useDubDubStore((s) => s.setAutoFitVoiceSpeed);
   const setMaxSpeedRate = useDubDubStore((s) => s.setMaxSpeedRate);
 
   const [loadingPreviewMap, setLoadingPreviewMap] = useState<Record<number, boolean>>({});
   const [selectedSpeakerFilter, setSelectedSpeakerFilter] = useState<string>('all');
   const [loadingSpeakerAudition, setLoadingSpeakerAudition] = useState<Record<string, boolean>>({});
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const { isKeyPlaying, isKeyLoading, stop, stopIfKey, play } = useVoiceAudition();
+  const { isKeyPlaying, isKeyLoading, stop, stopIfKey, play, error: auditionError } = useVoiceAudition();
 
   const speakers = useMemo(() => {
     return getDistinctSpeakers(segments, rawSpeakers);
@@ -181,6 +185,7 @@ export const Stage3VoiceDubbing: React.FC = () => {
   };
 
   const handleGeneratePreview = async (seg: Segment, activeVoice: string) => {
+    setPreviewError(null);
     setLoadingPreviewMap((prev) => ({ ...prev, [seg.id]: true }));
     try {
       const textToSynthesize = seg.targetText || seg.sourceText || '';
@@ -222,9 +227,11 @@ export const Stage3VoiceDubbing: React.FC = () => {
       });
 
       const audioUrl = res.audio_url || res.preview_url;
-      updateSegmentVoicePreview(seg.id, audioUrl, res.id || res.preview_id, activeVoice);
+      if (!audioUrl) throw new Error('The preview response did not contain an audio URL');
+      updateSegmentVoicePreview(seg.id, audioUrl, res.id || res.preview_id, activeVoice, res.applied_speed);
     } catch (err) {
       console.error(`Preview generation failed for segment ${seg.id}:`, err);
+      setPreviewError(err instanceof Error ? err.message : 'Voice preview generation failed');
     } finally {
       setLoadingPreviewMap((prev) => ({ ...prev, [seg.id]: false }));
     }
@@ -234,7 +241,7 @@ export const Stage3VoiceDubbing: React.FC = () => {
     <div className="flex-1 min-h-0 w-full p-2.5 grid grid-cols-12 gap-2.5 overflow-hidden">
       {/* LEFT: Synchronized Video Preview (6 cols) */}
       <div className="col-span-12 lg:col-span-6 xl:col-span-6 h-full min-h-0 overflow-hidden">
-        <VideoPlayer title="Neural Voice Synthesis Deck" subtitleVariant="dual" showAudioSwitcher={true} />
+        <VideoPlayer title="Neural Voice Synthesis Deck" subtitleVariant="dual" />
       </div>
 
       {/* RIGHT: Speaker Voice Matrix & Per-Segment Overrides (6 cols) */}
@@ -284,14 +291,12 @@ export const Stage3VoiceDubbing: React.FC = () => {
 
             <button
               data-action="proceed-to-edit-video"
-              onClick={() => {
-                triggerAutosave();
-                setStep(4);
-              }}
+              onClick={() => void enterStage4()}
+              disabled={assemblingDubbing || dubbingStatus === 'running'}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#8D4B00] text-white hover:bg-[#723c00] transition-colors cursor-pointer shadow-2xs"
               title="Proceed to Edit Video (Stage 4)"
             >
-              <span>Proceed to Edit Video</span>
+              <span>{assemblingDubbing ? 'Assembling Voice…' : 'Proceed to Edit Video'}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
             <button
@@ -315,6 +320,11 @@ export const Stage3VoiceDubbing: React.FC = () => {
 
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          {(previewError || auditionError || dubbingError) && (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              {previewError || auditionError || dubbingError}
+            </div>
+          )}
           {/* Upper Voice Casting Console */}
           <div className="space-y-2.5 bg-stone-50/70 p-3 rounded-xl border border-stone-200">
             <div className="flex items-center justify-between gap-2">
@@ -745,6 +755,11 @@ export const Stage3VoiceDubbing: React.FC = () => {
                             {seg.previewVoice && seg.previewVoice !== activeVoice ? `Audition (${seg.previewVoice})` : 'Audition'}
                           </span>
                         </div>
+                      )}
+                      {seg.previewAudioUrl && typeof seg.previewSpeedFactor === 'number' && (
+                        <span className="text-[10px] font-mono text-stone-600" title="Speed applied to this generated voice preview">
+                          Applied speed: {seg.previewSpeedFactor.toFixed(2)}x
+                        </span>
                       )}
                     </div>
 

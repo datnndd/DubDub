@@ -1,4 +1,6 @@
 import os
+import math
+import re
 import shutil
 import struct
 import subprocess
@@ -21,8 +23,11 @@ from videotrans.core.project_store import (
     delete_project,
     find_project_by_audio_hash,
 )
+from videotrans.core.job_store import list_jobs as list_project_jobs
+from videotrans.core.stage_reset import BaselineMissingError, reset_project_stage
 from videotrans.core.content_hash import compute_content_hash
 from videotrans.core.media_store import MEDIA
+from videotrans.core import voice_store
 
 router = APIRouter()
 
@@ -128,6 +133,22 @@ async def get_project_handler(project_id: str) -> JSONResponse:
     return JSONResponse(project)
 
 
+@router.post("/api/projects/{project_id}/stages/{stage}/reset")
+async def reset_stage_handler(project_id: str, stage: int) -> JSONResponse:
+    if stage not in (1, 2, 3, 4):
+        raise HTTPException(status_code=400, detail="Stage must be 1, 2, 3, or 4")
+    if list_project_jobs(project_id=project_id, status="active", limit=1):
+        raise HTTPException(status_code=409, detail="Wait for the active project job to finish before resetting a stage")
+    try:
+        return JSONResponse(reset_project_stage(project_id, stage))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BaselineMissingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.put("/api/projects/{project_id}")
 @router.put("/api/projects/{project_id}/state")
 @router.post("/api/projects/{project_id}/state")
@@ -173,12 +194,15 @@ async def update_project_handler(
         kwargs["media_path"] = str(payload.mediaPath)
 
     if payload.state is not None and isinstance(payload.state, dict):
-        project = update_project_state(
-            project_id,
-            state_dict=payload.state,
-            stage=kwargs.get("stage"),
-            status=kwargs.get("status"),
-        )
+        try:
+            project = update_project_state(
+                project_id,
+                state_dict=payload.state,
+                stage=kwargs.get("stage"),
+                status=kwargs.get("status"),
+            )
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Could not save project subtitles: {exc}") from exc
         extra_keys = ("name", "duration", "media_id", "media_path")
         if project and any(k in kwargs for k in extra_keys):
             extra = {k: kwargs[k] for k in extra_keys if k in kwargs}
@@ -195,6 +219,73 @@ class BulkDeleteProjectsRequest(BaseModel):
     ids: list[str]
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class DubbingAssemblyRequest(BaseModel):
+    segments: list[dict[str, Any]]
+
+
+@router.post("/api/projects/{project_id}/dubbing/assemble")
+async def assemble_project_dubbing_handler(project_id: str, payload: DubbingAssemblyRequest) -> JSONResponse:
+    project = get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not payload.segments:
+        raise HTTPException(status_code=400, detail="Generate dubbing previews before opening Stage 4")
+
+    from pydub import AudioSegment
+    from pydub.exceptions import CouldntDecodeError
+
+    clips: list[tuple[int, AudioSegment]] = []
+    duration_ms = max(0, int(round(float(project.get("duration") or 0) * 1000)))
+    for segment in payload.segments:
+        if not str(segment.get("targetText") or segment.get("sourceText") or "").strip():
+            continue
+        segment_id = segment.get("id", "unknown")
+        preview_id = str(segment.get("previewAudioId") or "")
+        if not re.fullmatch(r"prev_[0-9a-f]{12}", preview_id):
+            raise HTTPException(status_code=400, detail=f"Generate a voice preview for segment {segment_id} before opening Stage 4")
+        try:
+            start = float(segment.get("startSec"))
+            end = float(segment.get("endSec"))
+            if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
+                raise ValueError("invalid timing")
+            audio_path = voice_store.get_preview_audio_path(f"{preview_id}.wav")
+            if not audio_path.is_file() or audio_path.stat().st_size == 0:
+                raise ValueError("preview file missing")
+            clip = AudioSegment.from_wav(audio_path).set_frame_rate(48000).set_channels(1)
+        except (TypeError, ValueError, OSError, CouldntDecodeError) as exc:
+            raise HTTPException(status_code=400, detail=f"Preview audio or timing is invalid for segment {segment_id}: {exc}") from exc
+        start_ms = int(round(start * 1000))
+        end_ms = int(round(end * 1000))
+        clip = clip[:end_ms - start_ms]
+        clips.append((start_ms, clip))
+        duration_ms = max(duration_ms, end_ms)
+
+    if not clips:
+        raise HTTPException(status_code=400, detail="Generate dubbing previews before opening Stage 4")
+    output = get_project_dir(project_id) / "dubbing" / "voiceover_merged.wav"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    merged = AudioSegment.silent(duration=duration_ms, frame_rate=48000).set_channels(1)
+    for start_ms, clip in clips:
+        merged = merged.overlay(clip, position=start_ms)
+    pending = output.with_name("voiceover_merged.tmp.wav")
+    try:
+        merged.export(pending, format="wav")
+        os.replace(pending, output)
+    finally:
+        pending.unlink(missing_ok=True)
+    return JSONResponse({"ok": True, "audio_url": f"/api/projects/{project_id}/dubbing/audio"})
+
+
+@router.get("/api/projects/{project_id}/dubbing/audio")
+async def get_project_dubbing_audio_handler(project_id: str) -> FileResponse:
+    if not get_project(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    audio_path = get_project_dir(project_id) / "dubbing" / "voiceover_merged.wav"
+    if not audio_path.is_file() or audio_path.stat().st_size == 0:
+        raise HTTPException(status_code=404, detail="Assembled dubbing audio is not available")
+    return FileResponse(audio_path, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/api/projects/bulk-delete")
@@ -258,7 +349,7 @@ def _create_fallback_wav(path: Path, duration_sec: float = 1.0) -> None:
         wav_file.writeframes(data)
 
 
-def _prepare_capcut_assets(project_id: str, request: Request | None = None) -> dict[str, Path]:
+def _prepare_capcut_assets(project_id: str) -> dict[str, Path]:
     project = get_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -280,42 +371,18 @@ def _prepare_capcut_assets(project_id: str, request: Request | None = None) -> d
     target_content = _build_srt(segments, field="rawTranslation" if any("rawTranslation" in s for s in segments) else "targetText")
     target_srt_path.write_text(target_content, encoding="utf-8")
 
-    # 3. video.mp4
-    video_path = exports_dir / "video.mp4"
-    src_media_path = None
-    media_id = project.get("media_id")
-    app_state = getattr(getattr(request, "app", None), "state", None)
-    store = getattr(app_state, "media_store", None) or MEDIA
-    if media_id:
-        rec = store.get(media_id)
-        if rec and rec.path.is_file():
-            src_media_path = rec.path
-    if not src_media_path and project.get("media_path"):
-        cand = Path(project["media_path"])
-        if cand.is_file():
-            src_media_path = cand
-
-    if src_media_path and src_media_path.is_file():
-        if src_media_path.resolve() != video_path.resolve():
-            try:
-                shutil.copy2(src_media_path, video_path)
-            except Exception:
-                video_path = src_media_path
-    elif not video_path.is_file():
-        video_path.touch(exist_ok=True)
-
-    # 4. voiceover_merged.wav
+    # 3. voiceover_merged.wav
     voiceover_path = exports_dir / "voiceover_merged.wav"
     found_audio = None
     dubbing_dir = proj_dir / "dubbing"
     for cand_name in ["voiceover_merged.wav", "target.wav", "lastend.wav", "dubbed.wav"]:
-        cand = exports_dir / cand_name
-        if cand.is_file() and cand.stat().st_size > 0:
-            found_audio = cand
-            break
         cand_dub = dubbing_dir / cand_name
         if cand_dub.is_file() and cand_dub.stat().st_size > 0:
             found_audio = cand_dub
+            break
+        cand = exports_dir / cand_name
+        if cand.is_file() and cand.stat().st_size > 0:
+            found_audio = cand
             break
 
     if found_audio and found_audio.is_file() and found_audio.resolve() != voiceover_path.resolve():
@@ -326,27 +393,27 @@ def _prepare_capcut_assets(project_id: str, request: Request | None = None) -> d
     elif not voiceover_path.is_file() or voiceover_path.stat().st_size == 0:
         _create_fallback_wav(voiceover_path, duration_sec=float(project.get("duration") or 1.0))
 
-    # 5. bundle.zip
+    # 4. bundle.zip
     zip_path = exports_dir / f"capcut_export_{project_id}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(edited_srt_path, "subtitles_edited.srt")
         zf.write(target_srt_path, "subtitles_target.srt")
-        zf.write(video_path, "video.mp4")
         zf.write(voiceover_path, "voiceover_merged.wav")
 
     return {
         "subtitles_edited.srt": edited_srt_path,
         "subtitles_target.srt": target_srt_path,
-        "video.mp4": video_path,
         "voiceover_merged.wav": voiceover_path,
         "bundle.zip": zip_path,
     }
 
 
 @router.get("/api/projects/{project_id}/export-capcut/{asset_name}")
-async def get_capcut_asset_handler(project_id: str, asset_name: str, request: Request):
-    assets = _prepare_capcut_assets(project_id, request)
+async def get_capcut_asset_handler(project_id: str, asset_name: str):
     clean_name = asset_name.lower().strip()
+    if clean_name in {"video.mp4", "video"}:
+        raise HTTPException(status_code=404, detail=f"Unknown asset {asset_name}")
+    assets = _prepare_capcut_assets(project_id)
     if clean_name in {"subtitles_edited.srt", "edited.srt"}:
         target = assets["subtitles_edited.srt"]
         media_type = "text/plain; charset=utf-8"
@@ -355,10 +422,6 @@ async def get_capcut_asset_handler(project_id: str, asset_name: str, request: Re
         target = assets["subtitles_target.srt"]
         media_type = "text/plain; charset=utf-8"
         download_name = "subtitles_target.srt"
-    elif clean_name in {"video.mp4", "video"}:
-        target = assets["video.mp4"]
-        media_type = "video/mp4"
-        download_name = "video.mp4"
     elif clean_name in {"voiceover_merged.wav", "audio.wav", "audio"}:
         target = assets["voiceover_merged.wav"]
         media_type = "audio/wav"

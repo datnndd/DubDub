@@ -82,6 +82,26 @@ export async function fetchProviderModels(
   });
 }
 
+export async function saveProviderAndLoadModels(
+  category: string,
+  providerId: string,
+  payload: { apiKey?: string; model?: string; baseUrl?: string; mirrorUrl?: string }
+): Promise<{ models: string[]; modelError?: string }> {
+  await updateProviderSettings(category, providerId, payload);
+  if (!['deepgram', 'openai', 'chatgpt', 'deepseek', 'gemini', 'elevenlabs'].includes(providerId)) {
+    return { models: [] };
+  }
+  try {
+    const result = await fetchProviderModels(category, providerId, {
+      apiKey: payload.apiKey || undefined,
+      baseUrl: payload.baseUrl || undefined,
+    });
+    return { models: result.models || [] };
+  } catch (error) {
+    return { models: [], modelError: error instanceof Error ? error.message : 'Model refresh failed' };
+  }
+}
+
 export async function fetchStorageSettings(): Promise<StorageMetrics> {
   return apiRequest('/api/settings/storage');
 }

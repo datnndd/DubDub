@@ -121,6 +121,21 @@ def test_runner_can_stop_after_review_checkpoint(runner_env):
     assert "assembling" not in FakeTask.calls
 
 
+def test_forced_asr_skips_project_transcript_reuse(runner_env, monkeypatch):
+    source, output, temp_root = runner_env
+    FakeTask.enabled = {"recogn": True}
+    monkeypatch.setattr(orchestrator, "_persist_stage_artifacts", lambda *_args: None)
+
+    def unexpected_lookup(_hash):
+        raise AssertionError("Reset ASR must not look up a cached transcript")
+
+    from videotrans.core import project_store
+    monkeypatch.setattr(project_store, "find_project_by_audio_hash", unexpected_lookup)
+    result = orchestrator.run_staged_asr(request(source, output, temp_root, project_id="reset-test", force_recogn=True))
+    assert result.status == TaskStatus.SUCCEEDED
+    assert "recogn" in FakeTask.calls
+
+
 def test_events_are_ordered_and_have_one_terminal_event(runner_env):
     source, output, temp_root = runner_env
     events = []

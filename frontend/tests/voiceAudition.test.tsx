@@ -133,6 +133,20 @@ describe('Voice Audition & Playback Coordination', () => {
   });
 
   describe('R3: Standard Sample Phrase & Audio Caching', () => {
+    test('playback failure is exposed to Stage 3 instead of failing silently', async () => {
+      class FailingAudio extends MockAudio {
+        play() {
+          this.playCount++;
+          return Promise.reject(new Error('Audio was blocked'));
+        }
+      }
+      (globalThis as any).Audio = FailingAudio;
+      voiceAuditionManager.play('segment-1', '/api/tts/preview/prev_1/audio');
+      await Promise.resolve();
+      expect(voiceAuditionManager.getError()).toContain('Audio was blocked');
+      expect(voiceAuditionManager.isKeyPlaying('segment-1')).toBe(false);
+    });
+
     test('getStandardSamplePhrase returns Vietnamese standard phrase for vi and English for en', () => {
       const viPhrase = getStandardSamplePhrase('vi');
       expect(viPhrase).toBe('Chào bạn, đây là bản nghe thử giọng nói trí tuệ nhân tạo được tổng hợp thành công.');
@@ -565,6 +579,25 @@ describe('Voice Audition & Playback Coordination', () => {
   });
 
   describe('R2: Direct Voice Audition on Speaker Cards', () => {
+    test('Stage 3 mutes source video and shows the applied preview speed', () => {
+      const segments = useDubDubStore.getState().segments;
+      useDubDubStore.setState({
+        project: { ...useDubDubStore.getState().project, previewUrl: '/media/source.mp4' },
+        segments: [{ ...segments[0], previewSpeedFactor: 1.15 }, ...segments.slice(1)],
+      });
+      const markup = renderToStaticMarkup(<Stage3VoiceDubbing />);
+      expect(markup).toContain('Applied speed: 1.15x');
+      expect(markup).toContain('muted=""');
+      expect(markup).not.toContain('EN Orig');
+    });
+
+    test('Stage 3 displays audition playback errors', () => {
+      voiceAuditionManager.setError('Preview audio could not be loaded');
+      const markup = renderToStaticMarkup(<Stage3VoiceDubbing />);
+      expect(markup).toContain('role="alert"');
+      expect(markup).toContain('Preview audio could not be loaded');
+    });
+
     test('each speaker card renders dedicated preview/audition button beside voice selector', () => {
       const markup = renderToStaticMarkup(<Stage3VoiceDubbing />);
 

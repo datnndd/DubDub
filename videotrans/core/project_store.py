@@ -164,32 +164,27 @@ def update_project_state(
 ) -> Optional[dict[str, Any]]:
     """Update state snapshot and optionally advance the workflow stage."""
     if isinstance(state_dict, dict):
-        try:
-            dirs = init_project_dirs(project_id)
-            if "segments" in state_dict and isinstance(state_dict["segments"], list):
-                (dirs["transcripts"] / "segments.json").write_text(
-                    json.dumps(state_dict["segments"], ensure_ascii=False, indent=2),
-                    encoding="utf-8",
+        dirs = init_project_dirs(project_id)
+        if "segments" in state_dict and isinstance(state_dict["segments"], list):
+            from videotrans.util.help_srt import format_time, ms_to_time_string
+            srt_lines = []
+            for idx, seg in enumerate(state_dict["segments"]):
+                start = (ms_to_time_string(ms=int(round(float(seg["startSec"]) * 1000)))
+                         if "startSec" in seg else format_time(str(seg.get("startTime") or "")))
+                end = (ms_to_time_string(ms=int(round(float(seg["endSec"]) * 1000)))
+                       if "endSec" in seg else format_time(str(seg.get("endTime") or "")))
+                text = seg.get("sourceText", seg.get("text", "")) or ""
+                srt_lines.append(
+                    f"{idx + 1}\n{start} --> {end}\n{text}\n"
                 )
-                from videotrans.util.help_srt import ms_to_time_string
-                srt_lines = []
-                for idx, seg in enumerate(state_dict["segments"]):
-                    line_num = seg.get("id") or seg.get("line") or (idx + 1)
-                    start_ms = int(round(float(seg.get("startSec", 0)) * 1000)) if "startSec" in seg else 0
-                    end_ms = int(round(float(seg.get("endSec", 0)) * 1000)) if "endSec" in seg else 0
-                    st_raw = seg.get("startTime") or ms_to_time_string(ms=start_ms)
-                    et_raw = seg.get("endTime") or ms_to_time_string(ms=end_ms)
-                    text = seg.get("sourceText") or seg.get("text") or ""
-                    srt_lines.append(f"{line_num}\n{st_raw} --> {et_raw}\n{text}\n")
-                if srt_lines:
-                    (dirs["transcripts"] / "source.srt").write_text("\n".join(srt_lines), encoding="utf-8")
-            if "transcript_options" in state_dict and state_dict["transcript_options"]:
-                (dirs["transcripts"] / "transcript_options.json").write_text(
-                    json.dumps(state_dict["transcript_options"], ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-        except Exception as e:
-            logger.warning("Failed to persist transcript artifacts for project %s: %s", project_id, e)
+            (dirs["transcripts"] / "source.srt").write_text("\n".join(srt_lines), encoding="utf-8")
+            (dirs["transcripts"] / "segments.json").write_text(
+                json.dumps(state_dict["segments"], ensure_ascii=False, indent=2), encoding="utf-8",
+            )
+        if "transcript_options" in state_dict and state_dict["transcript_options"]:
+            (dirs["transcripts"] / "transcript_options.json").write_text(
+                json.dumps(state_dict["transcript_options"], ensure_ascii=False, indent=2), encoding="utf-8",
+            )
 
     kwargs: dict[str, Any] = {"state": state_dict}
     if stage is not None:

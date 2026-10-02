@@ -40,6 +40,8 @@ _LANG_MAP = {
 # PaddleOCR 2.x keys that appear in old-style result boxes can be ignored; we
 # only read text + score. Key order within a text unit differs by version.
 _PADDLE_MIN_CONF = 0.0
+_WIN_DLL_HANDLES = []
+_WIN_DLL_PATHS = set()
 
 
 class PaddleOcrProvider(BaseOcrProvider):
@@ -69,11 +71,17 @@ class PaddleOcrProvider(BaseOcrProvider):
             import os, site
             for s in site.getsitepackages():
                 tlib = os.path.join(s, "torch", "lib")
-                if os.path.exists(tlib):
+                if os.path.exists(tlib) and tlib not in _WIN_DLL_PATHS:
                     try:
-                        os.add_dll_directory(tlib)
+                        _WIN_DLL_HANDLES.append(os.add_dll_directory(tlib))
+                        _WIN_DLL_PATHS.add(tlib)
                     except Exception:
                         pass
+            # Paddle and Torch both load native libraries; Torch needs to load first.
+            try:
+                import torch  # noqa: F401
+            except Exception:
+                pass
 
     def _require_engine(self, device: str):
         """Lazily import paddle and build a PaddleOCR engine.
@@ -128,8 +136,7 @@ class PaddleOcrProvider(BaseOcrProvider):
         except Exception as exc:
             self._init_error = str(exc)
             raise RuntimeError(
-                "PaddleOCR optional component is not installed. Install "
-                "paddleocr and paddlepaddle to use the Hard-Subtitle OCR source."
+                f"PaddleOCR could not load: {exc}. Check paddleocr, paddlepaddle, and their dependencies."
             ) from exc
 
         use_gpu = self._resolve_use_gpu(device)
@@ -214,6 +221,7 @@ class PaddleOcrProvider(BaseOcrProvider):
     # -- recognition ------------------------------------------------------
     def recognize(self, image, language=None) -> OcrResult:
         """Run OCR on ``image`` (BGR ndarray or file path) and return OcrResult."""
+        self._ensure_win_dlls()
         device = self.select_device(self._prefer_device)
         self._current_lang = self.map_language(language)
         engine = self._require_engine(device)

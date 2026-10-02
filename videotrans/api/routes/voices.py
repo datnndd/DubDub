@@ -2,6 +2,7 @@
 """RESTful routes for custom voice cloning, audio management, and audition preview."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -493,7 +494,7 @@ async def create_tts_preview_handler(
     force_refresh = bool(payload_obj.force_refresh)
 
     try:
-        preview_id, preview_path = await synthesize_unified_tts_preview(
+        preview_id, preview_path, applied_speed = await synthesize_unified_tts_preview(
             provider=provider,
             voice=voice,
             text=text,
@@ -510,6 +511,8 @@ async def create_tts_preview_handler(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="Voice preview generation timed out. Try again or choose another voice.") from exc
     except Exception as exc:
         logger.exception("Unified TTS preview generation failed", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Preview generation failed: {exc}") from exc
@@ -524,6 +527,7 @@ async def create_tts_preview_handler(
         "voice": voice,
         "voice_id": voice,
         "provider": provider,
+        "applied_speed": applied_speed,
     })
 
 

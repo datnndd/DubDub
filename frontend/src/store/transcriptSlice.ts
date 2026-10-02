@@ -35,7 +35,8 @@ export interface TranscriptSlice {
   splitSegment: (id: number, splitTime?: number) => void;
   deleteSegment: (id: number) => void;
   mergeWithNextSegment: (id: number) => void;
-  extractOcrForSegment: (segmentId: number) => Promise<void>;
+  extractOcrForSegment: (segmentId: number, roi: [number, number, number, number], interval?: { startSec: number; endSec: number }) => Promise<{ text: string; confidence?: number }>;
+  applyOcrText: (segmentId: number, text: string, confidence?: number) => Promise<void>;
   runBatchTranslation: (sourceLang?: string, targetLang?: string) => Promise<void>;
   translateSingleSegment: (segmentId: number) => Promise<void>;
   closeTranslationModal: () => void;
@@ -124,7 +125,8 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
         const cps = Number((text.trim().length / dur).toFixed(1));
         const cpsStatus = cps <= 14.5 ? 'Optimal' : cps <= 18.0 ? 'Good' : 'Warning';
         if (isTarget) {
-          return { ...s, targetText: text, cps, cpsStatus };
+          return { ...s, targetText: text, cps, cpsStatus,
+            previewAudioUrl: undefined, previewAudioId: undefined, previewSpeedFactor: undefined };
         } else {
           return { ...s, sourceText: text, text, cps, cpsStatus };
         }
@@ -242,34 +244,49 @@ export const createTranscriptSlice: StateCreator<any, [], [], TranscriptSlice> =
     get().triggerAutosave();
   },
 
-  extractOcrForSegment: async (segmentId: number) => {
+  extractOcrForSegment: async (segmentId: number, roi: [number, number, number, number], interval?: { startSec: number; endSec: number }) => {
     const mediaId = get().backend?.mediaId;
-    if (!mediaId) return;
+    if (!mediaId) throw new Error('Upload a video before using OCR');
     const seg = get().segments.find((s: Segment) => s.id === segmentId);
-    if (!seg) return;
-    const roi = get().ocrCrop?.roi || [0.05, 0.75, 0.9, 0.2];
+    if (!seg) throw new Error('This segment is no longer available');
+    const result = await requestOcrExtract({
+      mediaId,
+      roi,
+      startSec: interval?.startSec ?? seg.startSec,
+      endSec: interval?.endSec ?? seg.endSec,
+      segmentId,
+      language: get().languages?.source?.code,
+    });
+    if (!result.ok) throw new Error('OCR extraction failed');
+    return { text: result.text || '', confidence: result.confidence };
+  },
 
-    try {
-      const result = await requestOcrExtract({
-        mediaId,
-        roi,
-        startSec: seg.startSec,
-        endSec: seg.endSec,
-        segmentId,
+  applyOcrText: async (segmentId: number, text: string, confidence?: number) => {
+    const recognized = text.trim();
+    if (!recognized) return;
+    if (get().segments.find((segment: Segment) => segment.id === segmentId)?.sourceText === recognized) return;
+    set((state: any) => {
+      const segments = state.segments.map((segment: Segment) => {
+        if (segment.id !== segmentId || segment.sourceText === recognized) return segment;
+        return {
+          ...segment, sourceText: recognized, text: recognized, targetText: '',
+          hasOcrDiff: true, ocrSlideText: recognized, ocrConfidence: confidence,
+          previewAudioUrl: undefined, previewAudioId: undefined,
+          previewSpeedFactor: undefined, previewVoice: undefined,
+        };
       });
-      if (result.ok && result.text) {
-        set((state: any) => ({
-          segments: state.segments.map((s: Segment) =>
-            s.id === segmentId
-              ? { ...s, sourceText: result.text, hasOcrDiff: true, ocrSlideText: result.text }
-              : s
-          ),
-        }));
-        get().triggerAutosave();
-      }
-    } catch (err) {
-      console.warn('OCR extraction failed:', err);
-    }
+      return {
+        segments,
+        dubbingStatus: 'idle',
+        assembledDubUrl: null,
+        stage3Baseline: null,
+        transcriptOptions: state.transcriptOptions ? {
+          ...state.transcriptOptions,
+          [state.selectedSegmentOption]: segments,
+        } : null,
+      };
+    });
+    await get().triggerAutosave(true);
   },
 
   runBatchTranslation: async (sourceLang?: string, targetLang?: string) => {

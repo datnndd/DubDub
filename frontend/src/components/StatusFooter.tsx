@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDubDubStore } from '../store';
-import { Play, ArrowRight, Video, CheckCircle2, AlertCircle, Loader2, StopCircle, Sparkles, Layers } from 'lucide-react';
+import { Play, ArrowRight, Video, CheckCircle2, AlertCircle, Loader2, StopCircle, Sparkles, Layers, RotateCcw } from 'lucide-react';
 
 export const StatusFooter: React.FC = () => {
   const [showCapCutTooltip, setShowCapCutTooltip] = useState(false);
@@ -17,8 +17,15 @@ export const StatusFooter: React.FC = () => {
   const setCapCutModalOpen = useDubDubStore((s) => s.setCapCutModalOpen);
   const dubbingStatus = useDubDubStore((s) => s.dubbingStatus);
   const runFullDubbing = useDubDubStore((s) => s.runFullDubbing);
+  const enterStage4 = useDubDubStore((s) => s.enterStage4);
+  const assemblingDubbing = useDubDubStore((s) => s.assemblingDubbing);
+  const activeProjectId = useDubDubStore((s) => s.activeProjectId);
+  const resetStage = useDubDubStore((s) => s.resetStage);
+  const resettingStage = useDubDubStore((s) => s.resettingStage);
+  const translationStatus = useDubDubStore((s) => s.translationModal.status);
+  const [resetError, setResetError] = useState<string | null>(null);
 
-  const isBusy = jobStatus === 'running' || backend.status === 'analyzing' || dubbingStatus === 'running';
+  const isBusy = jobStatus === 'running' || backend.status === 'analyzing' || dubbingStatus === 'running' || assemblingDubbing || translationStatus === 'translating' || resettingStage;
   const isCancellable = jobStatus === 'running';
 
   const handleAction = () => {
@@ -32,7 +39,7 @@ export const StatusFooter: React.FC = () => {
       setStep(3);
     } else if (currentStep === 3) {
       if (dubbingStatus === 'completed') {
-        setStep(4);
+        void enterStage4();
       } else {
         runFullDubbing();
       }
@@ -75,6 +82,14 @@ export const StatusFooter: React.FC = () => {
       };
     }
     if (currentStep === 3) {
+      if (assemblingDubbing) {
+        return {
+          text: 'Assembling Dubbing…',
+          icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
+          disabled: true,
+          color: 'bg-stone-300 text-stone-600',
+        };
+      }
       if (dubbingStatus === 'running') {
         return {
           text: 'Generating Dubbing…',
@@ -149,6 +164,21 @@ export const StatusFooter: React.FC = () => {
 
       {/* Right: Primary Action Button & CapCut Bridge */}
       <div className="flex items-center gap-3 flex-shrink-0">
+        {resetError && <span role="alert" className="text-[10px] text-rose-700 max-w-72">{resetError}</span>}
+        <button
+          type="button"
+          data-testid={`reset-stage-${currentStep}-btn`}
+          disabled={!activeProjectId || isBusy}
+          onClick={async () => {
+            setResetError(null);
+            try { await resetStage(currentStep); }
+            catch (error: any) { setResetError(error?.message || 'Could not reset stage'); }
+          }}
+          title={`Clear Stage ${currentStep} and dependent results. Uploaded media and exported files are kept.`}
+          className="px-3 py-2 rounded-lg border border-stone-200 text-stone-700 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
+        >
+          <RotateCcw className="w-3.5 h-3.5" /> Reset
+        </button>
         {currentStep === 4 && (
           <div className="relative flex items-center">
             <button
@@ -158,7 +188,7 @@ export const StatusFooter: React.FC = () => {
               onMouseEnter={() => setShowCapCutTooltip(true)}
               onMouseLeave={() => setShowCapCutTooltip(false)}
               className="px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 border border-stone-200 bg-white hover:bg-stone-50 text-stone-800 shadow-2xs transition-all cursor-pointer"
-              title="Export your video, merged audio, and .srt subtitles, then import them directly into CapCut for advanced effects and transitions."
+              title="Export merged audio and .srt subtitles, then import them with your original video into CapCut for advanced effects and transitions."
             >
               <Layers className="w-3.5 h-3.5 text-[#8D4B00]" />
               <span>Continue in CapCut</span>
@@ -169,7 +199,7 @@ export const StatusFooter: React.FC = () => {
                 className="absolute bottom-full mb-2 right-0 w-64 p-2.5 bg-stone-900 text-white text-[11px] rounded-lg shadow-xl z-50 pointer-events-none"
               >
                 <div className="font-semibold text-amber-300 mb-0.5">Edit in CapCut</div>
-                Export your video, merged audio, and .srt subtitles, then import them directly into CapCut for advanced effects and transitions.
+                Export merged audio and .srt subtitles, then import them with your original video into CapCut for advanced effects and transitions.
               </div>
             )}
           </div>
@@ -177,7 +207,7 @@ export const StatusFooter: React.FC = () => {
 
         <button
           onClick={handleAction}
-          disabled={actionConfig.disabled}
+          disabled={actionConfig.disabled || resettingStage}
           className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer ${
             actionConfig.color
           } ${actionConfig.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}

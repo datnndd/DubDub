@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from videotrans import recognition, translator, tts
-from videotrans.configure.config import ROOT_DIR, TEMP_DIR
+from videotrans.configure.config import ROOT_DIR, TEMP_DIR, settings
 
 FRONTEND_DIR = Path(ROOT_DIR) / "frontend"
 UPLOAD_DIR = Path(TEMP_DIR) / "webui_uploads"
@@ -65,6 +65,17 @@ ASR_PROVIDERS = (
         "models": ("large-v3",),
     },
 )
+
+
+def asr_models(provider: dict[str, Any]) -> list[str]:
+    """Return built-in models plus models loaded from the provider."""
+    models = list(provider["models"])
+    if provider["id"] == "deepgram":
+        loaded = [model.strip() for model in str(settings.get("deepgram_model", "")).split(",")]
+        models.extend(model for model in loaded if model and model not in models)
+    return models
+
+
 ASR_BY_TYPE = {provider["recognType"]: provider for provider in ASR_PROVIDERS}
 ASR_BY_ID = {provider["id"]: provider for provider in ASR_PROVIDERS}
 

@@ -31,7 +31,7 @@ export function buildPrepareJobRequest(state: any) {
       sourceLanguage: state.languages?.source?.code || 'zh-cn',
       targetLanguage: state.languages?.target?.code || 'vi',
       timingMode: state.languages?.timingMode || 'voice',
-      removeNoise: Boolean(state.engines?.removeNoise),
+      forceAsr: Boolean(state.forceAsr),
       speakerDiarization: Boolean(state.engines?.speakerDiarization),
       speakerCount: Number(state.engines?.speakerCount || 0),
     },
@@ -114,6 +114,7 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
           }
         }
         set({
+          forceAsr: false,
           jobStatus: 'completed',
           jobProgress: 100,
           jobMessage: 'Job completed successfully',
@@ -177,6 +178,7 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
       } catch (_) {}
 
       set({
+        forceAsr: false,
         jobStatus: 'completed',
         jobProgress: 100,
         jobMessage: message || 'Speech recognition complete',
@@ -296,6 +298,7 @@ export const createJobSlice: StateCreator<any, [], [], JobSlice> = (set, get) =>
           get().setSegments(job.segments);
         }
         set({
+          forceAsr: false,
           jobStatus: 'completed',
           jobProgress: 100,
           jobMessage: job.message || 'Speech recognition complete',

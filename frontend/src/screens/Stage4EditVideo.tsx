@@ -29,6 +29,7 @@ export const Stage4EditVideo: React.FC = () => {
   const setActiveSegmentId = useDubDubStore((s) => s.setActiveSegmentId);
   const subtitleStyles = useDubDubStore((s) => s.subtitleStyles);
   const editVideo = useDubDubStore((s) => s.editVideo);
+  const assembledDubUrl = useDubDubStore((s) => s.assembledDubUrl);
   const setAudioMix = useDubDubStore((s) => s.setAudioMix);
   const toggleAudioMute = useDubDubStore((s) => s.toggleAudioMute);
   const setBackgroundAudio = useDubDubStore((s) => s.setBackgroundAudio);
@@ -183,6 +184,9 @@ export const Stage4EditVideo: React.FC = () => {
                       </button>
                     </div>
                   </div>
+                  <p className="text-[10px] text-stone-500">
+                    {assembledDubUrl ? 'Stitched Stage 3 voiceover loaded' : 'No stitched voiceover loaded'}
+                  </p>
                   <input
                     type="range"
                     data-mix-slider="dubbed"

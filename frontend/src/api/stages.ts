@@ -21,6 +21,7 @@ export async function requestOcrExtract(payload: {
   startSec: number;
   endSec: number;
   segmentId?: number;
+  language?: string;
 }): Promise<{ ok: boolean; text: string; confidence?: number; boxNumber?: string }> {
   return apiRequest('/api/ocr/extract', {
     method: 'POST',

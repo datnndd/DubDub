@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -40,13 +41,13 @@ def extract_ocr_segment_text(
     frame_fetcher: Any = None,
     ocr_runner: Any = None,
 ) -> dict[str, Any]:
-    """Extract video frames across [start_sec, end_sec], crop ROI, and run PaddleOCR."""
+    """Extract video frames within [start_sec, end_sec), crop ROI, and run PaddleOCR."""
     try:
         from videotrans.configure.config import FFMPEG_BIN
         ffmpeg_exe = FFMPEG_BIN or getattr(runtime_config, "FFMPEG_BIN", None) or runtime_config.settings.get("ffmpeg_cmd") or "ffmpeg"
     except ImportError:
         ffmpeg_exe = getattr(runtime_config, "FFMPEG_BIN", None) or runtime_config.settings.get("ffmpeg_cmd") or "ffmpeg"
-    from videotrans.ocr import PADDLE_OCR, crop_roi, run as run_ocr
+    from videotrans.ocr import PADDLE_OCR, crop_roi, get_provider
     from videotrans.ocr._frame_source import frame_at
     from videotrans.ocr._text import representative_text
 
@@ -63,16 +64,24 @@ def extract_ocr_segment_text(
         roi_tuple = (0.0, 0.0, 1.0, 1.0)
 
     ffmpeg_exe = ffmpeg_exe or "ffmpeg"
-    start_ms = int(max(0.0, start_sec) * 1000)
-    end_ms = int(max(start_sec, end_sec) * 1000)
+    start_ms = math.ceil(max(0.0, start_sec) * 1000)
+    end_ms = math.ceil(max(start_sec, end_sec) * 1000)
+    if start_ms >= end_ms:
+        raise ValueError("OCR segment has no sampleable time inside its interval")
+    last_ms = max(start_ms, end_ms - 1)
 
     mid_ms = (start_ms + end_ms) // 2
-    sample_times = sorted(set([start_ms, mid_ms, max(start_ms, end_ms - 100)]))
+    sample_times = sorted(set([start_ms, min(mid_ms, last_ms), max(start_ms, end_ms - 100)]))
     if end_ms - start_ms >= 1000:
-        sample_times = sorted(set(list(range(start_ms, end_ms, 500)) + [end_ms]))
+        sample_times = sorted(set(list(range(start_ms, end_ms, 500)) + [last_ms]))
 
     observations = []
+    decoded_frames = 0
+    successful_ocr_calls = 0
+    first_ocr_error: Exception | None = None
+    provider = None
     for ts in sample_times:
+        frame, w, h = None, 0, 0
         if frame_fetcher is not None:
             try:
                 res = frame_fetcher(media_path, ts / 1000.0)
@@ -89,30 +98,43 @@ def extract_ocr_segment_text(
                 else:
                     w, h = 0, 0
         else:
-            frame, w, h = frame_at(ffmpeg_exe, str(media_path), ts)
+            frame, w, h = frame_at(ffmpeg_exe, str(media_path), ts, end_ms=end_ms)
         if frame is None or w <= 0 or h <= 0:
             continue
+        decoded_frames += 1
         try:
             cropped = crop_roi(frame, roi_tuple)
-        except Exception:
-            cropped = None
+        except Exception as exc:
+            raise RuntimeError(f"Could not crop the selected video region: {exc}") from exc
         if cropped is None:
             if ocr_runner is not None and (hasattr(frame, "shape") or hasattr(frame, "size")):
                 cropped = frame
             else:
-                continue
+                raise RuntimeError("The selected OCR region contains no video pixels")
         try:
             if ocr_runner is not None:
                 ocr_res = ocr_runner(cropped)
             else:
-                ocr_res = run_ocr(provider=PADDLE_OCR, image=cropped, language=language)
+                if provider is None:
+                    provider = get_provider(provider=PADDLE_OCR)
+                ocr_res = provider.recognize(cropped, language)
+            successful_ocr_calls += 1
             if ocr_res:
                 if isinstance(ocr_res, list):
                     observations.extend(ocr_res)
+                elif isinstance(ocr_res, dict):
+                    observations.append(ocr_res)
                 elif getattr(ocr_res, "text", None):
                     observations.append(ocr_res)
         except Exception as exc:
+            if first_ocr_error is None:
+                first_ocr_error = exc
             runtime_config.logger.debug(f"OCR frame error at {ts}ms: {exc}")
+
+    if decoded_frames == 0:
+        raise RuntimeError("No video frames could be decoded for this segment")
+    if successful_ocr_calls == 0:
+        raise RuntimeError(f"OCR could not process any sampled frame: {first_ocr_error}") from first_ocr_error
 
     normalized_obs: list[tuple[str, float]] = []
     for obs in observations:

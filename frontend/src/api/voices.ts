@@ -255,6 +255,7 @@ export interface TTSPreviewResponse {
   audio_url: string;
   voice?: string;
   provider?: number;
+  applied_speed?: number;
 }
 
 export async function previewTTS(

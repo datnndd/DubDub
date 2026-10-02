@@ -20,6 +20,7 @@ from videotrans.util.help_role import role_menu
 from videotrans.api.catalog import (
     ASR_BY_ID,
     ASR_PROVIDERS,
+    asr_models,
     TIMING_MODES,
     TRANSLATION_BY_ID,
     TRANSLATION_MODES,
@@ -485,7 +486,7 @@ async def test_asr_settings_handler(
         raise HTTPException(status_code=404, detail="This ASR provider does not use a third-party connection")
 
     model_name = str(payload.model or "").strip()
-    if model_name not in provider["models"]:
+    if model_name not in asr_models(provider):
         raise HTTPException(status_code=400, detail=f"Model {model_name or 'missing'} is not supported by {provider['label']}")
     try:
         settings_store = getattr(request.app.state, "settings_store", None)

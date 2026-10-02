@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useDubDubStore } from '../store';
 import { VideoPlayer } from '../components/VideoPlayer';
 import {
@@ -18,8 +18,67 @@ import {
   AlignLeft,
   Globe,
   ArrowRight,
+  Download,
 } from 'lucide-react';
 import { ProviderDocLink } from '../components/ProviderDocLink';
+import { generateSrtContent, triggerBlobDownload } from '../components/CapCutExportModal';
+import { Stage2OcrDialog, type BatchOcrResult } from '../components/Stage2OcrDialog';
+import type { Segment } from '../types/segment';
+
+export function untranslatedSegmentNumbers(segments: Array<{ targetText?: string }>): number[] {
+  return segments.flatMap((segment, index) => segment.targetText?.trim() ? [] : [index + 1]);
+}
+
+export function exportTranslatedSrt(segments: Array<{ targetText?: string; startSec: number; endSec: number }>): void {
+  if (!segments.length || untranslatedSegmentNumbers(segments).length) {
+    throw new Error('Translate every segment before exporting the SRT');
+  }
+  triggerBlobDownload(generateSrtContent(segments, 'targetText'), 'translated_subtitles.srt');
+}
+
+export function selectedOcrSegments(segments: Segment[], selectedIds: number[]): Segment[] {
+  const selected = new Set(selectedIds);
+  return segments.filter((segment) => selected.has(segment.id));
+}
+
+export async function applyExtractedOcrResult(
+  entry: BatchOcrResult,
+  currentSegments: () => Segment[],
+  apply: (id: number, text: string, confidence?: number) => Promise<void>,
+): Promise<BatchOcrResult> {
+  if (entry.error || !entry.text?.trim()) return { ...entry, applied: false };
+  const current = currentSegments().find((segment) => segment.id === entry.segment.id);
+  if (!current || current.startSec !== entry.segment.startSec || current.endSec !== entry.segment.endSec) {
+    return { ...entry, applied: false, error: 'This segment or its timing changed. Run OCR again.' };
+  }
+  if (current.sourceText === entry.text.trim()) return { ...entry, applied: false };
+  try {
+    await apply(entry.segment.id, entry.text, entry.confidence);
+    return { ...entry, applied: true };
+  } catch (error) {
+    return { ...entry, applied: false, error: `Source text changed, but the project could not be saved: ${error instanceof Error ? error.message : 'Unknown error'}` };
+  }
+}
+
+export async function extractSelectedOcrSegments(
+  snapshot: Segment[],
+  roi: [number, number, number, number],
+  extract: (id: number, roi: [number, number, number, number], interval: Segment) => Promise<{ text: string; confidence?: number }>,
+  onResult: (result: BatchOcrResult) => Promise<void> | void,
+  stillActive: () => boolean,
+): Promise<void> {
+  for (const segment of snapshot) {
+    if (!stillActive()) return;
+    let entry: BatchOcrResult;
+    try {
+      entry = { segment, ...await extract(segment.id, roi, segment) };
+    } catch (error) {
+      entry = { segment, error: error instanceof Error ? error.message : 'OCR extraction failed' };
+    }
+    if (!stillActive()) return;
+    await onResult(entry);
+  }
+}
 
 const FALLBACK_TRANSLATION_PROVIDERS = [
   { id: 'google', label: 'Google Translate', translateType: 0, requiresSettings: false, configured: true },
@@ -62,6 +121,20 @@ export const Stage2ReviewTranscript: React.FC = () => {
   const deleteSegment = useDubDubStore((s) => s.deleteSegment);
   const mergeWithNextSegment = useDubDubStore((s) => s.mergeWithNextSegment);
   const extractOcrForSegment = useDubDubStore((s) => s.extractOcrForSegment);
+  const applyOcrText = useDubDubStore((s) => s.applyOcrText);
+  const ocrRoi = useDubDubStore((s) => s.ocrCrop.roi);
+  const setOcrCropRoi = useDubDubStore((s) => s.setOcrCropRoi);
+  const project = useDubDubStore((s) => s.project);
+  const activeProjectId = useDubDubStore((s) => s.activeProjectId);
+  const [selectedOcrIds, setSelectedOcrIds] = useState<number[]>([]);
+  const [ocrSelectionHint, setOcrSelectionHint] = useState(false);
+  const [ocrDialogSegments, setOcrDialogSegments] = useState<Segment[] | null>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrResult, setOcrResult] = useState<{ text: string; confidence?: number; applied?: boolean } | null>(null);
+  const [ocrBatchResults, setOcrBatchResults] = useState<BatchOcrResult[]>([]);
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const ocrRequestId = useRef(0);
   const runBatchTranslation = useDubDubStore((s) => s.runBatchTranslation);
   const translateSingleSegment = useDubDubStore((s) => s.translateSingleSegment);
   const translationModal = useDubDubStore((s) => s.translationModal);
@@ -111,6 +184,66 @@ export const Stage2ReviewTranscript: React.FC = () => {
       (seg.speakerName && String(seg.speakerName).toLowerCase().includes(q))
     );
   });
+  const segmentIds = segments.map((segment) => segment.id).join(',');
+  useEffect(() => {
+    setSelectedOcrIds([]);
+    setOcrSelectionHint(false);
+    ocrRequestId.current += 1;
+    setOcrDialogSegments(null);
+  }, [activeProjectId, segmentIds]);
+  const untranslated = untranslatedSegmentNumbers(segments || []);
+  const canExportSrt = segments.length > 0 && untranslated.length === 0;
+  const ocrSegment = ocrDialogSegments?.[0];
+
+  const openOcr = (chosen: Segment[]) => {
+    if (!chosen.length) return;
+    ocrRequestId.current += 1;
+    setOcrDialogSegments(chosen);
+    setOcrResult(null);
+    setOcrBatchResults([]);
+    setOcrProgress(0);
+    setOcrError(null);
+  };
+
+  const closeOcr = () => {
+    ocrRequestId.current += 1;
+    setOcrDialogSegments(null);
+    setOcrLoading(false);
+    setOcrError(null);
+    setOcrResult(null);
+    setOcrBatchResults([]);
+    setOcrProgress(0);
+  };
+
+  const runOcr = async () => {
+    if (!ocrDialogSegments?.length) return;
+    const chosenIds = ocrDialogSegments.map((segment) => segment.id);
+    const snapshot = selectedOcrSegments(useDubDubStore.getState().segments, chosenIds);
+    if (snapshot.length !== chosenIds.length) {
+      setOcrError('A selected segment is no longer available. Close this dialog and select the segments again.');
+      return;
+    }
+    const requestId = ++ocrRequestId.current;
+    setOcrLoading(true);
+    setOcrError(null);
+    setOcrResult(null);
+    setOcrBatchResults([]);
+    setOcrProgress(0);
+    setOcrDialogSegments(snapshot);
+    await extractSelectedOcrSegments(snapshot, ocrRoi, extractOcrForSegment, async (entry) => {
+      const applied = await applyExtractedOcrResult(entry, () => useDubDubStore.getState().segments, applyOcrText);
+      if (requestId !== ocrRequestId.current) return;
+      if (snapshot.length === 1) {
+        setOcrResult(applied.error && !applied.text ? null :
+          { text: applied.text || '', confidence: applied.confidence, applied: applied.applied });
+        setOcrError(applied.error || null);
+      } else {
+        setOcrBatchResults((results) => [...results, applied]);
+        setOcrProgress((progress) => progress + 1);
+      }
+    }, () => requestId === ocrRequestId.current);
+    if (requestId === ocrRequestId.current) setOcrLoading(false);
+  };
 
   return (
     <div className="flex-1 min-h-0 w-full p-2.5 grid grid-cols-12 gap-2.5 overflow-hidden">
@@ -195,7 +328,23 @@ export const Stage2ReviewTranscript: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5" />
               <span>Batch Translate</span>
             </button>
+            <button
+              type="button"
+              data-testid="export-translated-srt-btn"
+              disabled={!canExportSrt}
+              onClick={() => exportTranslatedSrt(segments)}
+              title={canExportSrt ? 'Download the current translated subtitles as an SRT file' : 'Translate every segment before exporting'}
+              className="px-3 py-1.5 rounded-md border border-[#8D4B00] text-[#8D4B00] bg-white text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export Translated SRT
+            </button>
           </div>
+          {untranslated.length > 0 && (
+            <p data-testid="untranslated-segments" className="text-[11px] text-amber-800">
+              Translate segment{untranslated.length === 1 ? '' : 's'} {untranslated.join(', ')} before exporting the SRT.
+            </p>
+          )}
 
           {/* Language Pair Routing Strip */}
           <div className="flex items-center gap-2 pt-1 border-t border-stone-200/70 flex-wrap text-xs">
@@ -306,6 +455,23 @@ export const Stage2ReviewTranscript: React.FC = () => {
           </div>
         </div>
 
+        <div className="px-3 py-2 border-b border-amber-200 bg-amber-50 shrink-0 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-stone-900">Video text OCR</span>
+            <span className="text-[11px] font-semibold text-[#8D4B00]">{selectedOcrIds.length} selected</span>
+          </div>
+          <p className="text-[11px] text-stone-700">Select segment checkboxes below to read video text only within their time ranges.</p>
+          <button type="button" data-testid="ocr-selected-btn"
+            onClick={() => selectedOcrIds.length
+              ? openOcr(selectedOcrSegments(segments, selectedOcrIds))
+              : setOcrSelectionHint(true)}
+            className="w-full px-3 py-2 rounded-md bg-[#8D4B00] hover:bg-[#743D00] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-2xs cursor-pointer">
+            <Sparkles className="w-3.5 h-3.5" />
+            Run OCR on Selected Segments
+          </button>
+          {ocrSelectionHint && <p role="alert" className="text-[11px] font-semibold text-amber-900">Check one or more segments below, then run OCR.</p>}
+        </div>
+
         {/* Segment Cards List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
           {filteredSegments.map((seg) => {
@@ -326,8 +492,19 @@ export const Stage2ReviewTranscript: React.FC = () => {
                 }`}
               >
                 {/* Card Header: Speaker, Timecode, CPS */}
-                <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                   <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1 text-[11px] font-semibold text-[#8D4B00] cursor-pointer shrink-0"
+                      onClick={(event) => event.stopPropagation()}>
+                      <input type="checkbox" aria-label={`Select segment ${seg.id} for OCR`}
+                        data-testid={`ocr-select-${seg.id}`} checked={selectedOcrIds.includes(seg.id)}
+                        onChange={(event) => {
+                          setOcrSelectionHint(false);
+                          setSelectedOcrIds((ids) => event.target.checked
+                            ? [...ids, seg.id] : ids.filter((id) => id !== seg.id));
+                        }} className="h-4 w-4 accent-[#8D4B00]" />
+                      OCR
+                    </label>
                     <span className="px-2 py-0.5 rounded-full bg-[#8D4B00] text-white text-[9px] font-bold uppercase tracking-wide">
                       {seg.speakerName || seg.speakerId || 'Speaker 1'}
                     </span>
@@ -412,7 +589,7 @@ export const Stage2ReviewTranscript: React.FC = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          extractOcrForSegment(seg.id);
+                          openOcr([seg]);
                         }}
                         className="text-[9px] text-stone-500 hover:text-stone-800 font-semibold hover:underline flex items-center gap-0.5 cursor-pointer"
                       >
@@ -434,6 +611,22 @@ export const Stage2ReviewTranscript: React.FC = () => {
           })}
         </div>
       </div>
+
+      {ocrSegment && (
+        <Stage2OcrDialog key={`${ocrSegment.id}-${ocrResult?.text ?? ''}`} segment={ocrSegment} videoUrl={project.previewUrl || ''}
+          batchSegments={ocrDialogSegments || undefined} batchResults={ocrBatchResults} currentSegments={segments} progress={ocrProgress}
+          roi={ocrRoi} onRoiChange={(roi) => {
+            ocrRequestId.current += 1;
+            setOcrCropRoi(roi);
+            setOcrLoading(false);
+            setOcrError(null);
+            setOcrResult(null);
+            setOcrBatchResults([]);
+            setOcrProgress(0);
+          }}
+          onExtract={() => void runOcr()}
+          onClose={closeOcr} loading={ocrLoading} result={ocrResult} error={ocrError} />
+      )}
 
       {/* Translation Progress Modal */}
       {translationModal.active && (

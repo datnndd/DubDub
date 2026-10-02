@@ -835,7 +835,7 @@ def test_capcut_4_asset_export_and_endpoints(tmp_path, monkeypatch):
     assets = _prepare_capcut_assets(proj_id)
     assert assets["subtitles_edited.srt"].is_file()
     assert assets["subtitles_target.srt"].is_file()
-    assert assets["video.mp4"].is_file()
+    assert "video.mp4" not in assets
     assert assets["voiceover_merged.wav"].is_file()
     assert assets["bundle.zip"].is_file()
 
@@ -850,5 +850,11 @@ def test_capcut_4_asset_export_and_endpoints(tmp_path, monkeypatch):
         namelist = zf.namelist()
         assert "subtitles_edited.srt" in namelist
         assert "subtitles_target.srt" in namelist
-        assert "video.mp4" in namelist
+        assert "video.mp4" not in namelist
         assert "voiceover_merged.wav" in namelist
+
+    from fastapi import HTTPException
+    from videotrans.api.routes.projects import get_capcut_asset_handler
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(get_capcut_asset_handler(proj_id, "video.mp4"))
+    assert exc.value.status_code == 404

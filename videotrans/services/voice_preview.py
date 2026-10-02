@@ -563,16 +563,28 @@ async def synthesize_unified_tts_preview(
     auto_speed: bool = False,
     slot_duration_s: Optional[float] = None,
     max_speed_rate: Optional[float] = 1.25,
-) -> tuple[str, Path]:
+) -> tuple[str, Path, float]:
     """
     Unified voice preview generator supporting all 4 TTS providers
     (0: ElevenLabs, 1: OmniVoice, 2: VieNeu-TTS, 3: Gemini TTS) and custom voices.
-    Returns (preview_id, preview_file_path).
+    Returns (preview_id, preview_file_path, applied_speed).
     """
     voice_store.init_voice_dirs()
     sample_text = (text or "").strip() or get_default_preview_text(language or "vi")
     voice_str = str(voice or "").strip()
     tp = dict(tuning_params or {})
+
+    async def finish_preview(path: Path, preview_id: str) -> tuple[str, Path, float]:
+        applied_speed = 1.0
+        if auto_speed and slot_duration_s and slot_duration_s > 0:
+            from videotrans.services.audio_fit import smart_fit_audio_file
+            _, applied_speed, fit_status = await asyncio.to_thread(
+                smart_fit_audio_file, path, slot_duration_s, max_speed_rate or 1.25,
+            )
+            if fit_status in {"error", "not_found"}:
+                raise RuntimeError("Could not adjust preview audio to fit the subtitle timing")
+        path.with_suffix(".json").write_text(json.dumps({"applied_speed": applied_speed}), encoding="utf-8")
+        return preview_id, path, applied_speed
 
     # 1. Check if voice refers to an existing custom voice
     cv = voice_store.get_voice(voice_str, db_path=db_path) if voice_str else None
@@ -623,15 +635,7 @@ async def synthesize_unified_tts_preview(
         await asyncio.to_thread(_preview_synthesizer, voice_dict, p_path, sample_text)
         if not p_path.is_file() or p_path.stat().st_size == 0:
             generate_fallback_preview_wav(p_path)
-        if auto_speed and slot_duration_s and slot_duration_s > 0:
-            from videotrans.services.audio_fit import smart_fit_audio_file
-            await asyncio.to_thread(
-                smart_fit_audio_file,
-                p_path,
-                slot_duration_s,
-                max_speed_rate or 1.25,
-            )
-        return p_id, p_path
+        return await finish_preview(p_path, p_id)
 
     # 3. Standard/Preset or Custom voice synthesis with deterministic cache
     tuning_key = json.dumps(tp, sort_keys=True)
@@ -641,12 +645,25 @@ async def synthesize_unified_tts_preview(
     preview_path = voice_store.get_preview_audio_path(preview_filename)
 
     # Return cached if valid and not force_refresh
+    def cached_speed() -> float | None:
+        try:
+            return float(json.loads(preview_path.with_suffix(".json").read_text(encoding="utf-8"))["applied_speed"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
     if not force_refresh and _is_valid_preview_wav(preview_path):
-        return preview_id, preview_path
+        speed_from_cache = cached_speed()
+        if speed_from_cache is not None:
+            return preview_id, preview_path, speed_from_cache
 
     async with _preview_lock:
         if not force_refresh and _is_valid_preview_wav(preview_path):
-            return preview_id, preview_path
+            speed_from_cache = cached_speed()
+            if speed_from_cache is not None:
+                return preview_id, preview_path, speed_from_cache
+
+        preview_path.unlink(missing_ok=True)
+        preview_path.with_suffix(".json").unlink(missing_ok=True)
 
         async def _do_synthesis() -> None:
             # VieNeu-TTS
@@ -765,20 +782,13 @@ async def synthesize_unified_tts_preview(
 
         try:
             await asyncio.wait_for(_do_synthesis(), timeout=PREVIEW_TIMEOUT_SECONDS)
-        except Exception as exc:
-            logger.info("Direct TTS engine preview synthesis skipped or unavailable (%s), generating fallback preview audio", exc)
-            generate_fallback_preview_wav(preview_path)
+        except Exception:
+            preview_path.unlink(missing_ok=True)
+            logger.exception("TTS preview synthesis failed")
+            raise
 
         if not _is_valid_preview_wav(preview_path):
-            generate_fallback_preview_wav(preview_path)
+            preview_path.unlink(missing_ok=True)
+            raise RuntimeError("TTS preview did not produce audible audio")
 
-        if auto_speed and slot_duration_s and slot_duration_s > 0:
-            from videotrans.services.audio_fit import smart_fit_audio_file
-            await asyncio.to_thread(
-                smart_fit_audio_file,
-                preview_path,
-                slot_duration_s,
-                max_speed_rate or 1.25,
-            )
-
-        return preview_id, preview_path
+        return await finish_preview(preview_path, preview_id)

@@ -17,6 +17,7 @@ from videotrans.util.help_role import role_menu
 from videotrans.api.catalog import (
     ASR_BY_TYPE,
     ASR_PROVIDERS,
+    asr_models,
     OUTPUT_DIR,
     TIMING_MODES,
     TRANSLATION_BY_TYPE,
@@ -118,7 +119,7 @@ def build_task_params(
         if asr_provider is None:
             raise ValueError(f"Unsupported ASR engine: {recogn_type}")
         model_name = str(options.get("modelName") or asr_provider["models"][0])
-        if model_name not in asr_provider["models"]:
+        if model_name not in asr_models(asr_provider):
             raise ValueError(f"Model {model_name} is not supported by {asr_provider['label']}")
 
     source_language = str(options.get("sourceLanguage") or "zh-cn")
@@ -210,7 +211,6 @@ def build_task_params(
         "voice_role": voice_role,
         "line_roles": line_roles,
         "is_cuda": bool(options.get("useCuda", False)),
-        "remove_noise": bool(options.get("removeNoise", False)),
         "enable_diariz": bool(options.get("speakerDiarization", False)),
         "nums_diariz": int(options.get("speakerCount", 0) or 0),
         "voice_rate": str(options.get("voiceRate") or "+0%"),
@@ -231,10 +231,11 @@ def build_task_params(
         "source_audio_volume": _safe_volume(options.get("originalAudioVolume"), 0.0),
         "thumbnail": None if is_asr_only else options.get("thumbnailPath"),
         "subtitle_style": options.get("subtitleStyle") if isinstance(options.get("subtitleStyle"), dict) else None,
-        "auto_speed": bool(options.get("autoFitVoiceSpeed", options.get("auto_speed", True))),
-        "max_speed_rate": float(options.get("maxSpeedRate", options.get("max_speed_rate", 1.25))),
+        "force_recogn": bool(options.get("forceAsr", False)) if is_asr_only else False,
         "clear_cache": job_type not in {"render", "translation"},
         "embed_bgm": not is_asr_only,
         "project_id": str(pid) if pid else None,
     })
+    if not is_asr_only:
+        params["remove_noise"] = bool(options.get("removeNoise", False))
     return params

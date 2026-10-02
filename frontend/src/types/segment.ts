@@ -18,6 +18,7 @@ export interface Segment {
   voiceOverride?: string;
   previewAudioUrl?: string;
   previewAudioId?: string;
+  previewSpeedFactor?: number;
   previewVoice?: string;
   hasOcrDiff?: boolean;
   ocrBoxNumber?: string;

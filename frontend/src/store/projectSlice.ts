@@ -1,6 +1,10 @@
 import { StateCreator } from 'zustand';
 import type { ProjectRecord } from '../types/project';
-import { fetchProjects, fetchProject, createProject, deleteProject as apiDeleteProject, bulkDeleteProjects, updateProjectState } from '../api/projects';
+import type { Segment } from '../types/segment';
+import { fetchProjects, fetchProject, createProject, deleteProject as apiDeleteProject, bulkDeleteProjects, updateProjectState, resetProjectStage } from '../api/projects';
+import { DEFAULT_EDIT_VIDEO, DEFAULT_SUBTITLE_STYLES } from './editVideoSlice';
+
+let pendingProjectSave: Promise<void> = Promise.resolve();
 
 export type MainView = 'projects' | 'dubbing' | 'voices';
 
@@ -11,16 +15,20 @@ export interface ProjectSlice {
   projectsList: ProjectRecord[];
   currentStep: number;
   maxUnlockedStep: number;
+  forceAsr: boolean;
+  stage3Baseline: Segment[] | null;
+  resettingStage: boolean;
   
   setActiveView: (view: MainView) => void;
-  setStep: (step: number) => void;
+  setStep: (step: number) => Promise<void>;
   setDrawerOpen: (open: boolean) => void;
   loadProjects: () => Promise<void>;
   selectProject: (id: string, autoNavigate?: boolean) => Promise<void>;
   createNewProject: (name?: string, mediaId?: string, duration?: number) => Promise<string>;
   deleteProjectById: (id: string) => Promise<void>;
   deleteProjectsByIds: (ids: string[]) => Promise<void>;
-  triggerAutosave: () => void;
+  triggerAutosave: (reportFailure?: boolean) => Promise<void>;
+  resetStage: (stage: number) => Promise<void>;
 }
 
 export function normalizeLanguages(incoming: any, fallback?: any) {
@@ -98,16 +106,19 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
   projectsList: [],
   currentStep: 1,
   maxUnlockedStep: 4,
+  forceAsr: false,
+  stage3Baseline: null,
+  resettingStage: false,
 
   setActiveView: (view: MainView) => set({ activeView: view }),
 
   setStep: (step: number) => {
-    if (step < 1 || step > 4) return;
+    if (step < 1 || step > 4) return Promise.resolve();
     set((state: any) => ({
       currentStep: step,
       maxUnlockedStep: Math.max(state.maxUnlockedStep || 1, step),
     }));
-    get().triggerAutosave();
+    return get().triggerAutosave();
   },
 
   setDrawerOpen: (open: boolean) => set({ drawerOpen: open }),
@@ -189,13 +200,23 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
         maxUnlockedStep: Math.max(project.stage || 1, targetStep),
         drawerOpen: false,
         segments: normalizedSegments,
+        ocrCrop: { active: false, segmentId: null, roi: stateData?.ocrCrop?.roi || [0.05, 0.75, 0.9, 0.2], loading: false, error: null },
         transcriptOptions: stateData?.transcriptOptions || null,
         selectedSegmentOption: stateData?.selectedSegmentOption || 'utterances',
         speakers: normalizedSpeakers,
         speakerVoiceMap: stateData?.speakerVoiceMap || {},
         segmentVoiceOverrides: mergedOverrides,
         dubbingStatus: stateData?.dubbingStatus || 'idle',
-        tuning: stateData?.tuning ? { ...state.tuning, ...stateData.tuning } : state.tuning,
+        dubbingError: null,
+        assemblingDubbing: false,
+        assembledDubUrl: targetStep >= 4 ? `/api/projects/${encodeURIComponent(id)}/dubbing/audio` : null,
+        tuning: stateData?.tuning || { pace: 1.0, timbreWarmth: 62, ducking: '85/15' },
+        autoFitVoiceSpeed: stateData?.autoFitVoiceSpeed ?? true,
+        maxSpeedRate: stateData?.maxSpeedRate ?? 1.25,
+        forceAsr: Boolean(stateData?.forceAsr),
+        stage3Baseline: stateData?.stage3Baseline || null,
+        subtitleStyles: stateData?.subtitleStyles || { ...DEFAULT_SUBTITLE_STYLES },
+        editVideo: stateData?.editVideo ? { ...DEFAULT_EDIT_VIDEO, ...stateData.editVideo } : { ...DEFAULT_EDIT_VIDEO },
         jobStatus: 'idle',
         jobProgress: null,
         jobStage: null,
@@ -213,8 +234,9 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
         },
         languages: normalizeLanguages(stateData?.languages, state.languages),
         engines: {
-          ...state.engines,
-          ...(stateData?.engines || {}),
+          speakerDiarization: Boolean(stateData?.engines?.speakerDiarization),
+          speakerCount: Number(stateData?.engines?.speakerCount || 0),
+          ocrSlideEngine: stateData?.engines?.ocrSlideEngine ?? true,
         },
         project: {
           filename: project.name || 'Untitled Video Project',
@@ -302,9 +324,9 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
     }
   },
 
-  triggerAutosave: () => {
+  triggerAutosave: (reportFailure = false) => {
     const id = get().activeProjectId;
-    if (!id) return;
+    if (!id || get().resettingStage) return Promise.resolve();
     const currentState = get();
     const mediaId = currentState.backend?.mediaId || null;
     // Exclude transient file objects and dead blob URLs from autosave JSON
@@ -318,7 +340,16 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
         previewUrl: mediaId ? `/api/media/${mediaId}/file` : undefined,
       },
       languages: currentState.languages,
-      engines: currentState.engines,
+      engines: {
+        speakerDiarization: currentState.engines?.speakerDiarization,
+        speakerCount: currentState.engines?.speakerCount,
+        ocrSlideEngine: currentState.engines?.ocrSlideEngine,
+      },
+      forceAsr: currentState.forceAsr,
+      ocrCrop: { roi: currentState.ocrCrop?.roi },
+      stage3Baseline: currentState.stage3Baseline,
+      autoFitVoiceSpeed: currentState.autoFitVoiceSpeed,
+      maxSpeedRate: currentState.maxSpeedRate,
       speakers: currentState.speakers,
       speakerVoiceMap: currentState.speakerVoiceMap,
       segmentVoiceOverrides: currentState.segmentVoiceOverrides,
@@ -334,7 +365,7 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
       },
       currentStep: currentState.currentStep,
     };
-    updateProjectState(id, snapshot, currentState.currentStep, mediaId || undefined)
+    const save = pendingProjectSave.then(() => updateProjectState(id, snapshot, currentState.currentStep, mediaId || undefined))
       .then(() => {
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         set((s: any) => ({
@@ -343,9 +374,25 @@ export const createProjectSlice: StateCreator<any, [], [], ProjectSlice> = (set,
             lastSaved: timeStr,
           },
         }));
-      })
-      .catch((err) => {
+      });
+    pendingProjectSave = save.catch((err) => {
         console.warn('Autosave failed:', err);
       });
+    return reportFailure ? save : pendingProjectSave;
+  },
+
+  resetStage: async (stage: number) => {
+    const id = get().activeProjectId;
+    if (!id || stage < 1 || stage > 4) return;
+    set({ resettingStage: true });
+    try {
+      await pendingProjectSave;
+      await resetProjectStage(id, stage);
+      await get().selectProject(id, false);
+      get().clearJob();
+      await get().loadProjects();
+    } finally {
+      set({ resettingStage: false });
+    }
   },
 });

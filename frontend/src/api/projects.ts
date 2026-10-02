@@ -1,5 +1,6 @@
 import { apiRequest } from './client';
 import type { ProjectRecord } from '../types/project';
+import type { Segment } from '../types/segment';
 
 export async function fetchProjects(): Promise<ProjectRecord[]> {
   const data = await apiRequest<any>('/api/projects');
@@ -31,6 +32,17 @@ export async function updateProjectState(id: string, state: any, stage?: number,
   await apiRequest(`/api/projects/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify({ state, stage, media_id: mediaId }),
+  });
+}
+
+export async function resetProjectStage(id: string, stage: number): Promise<ProjectRecord> {
+  return apiRequest(`/api/projects/${encodeURIComponent(id)}/stages/${stage}/reset`, { method: 'POST' });
+}
+
+export async function assembleProjectDubbing(id: string, segments: Segment[]): Promise<{ ok: boolean; audio_url: string }> {
+  return apiRequest(`/api/projects/${encodeURIComponent(id)}/dubbing/assemble`, {
+    method: 'POST',
+    body: JSON.stringify({ segments }),
   });
 }
 
