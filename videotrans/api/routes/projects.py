@@ -236,7 +236,7 @@ async def assemble_project_dubbing_handler(project_id: str, payload: DubbingAsse
     from pydub import AudioSegment
     from pydub.exceptions import CouldntDecodeError
 
-    clips: list[tuple[int, AudioSegment]] = []
+    parsed_segments: list[dict[str, Any]] = []
     duration_ms = max(0, int(round(float(project.get("duration") or 0) * 1000)))
     for segment in payload.segments:
         if not str(segment.get("targetText") or segment.get("sourceText") or "").strip():
@@ -258,12 +258,43 @@ async def assemble_project_dubbing_handler(project_id: str, payload: DubbingAsse
             raise HTTPException(status_code=400, detail=f"Preview audio or timing is invalid for segment {segment_id}: {exc}") from exc
         start_ms = int(round(start * 1000))
         end_ms = int(round(end * 1000))
-        clip = clip[:end_ms - start_ms]
-        clips.append((start_ms, clip))
-        duration_ms = max(duration_ms, end_ms)
+        parsed_segments.append({
+            "segment_id": segment_id,
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+            "clip": clip,
+        })
 
-    if not clips:
+    if not parsed_segments:
         raise HTTPException(status_code=400, detail="Generate dubbing previews before opening Stage 4")
+
+    parsed_segments.sort(key=lambda s: s["start_ms"])
+
+    clips: list[tuple[int, AudioSegment]] = []
+    for idx, seg in enumerate(parsed_segments):
+        start_ms = seg["start_ms"]
+        end_ms = seg["end_ms"]
+        clip = seg["clip"]
+        next_start_ms = parsed_segments[idx + 1]["start_ms"] if idx + 1 < len(parsed_segments) else None
+
+        if next_start_ms is not None:
+            max_allowed_end_ms = max(start_ms + 1, next_start_ms - 30)
+        else:
+            max_allowed_end_ms = max(duration_ms, end_ms, start_ms + len(clip))
+
+        available_dur = max(1, max_allowed_end_ms - start_ms)
+
+        if len(clip) > available_dur:
+            clip = clip[:available_dur]
+            fade_out_dur = min(30, max(1, len(clip) // 2))
+            fade_in_dur = min(20, max(1, len(clip) // 2))
+            clip = clip.fade_in(fade_in_dur).fade_out(fade_out_dur)
+        else:
+            fade_dur = min(20, max(1, len(clip) // 2))
+            clip = clip.fade_in(fade_dur).fade_out(fade_dur)
+
+        clips.append((start_ms, clip))
+        duration_ms = max(duration_ms, start_ms + len(clip))
     output = get_project_dir(project_id) / "dubbing" / "voiceover_merged.wav"
     output.parent.mkdir(parents=True, exist_ok=True)
     merged = AudioSegment.silent(duration=duration_ms, frame_rate=48000).set_channels(1)

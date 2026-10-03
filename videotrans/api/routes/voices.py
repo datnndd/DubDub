@@ -70,7 +70,7 @@ class UnifiedTTSPreviewRequest(BaseModel):
     force_refresh: Optional[bool] = Field(False, alias="forceRefresh")
     auto_speed: Optional[bool] = Field(False, alias="autoSpeed")
     slot_duration_s: Optional[float] = Field(None, alias="slotDuration")
-    max_speed_rate: Optional[float] = Field(1.25, alias="maxSpeedRate")
+    max_speed_rate: Optional[float] = Field(1.35, alias="maxSpeedRate")
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -507,7 +507,7 @@ async def create_tts_preview_handler(
             tuning_params=payload_obj.tuning_params,
             auto_speed=bool(payload_obj.auto_speed),
             slot_duration_s=payload_obj.slot_duration_s,
-            max_speed_rate=payload_obj.max_speed_rate or 1.25,
+            max_speed_rate=payload_obj.max_speed_rate or 1.35,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

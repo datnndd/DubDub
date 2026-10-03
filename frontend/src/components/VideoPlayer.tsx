@@ -93,9 +93,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ));
       return;
     }
-    const segment = useDubDubStore.getState().segments.find(
-      (item) => item.previewAudioUrl && video.currentTime >= item.startSec && video.currentTime < item.endSec
-    );
+    const segments = useDubDubStore.getState().segments || [];
+    const segment = segments.find((item, index) => {
+      if (!item.previewAudioUrl) return false;
+      const nextSeg = segments.slice(index + 1).find((s) => typeof s.startSec === 'number' && s.startSec > item.startSec);
+      const effectiveEnd = nextSeg && typeof nextSeg.startSec === 'number'
+        ? Math.min(Math.max(item.endSec, nextSeg.startSec - 0.03), Math.max(item.startSec, nextSeg.startSec - 0.03))
+        : (item.endSec + 3.0);
+      return video.currentTime >= item.startSec && video.currentTime < effectiveEnd;
+    });
     if (!segment || video.paused || voiceAuditionManager.isPlayingState()) {
       audio.pause();
       return;

@@ -203,7 +203,7 @@ export const Stage3VoiceDubbing: React.FC = () => {
         const totalDur = project?.durationSec || 0;
         const rawSlot = Math.max(0.001, seg.endSec - seg.startSec);
         if (nextSeg && typeof nextSeg.startSec === 'number') {
-          const slackEnd = Math.max(seg.endSec, nextSeg.startSec - 0.05);
+          const slackEnd = Math.max(seg.endSec, nextSeg.startSec - 0.15);
           const clampedEnd = Math.min(Math.max(slackEnd, seg.startSec), Math.max(nextSeg.startSec, seg.endSec));
           slotDur = Math.max(0.001, clampedEnd - seg.startSec);
         } else if (totalDur > 0) {

@@ -106,7 +106,7 @@ def reset_project_stage(project_id: str, stage: int) -> dict:
         state["dubbingStatus"] = "idle"
         state["tuning"] = {"pace": 1.0, "timbreWarmth": 62, "ducking": "85/15"}
         state["autoFitVoiceSpeed"] = True
-        state["maxSpeedRate"] = 1.25
+        state["maxSpeedRate"] = 1.35
         state["stage3Baseline"] = None
         config.update(ttsType=2, voiceRole="")
 

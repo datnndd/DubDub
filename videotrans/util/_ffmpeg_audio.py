@@ -121,7 +121,6 @@ def precise_speed_up_audio(*, file_path:str=None, out:str=None, target_duration_
         file_path,
         '-filter:a',
         filter_str,
-        '-t', f"{target_duration_ms / 1000.0}",
         '-ar', "48000",
         '-ac', "2",
         '-c:a', codecs.get(out_ext, 'pcm_s16le'),
@@ -156,12 +155,16 @@ def cut_from_audio(*, ss, to, audio_file, out_file)->bool:
 
 
 def remove_silence_wav(audio_file:str, rm_start=True)->bool:
+    import math
     from pydub import AudioSegment
     from pydub.silence import detect_nonsilent
 
     audio = AudioSegment.from_file(audio_file, format="wav")
 
-    silence_threshold = -50#audio.dBFS - 120
+    dbfs = audio.dBFS
+    if not math.isfinite(dbfs):
+        dbfs = -50.0
+    silence_threshold = min(-55.0, dbfs - 20.0)
     min_silence_len = 200
 
     nonsilent_chunks = detect_nonsilent(
@@ -173,7 +176,7 @@ def remove_silence_wav(audio_file:str, rm_start=True)->bool:
 
     if len(nonsilent_chunks) > 0:
         head_padding_ms = 80
-        tail_padding_ms = 400
+        tail_padding_ms = 600
 
         raw_start = nonsilent_chunks[0][0]
         raw_end = nonsilent_chunks[-1][1]

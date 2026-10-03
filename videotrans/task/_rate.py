@@ -1,4 +1,5 @@
 # 原理解释见 @docs/Synchronize.md
+import math
 import os
 import shutil
 import time
@@ -198,7 +199,6 @@ def _precise_speed_up_audio(input_path=None, target_duration=None):
         input_path,
         '-filter:a',
         filter_str,
-        '-t', f"{target_duration/1000.0}",  # 强制裁剪到目标时长，防止精度误差
         '-ar', "48000",
         '-ac', "2",
         '-c:a', 'pcm_s16le',
@@ -261,7 +261,8 @@ class SpeedRate:
             
         self.target_audio = target_audio
 
-        self.max_audio_speed_rate = float(settings.get('max_audio_speed_rate', 100))
+        raw_speed_rate = float(settings.get('max_audio_speed_rate', 1.35) or 1.35)
+        self.max_audio_speed_rate = min(raw_speed_rate, 1.35) if raw_speed_rate > 0 else 1.35
         self.max_video_pts_rate = float(settings.get('max_video_pts_rate', 10))
 
         self.audio_data = [] 
@@ -356,12 +357,14 @@ class SpeedRate:
             if i == 0 and current['start_time']<100:
                 current['start_time_source'] = 0
             
-            # 填补空隙，将字幕结束时间变为下个开始时间，增大变速区间，以减小变速幅度
+            # 填补空隙，增大变速区间以减小变速幅度，但保留至少 150ms 自然停顿
             # 开始时间点除了第0条，其他不变，只移动结束点
             if i < len(self.queue_tts) - 1:
                 next_sub = self.queue_tts[i+1]
-                current['end_time'] = next_sub['start_time']
-                current['end_time_source'] = next_sub['start_time']
+                effective_end = max(current['end_time'], next_sub['start_time'] - 150)
+                effective_end = min(effective_end, next_sub['start_time'])
+                current['end_time'] = effective_end
+                current['end_time_source'] = effective_end
 
             current['source_duration'] = current['end_time_source'] - current['start_time_source']
             
@@ -437,8 +440,9 @@ class SpeedRate:
                         # 倍率较大，音频加速和视频慢速各自负担一半时间差
                         diff = dubb_dur - source_dur
                         joint_target = int(source_dur + (diff / 2))
-                        audio_target = joint_target
-                        video_target = joint_target
+                        min_audio_target = int(math.ceil(dubb_dur / self.max_audio_speed_rate))
+                        audio_target = max(joint_target, min_audio_target)
+                        video_target = audio_target
             
             # 日志
             flag=f"[Calc] Mode={mode_log} Line={it['line']} | 字幕可用区间={source_dur}ms, 当前实际配音时长={dubb_dur}ms -> "
@@ -689,7 +693,7 @@ class TtsSpeedRate(SpeedRate):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.should_videorate=False
-        self.max_audio_speed_rate=100
+        self.max_audio_speed_rate = min(self.max_audio_speed_rate, 1.35) if self.max_audio_speed_rate > 0 else 1.35
 
 
     def run(self):
@@ -723,13 +727,19 @@ class TtsSpeedRate(SpeedRate):
         """数据清洗与预处理"""
         self.signal("Preparing data...")
         
-        _len=len(self.queue_tts)
+        _len = len(self.queue_tts)
         for i in range(_len):
             current = self.queue_tts[i]
-            if i<_len-1:
-                current['end_time']=self.queue_tts[i+1]['start_time']
+            if i < _len - 1:
+                next_start = self.queue_tts[i+1]['start_time']
+                effective_end = max(current['end_time'], next_start - 150)
+                current['end_time'] = min(effective_end, next_start)
                         
             current['source_duration'] = current['end_time'] - current['start_time']
+            if current['source_duration'] <= 0:
+                logger.error(f'第 {i} 行字幕时间轴<=0，不正确，跳过处理:{current=}\n')
+                current['source_duration'] = 0
+                continue
 
             # 检查配音文件
             if not current.get('filename') or not Path(current['filename']).exists():
@@ -753,13 +763,17 @@ class TtsSpeedRate(SpeedRate):
                 continue
             audio_target = dubb_dur
 
-
             mode_log = f"[为字幕配音] {i=}"
             if dubb_dur > source_dur:
+                ratio = dubb_dur / source_dur
+                if ratio > self.max_audio_speed_rate:
+                    audio_target = int(dubb_dur / self.max_audio_speed_rate)
+                else:
+                    audio_target = source_dur
                 self.audio_data.append({
                     "filename": it['filename'],
                     "dubb_time": dubb_dur,
-                    "target_time": source_dur # 不限制，强制加速到对齐
+                    "target_time": audio_target
                 })
 
             logger.debug(f"[Calc] Mode={mode_log} Line={it['line']} | Source_duration={source_dur} Dubb_duration={dubb_dur} -> TargetA={audio_target}")

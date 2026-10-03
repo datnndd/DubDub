@@ -22,8 +22,8 @@ _EPS = 1e-6
 @dataclass(frozen=True)
 class FitParams:
     """Parameters for Smart Fit audio speed adjustment."""
-    max_audio_rate: float = 1.25
-    gap_guard_s: float = 0.05
+    max_audio_rate: float = 1.35
+    gap_guard_s: float = 0.15
     min_audio_rate: float = 1.0  # 1.0 keeps natural speed for shorter audio
     max_audio_rate_hard: float = 2.0
 
@@ -33,7 +33,7 @@ def calculate_slot_duration(
     end_s: float,
     next_start_s: Optional[float] = None,
     total_dur_s: Optional[float] = None,
-    gap_guard_s: float = 0.05,
+    gap_guard_s: float = 0.15,
 ) -> float:
     """Calculate the usable audio slot duration with gap slack absorption.
 
@@ -221,7 +221,7 @@ def apply_pitch_preserving_stretch(
 def smart_fit_audio_file(
     input_wav: Path | str,
     slot_duration_s: float,
-    max_speed_rate: float = 1.25,
+    max_speed_rate: float = 1.35,
     output_wav: Optional[Path | str] = None,
     min_audio_rate: float = 1.0,
 ) -> tuple[Path, float, str]:
@@ -252,13 +252,12 @@ def smart_fit_audio_file(
         return out_p, 1.0, "fits"
 
     # Need speedup or slowdown
-    # If overflow_trimmed, also pass max_duration_s to prevent bleeding past slot
-    max_dur = slot_duration_s if status == "overflow_trimmed" else None
+    # Do not hard-truncate with max_duration_s (-t) to prevent filter buffer truncation
     success = apply_pitch_preserving_stretch(
         in_p,
         out_p,
         speed_factor=speed_factor,
-        max_duration_s=max_dur,
+        max_duration_s=None,
     )
 
     if success:

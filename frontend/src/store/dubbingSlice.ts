@@ -62,7 +62,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
   dubbingError: null,
   assemblingDubbing: false,
   assembledDubUrl: null,
-  maxSpeedRate: 1.25,
+  maxSpeedRate: 1.35,
   setAutoFitVoiceSpeed: (enabled: boolean) => {
     set({ autoFitVoiceSpeed: enabled });
     get().triggerAutosave?.();
@@ -334,7 +334,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
       const lang = get().languages?.target?.code || 'vi';
       const speed = get().tuning?.pace;
       const autoFit = get().autoFitVoiceSpeed ?? true;
-      const maxRate = get().maxSpeedRate ?? 1.25;
+      const maxRate = get().maxSpeedRate ?? 1.35;
       const totalDur = get().project?.durationSec || 0;
 
       const updated = await Promise.all(
@@ -346,7 +346,7 @@ export const createDubbingSlice: StateCreator<any, [], [], DubbingSlice> = (set,
           if (autoFit && typeof seg.startSec === 'number' && typeof seg.endSec === 'number') {
             const rawSlot = Math.max(0.001, seg.endSec - seg.startSec);
             if (nextSeg && typeof nextSeg.startSec === 'number') {
-              const slackEnd = Math.max(seg.endSec, nextSeg.startSec - 0.05);
+              const slackEnd = Math.max(seg.endSec, nextSeg.startSec - 0.15);
               const clampedEnd = Math.min(Math.max(slackEnd, seg.startSec), Math.max(nextSeg.startSec, seg.endSec));
               slotDur = Math.max(0.001, clampedEnd - seg.startSec);
             } else if (totalDur > 0) {

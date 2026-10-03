@@ -217,7 +217,7 @@ def _run_vieneu_synthesis(
         raise
 
 
-def _run_omnivoice_synthesis(ref_audio: Path, ref_text: str, output_file: Path, text: str, use_cuda: bool = True) -> None:
+def _run_omnivoice_synthesis(ref_audio: Path, ref_text: str, output_file: Path, text: str, use_cuda: bool = True, speed: float = 1.0) -> None:
     """Run OmniVoice TTS preview synthesis with cached model, falling back to CPU if needed."""
     from videotrans.configure.config import ROOT_DIR
     model_dir = Path(ROOT_DIR) / "models" / "models--k2-fsa--OmniVoice"
@@ -236,7 +236,7 @@ def _run_omnivoice_synthesis(ref_audio: Path, ref_text: str, output_file: Path, 
             text=text,
             ref_audio=ref_audio.as_posix(),
             ref_text=ref_text or None,
-            speed=1.0,
+            speed=speed or 1.0,
         )
         if not wav or len(wav) == 0:
             raise RuntimeError("OmniVoice returned empty audio list")
@@ -562,7 +562,7 @@ async def synthesize_unified_tts_preview(
     db_path: Optional[str | Path] = None,
     auto_speed: bool = False,
     slot_duration_s: Optional[float] = None,
-    max_speed_rate: Optional[float] = 1.25,
+    max_speed_rate: Optional[float] = 1.35,
 ) -> tuple[str, Path, float]:
     """
     Unified voice preview generator supporting all 4 TTS providers
@@ -579,7 +579,7 @@ async def synthesize_unified_tts_preview(
         if auto_speed and slot_duration_s and slot_duration_s > 0:
             from videotrans.services.audio_fit import smart_fit_audio_file
             _, applied_speed, fit_status = await asyncio.to_thread(
-                smart_fit_audio_file, path, slot_duration_s, max_speed_rate or 1.25,
+                smart_fit_audio_file, path, slot_duration_s, max_speed_rate or 1.35,
             )
             if fit_status in {"error", "not_found"}:
                 raise RuntimeError("Could not adjust preview audio to fit the subtitle timing")
@@ -739,6 +739,7 @@ async def synthesize_unified_tts_preview(
                         preview_path,
                         sample_text,
                         use_cuda,
+                        speed=speed or 1.0,
                     )
                     return
                 # OmniVoice requires reference audio, generate if available
@@ -749,14 +750,17 @@ async def synthesize_unified_tts_preview(
                 key = params.get("elevenlabstts_key", "")
                 if not key:
                     raise ValueError("ElevenLabs API key not configured")
-                from elevenlabs import ElevenLabs
+                from elevenlabs import ElevenLabs, VoiceSettings
                 client = ElevenLabs(api_key=key)
                 target_voice = voice_str if (voice_str and voice_str.lower() not in ("no", "default")) else "21m00Tcm4TlvDq8ikWAM"
-                resp = client.text_to_speech.convert(
-                    text=sample_text,
-                    voice_id=target_voice,
-                    model_id=params.get("elevenlabstts_models", "eleven_multilingual_v2"),
-                )
+                voice_kwargs: dict[str, Any] = {
+                    "text": sample_text,
+                    "voice_id": target_voice,
+                    "model_id": params.get("elevenlabstts_models", "eleven_multilingual_v2"),
+                }
+                if speed is not None:
+                    voice_kwargs["voice_settings"] = VoiceSettings(speed=speed)
+                resp = client.text_to_speech.convert(**voice_kwargs)
                 with open(preview_path, "wb") as f:
                     for chunk in resp:
                         f.write(chunk)
