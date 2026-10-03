@@ -39,6 +39,8 @@ whisper-cpp/
 hooks
 tmp
 images
+!docs/images/
+!docs/images/*.png
 logs
 models
 dev

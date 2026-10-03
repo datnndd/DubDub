@@ -1,157 +1,124 @@
-# DubDub — AI Video Dubbing & Translation Studio
+# DubDub (pyVideoTrans)
 
-A powerful, full-stack video translation, speech recognition, subtitle editing, and AI dubbing workstation.
+**A local web studio for transcribing, translating, dubbing, and exporting video.**
 
----
+DubDub guides a project through four stages: prepare media and recognize speech, review and translate subtitles, generate dubbed voices, then mix audio and export. The browser UI runs on a Python backend and a React frontend. A CLI is also available for headless workflows.
 
-## ✨ Key Features
+![DubDub Prepare screen in a new project](docs/images/prepare.png)
 
-- **🎬 4-Stage Synchronized Workflow**:
-  1. **Prepare**: Upload media, probe audio/video metadata, select source & target languages, configure ASR & LLM translation providers.
-  2. **Review Transcript**: Video player with interactive OCR bounding boxes, slide diff inspector, speaker diarization, confidence scores, and segment editor.
-  3. **Voice & Dubbing**: Multi-channel voice synthesis, pace & warmth adjustments, audio stem toggles (Original vs. Dub), locked terminology glossary, and teleprompter.
-  4. **Timeline & Export**: Multi-track timeline (Video, Vocals, AI Dub, BGM, Subtitles), BGM ducking, subtitle styling, inpainting overlay, and video export.
-- **🎙️ Speech Recognition (ASR)**: Whisper Large-v3, Deepgram, Gemini STT, Google STT, ElevenLabs, Qwen-ASR.
-- **🌐 LLM / Machine Translation**: Google Translate, OpenAI ChatGPT, Google Gemini, DeepSeek.
-- **🗣️ Speech Synthesis (TTS)**: VieNeu-TTS, OmniVoice (Built-in), Gemini TTS, ElevenLabs.
-- **⚡ Persistence & Background Tasks**: SQLite WAL database with job queuing, SSE streaming updates, and persistent project state across sessions.
+> Screenshots below were captured from the running React app with a new, empty project. They show the interface before media processing; they do not represent completed transcription, synthesis, or rendering output.
 
----
+## What you can do
 
-## 🚀 Quick Start & How to Run
+| Area | Current workflow |
+| --- | --- |
+| **Prepare** | Upload video or audio, inspect its streams and duration, choose languages, ASR provider, model, and timing options. |
+| **Review transcript** | Edit segments and timing, translate subtitles, export a translated SRT, or use video OCR to replace selected speech-recognition segments. |
+| **Voice dubbing** | Assign voices, generate and audition segment previews, and assemble a voiceover at subtitle times. |
+| **Edit and export** | Preview the video, adjust original/voiceover/background-music levels, style subtitles, render a dubbed video, or export assets for CapCut. |
+| **Projects and voices** | Save project data locally, manage projects, choose preset voices, and create custom voice entries. |
 
-### 1. Prerequisites
+The UI offers ASR choices including Qwen-ASR, Deepgram, Gemini STT, Google STT, ElevenLabs, and Whisper; translation choices include Google Translate, OpenAI, Gemini, and DeepSeek; TTS choices are VieNeu-TTS, OmniVoice, ElevenLabs, and Gemini TTS. Availability depends on the selected provider's credentials, models, network access, and hardware.
 
-- **Python**: 3.10+
-- **FFmpeg**: Installed and accessible in your system `PATH` (or place `ffmpeg.exe` / `ffprobe.exe` in the project root).
-- **uv** (Fast Python package manager):
-  ```powershell
-  # Windows PowerShell
-  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-  ```
-- **Bun** (Fast JavaScript/TypeScript runtime & package manager):
-  ```powershell
-  powershell -c "irm bun.sh/install.ps1 | iex"
-  ```
+### Screenshots
 
-### 2. Install Dependencies
+**Projects** — create and reopen local projects.
 
-```bash
-# 1. Sync Python backend dependencies
-uv sync
+![Project manager with no projects yet](docs/images/projects.png)
 
-# 2. Install dependencies (root workspace & frontend)
-bun install
-cd frontend && bun install && cd ..
+**Review transcript** — translation and segment OCR controls.
+
+![Review Transcript stage before media has been processed](docs/images/transcript.png)
+
+**Voice dubbing** — voice selection and segment preview workspace.
+
+![Voice and Dubbing stage before media has been processed](docs/images/dubbing.png)
+
+**Edit video** — audio mix and timeline view.
+
+![Edit Video stage before media has been processed](docs/images/editor.png)
+
+**Subtitle styling** — font, opacity, outline, and color controls.
+
+![Subtitle styling controls in the Edit Video stage](docs/images/subtitles.png)
+
+**Voice management** — preset and custom voice library.
+
+![Voice Management Studio](docs/images/voices.png)
+
+## Install from source
+
+### Requirements
+
+- **Python 3.10** (the project declares `>=3.10, <3.11` in `pyproject.toml`).
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) for Python dependencies.
+- [Bun](https://bun.sh/get) for the React frontend.
+- [FFmpeg and FFprobe](https://ffmpeg.org/download.html) on `PATH` for media processing.
+- Git to clone the repository. Local model providers can require substantial download space, memory, and, optionally, a compatible GPU.
+
+PowerShell example (skip the clone step if you already have the repository):
+
+```powershell
+git clone https://github.com/datnndd/DubDub.git
+Set-Location DubDub
+uv sync --frozen
+bun install --frozen-lockfile
+Push-Location frontend
+bun install --frozen-lockfile
+Pop-Location
 ```
 
-### 3. Run the Web Application
+Check that media tools are available:
 
-The application supports two running modes:
-
-#### Option A: Development Mode (Recommended for development)
-
-Runs both the **FastAPI backend** and **Vite frontend dev server** concurrently with hot-reloading:
-
-```bash
-bun run dev
+```powershell
+ffmpeg -version
+ffprobe -version
 ```
 
-- **Web UI (Hot-Reload)**: [http://localhost:3000](http://localhost:3000)
-- **Backend API (FastAPI + Uvicorn)**: [http://127.0.0.1:7860](http://127.0.0.1:7860)
-- **Interactive OpenAPI Documentation**: [http://127.0.0.1:7860/docs](http://127.0.0.1:7860/docs)
+### Run locally
 
-*(Note: Visiting `http://127.0.0.1:7860/` will automatically redirect to `http://localhost:3000` when running in dev mode).*
+Build the frontend, then start the single-port server:
 
----
-
-#### Option B: Production Mode (Single-Port Serving)
-
-Compiles the React frontend into static bundles and serves everything through a single FastAPI port:
-
-```bash
-# 1. Build the frontend
+```powershell
 bun run build
-
-# 2. Launch the FastAPI server
-uv run python webui.py
+uv run --frozen python webui.py
 ```
 
-Once started, open your browser at:
-- **Web Application**: [http://127.0.0.1:7860](http://127.0.0.1:7860)
-- **OpenAPI / Swagger UI**: [http://127.0.0.1:7860/docs](http://127.0.0.1:7860/docs)
+Open **http://127.0.0.1:7860**. The API documentation is at **http://127.0.0.1:7860/docs**. Stop the server with `Ctrl+C`. To listen on another address or port:
 
-You can also customize the host and port:
-```bash
-uv run python webui.py --host 0.0.0.0 --port 7860
+```powershell
+uv run --frozen python webui.py --host 0.0.0.0 --port 8080
 ```
 
----
+For frontend development, run `bun run dev` from the repository root after installing dependencies. It starts the backend on port 7860 and Vite on **http://localhost:3000**; Vite proxies `/api` requests to the backend.
 
-#### Option C: Docker & Docker Compose
+## Docker Compose
 
-Run pyVideoTrans containerized with persistent storage (`./data`, `./models`, `./output`, `./logs`):
+Docker builds the frontend and Python runtime inside the image. Choose **one** service:
 
-**CPU Mode:**
-```bash
-# Start CPU container via Docker Compose
-docker compose up -d
+```powershell
+# CPU
+docker compose up --build -d webui
 
-# Or build and run directly with Docker
-docker build -t pyvideotrans-webui .
-docker run -d -p 7860:7860 -v ./output:/app/output -v ./models:/app/models pyvideotrans-webui
+# NVIDIA GPU (requires a working GPU container runtime)
+docker compose --profile gpu up --build -d webui-gpu
 ```
 
-**GPU Mode (NVIDIA CUDA 12.8):**
-```bash
-# Start GPU container via Docker Compose
-docker compose --profile gpu up -d webui-gpu
+Open **http://127.0.0.1:7860**. Compose mounts `data/`, `models/`, `output/`, and `logs/` from the host. These images are built from the included `Dockerfile`; this README does not claim that every provider or GPU model has been exercised in a clean container.
 
-# Or build and run directly with Docker
-docker build --build-arg USE_CUDA=true -t pyvideotrans-webui:gpu .
-docker run -d --gpus all -p 7860:7860 -v ./output:/app/output -v ./models:/app/models pyvideotrans-webui:gpu
-```
+## First project
 
----
+1. Select **New Project**, then upload a video or audio file in **Prepare**.
+2. Check the detected media details. Choose source and target languages and configure any provider credentials in **Settings**.
+3. Run recognition, review the resulting segments, translate or correct subtitles, and choose voices.
+4. Generate voice previews, adjust the final mix and subtitle appearance, then render or export the CapCut assets.
 
-## 🛠️ CLI Mode (Headless / Batch Processing)
+Provider-specific API keys and local model files are needed only for the providers you select. Jobs and uploaded-media identifiers are process-local; an active job does **not** resume automatically after a server restart. Project records and generated outputs are stored locally. Some visible editing controls, including freeform timeline editing, lip sync, inpainting, face retouching, and 4K enhancement, are not connected to processing yet. See [WebUI behavior and limits](docs/webui.md).
 
-You can also run tasks directly via the CLI:
+## Troubleshooting and documentation
 
-```bash
-# Audio/Video transcription to subtitles
-uv run cli.py --task stt --name "./audio.wav" --model_name large-v3
-
-# Subtitle translation
-uv run cli.py --task sts --name "./subs.srt" --target_language_code en
-
-# Text-to-Speech synthesis
-uv run cli.py --task tts --name "./subs.srt" --voice_role "en-US-GuyNeural"
-
-# Full video translation workflow
-uv run cli.py --task vtv --name "./video.mp4" --source_language_code zh-cn --target_language_code en --voice_role "en-US-GuyNeural"
-```
-
----
-
-## 📂 Project Structure
-
-```
-├── videotrans/             # Backend Python engine & FastAPI application
-│   ├── api/                # FastAPI REST API routes, OpenAPI schemas & unbuffered SSE streaming
-│   ├── core/               # SQLite WAL database, project store, job store, process registry
-│   ├── recognition/        # ASR engines (Whisper, Deepgram, Gemini, ElevenLabs, Qwen)
-│   ├── translator/         # Translation engines (Google, DeepSeek, ChatGPT, Gemini)
-│   ├── tts/                # Speech synthesis providers (VieNeu-TTS, OmniVoice, ElevenLabs, Gemini)
-│   └── util/               # Media probing, FFmpeg runners, audio processing
-├── frontend/               # Modern React + Vite frontend
-│   ├── src/
-│   │   ├── screens/        # Stage 1 to Stage 4 workflow screens
-│   │   ├── components/     # Header, Drawer, Settings, Video player, Timeline
-│   │   └── store/          # Zustand reactive state stores (project, jobs, settings)
-│   └── dist/               # Compiled production frontend assets
-├── package.json            # Root workspace scripts (bun run dev, bun run build)
-├── webui.py                # FastAPI web server entry point (Uvicorn)
-├── cli.py                  # CLI entry point
-└── pyproject.toml          # Python project configuration & dependencies
-```
+- **Frontend build missing:** run `bun run build`, then restart the server.
+- **Media inspection fails:** verify both `ffmpeg` and `ffprobe` are available and the file can be opened.
+- **Provider fails to start:** check its settings, required credential or model, and the server log. Model downloads can make the first run slower.
+- **CLI:** `uv run --frozen cli.py --help`; see the [CLI guide](docs/cli.md).
+- More detail: [FAQ](docs/faq.md) · [architecture](docs/architecture.md) · [WebUI guide](docs/webui.md).
