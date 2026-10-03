@@ -8,7 +8,7 @@ from videotrans.configure._i18n import _get_langjson_list
 @dataclass
 class AppCfg:
     """
-    存储直接属于 config.py 的运行时属性 (原全局变量)。
+    Store runtime properties directly belonging to config.py (formerly global variables).
     """
     NVIDIA_GPU_NUMS: int = -1
 

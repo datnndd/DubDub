@@ -1,7 +1,7 @@
-# 语音识别，新进程执行
-# 返回元组
-# 失败：第一个值为False，则为失败，第二个值存储失败原因
-# 成功，第一个值存在需要的返回值，不需要时返回True，第二个值为None
+# Speech recognition executed in a separate process
+# Returns tuple:
+# Failure: first value is False, second value stores failure reason
+# Success: first value has desired return value or True, second value is None
 import re, json, traceback, logging
 from pathlib import Path
 from typing import List, Tuple, Union
@@ -13,7 +13,7 @@ from videotrans.process._stt_utils import _write_log
 class SuppressLogitsWarningFilter(logging.Filter):
     def filter(self, record):
         msg = record.getMessage()
-        # 拦截 SuppressTokensLogitsProcessor 和 SuppressTokensAtBeginLogitsProcessor
+        # Filter SuppressTokensLogitsProcessor and SuppressTokensAtBeginLogitsProcessor warnings
         if "SuppressTokensLogitsProcessor" in msg and "will take precedence" in msg:
             return False
         if "SuppressTokensAtBeginLogitsProcessor" in msg and "will take precedence" in msg:
@@ -31,7 +31,7 @@ def pipe_asr(
         audio_file=None,
         local_dir=None,
         jianfan=False,
-        device_index=0  # gpu索引
+        device_index=0  # GPU index
 ) -> Tuple[Union[List[SrtItem], bool], Union[str, None]]:
     import torch, zhconv
     from transformers import pipeline

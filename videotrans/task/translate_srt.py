@@ -11,27 +11,27 @@ from videotrans.translator import run
 
 
 """
-批量翻译srt字幕面板
+Batch translate SRT subtitles panel
 """
 
 
 @dataclass
 class TranslateSrt(BaseTask):
     cfg: TaskCfgSTS = field(default_factory=TaskCfgSTS, repr=False)
-    # 输出格式，例如单语字幕 双语字幕等。
+    # Output format, such as monolingual subtitles, bilingual subtitles, etc.
     out_format: int = field(init=True, default=0)
-    # 固定应该翻译
+    # Fixed to should translate
     should_trans: bool = True
 
     def __post_init__(self):
         super().__post_init__()
-        # 存放目标文件夹
+        # Target destination folder
         if not self.cfg.target_dir:
             self.cfg.target_dir = HOME_DIR + f"/translate"
-        # 生成目标字幕文件
+        # Generate target subtitle file
         self.cfg.target_sub = self.cfg.target_dir + '/' + self.cfg.noextname + f'.{self.cfg.target_language_code}.srt'
         self.cfg.source_sub = self.cfg.name
-        # 如果原始和结果文件相同，为避免覆盖，提前复制
+        # If source and result files are identical, copy in advance to prevent overwriting
         if self.cfg.name == self.cfg.target_sub:
             shutil.copy2(self.cfg.source_sub, f"{self.cfg.source_sub}-OriginalSubtitles.srt")
         self.signal(text=tr("Transation subtitles"))
@@ -61,7 +61,7 @@ class TranslateSrt(BaseTask):
         for it in raw_subtitles:
             it['text']=it['text'].strip('...')
         
-        # 单语字幕
+        # Monolingual subtitles
         if self.out_format == 0:
             self._save_srt_target(raw_subtitles, self.cfg.target_sub)
             self.signal(text=Path(self.cfg.target_sub).read_text(encoding='utf-8'), type='replace')
@@ -69,7 +69,7 @@ class TranslateSrt(BaseTask):
 
         target_length = len(raw_subtitles)
         srt_string = ""
-        # 双语字幕
+        # Bilingual subtitles
         for i, it in enumerate(source_sub_list):
             if self.out_format == 1:
                 tmp_text = f"{raw_subtitles[i]['text'].strip()}\n" if i < target_length else ''

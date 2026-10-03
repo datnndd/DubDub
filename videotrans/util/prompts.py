@@ -5,7 +5,7 @@ from pathlib import Path
 from videotrans.configure.config import ROOT_DIR
 
 
-# 获取 prompt提示词
+# Get prompt instructions
 def get_prompt(ainame, aisendsrt=True):
     prompt_file = get_prompt_file(ainame=ainame, aisendsrt=aisendsrt)
     content = Path(prompt_file).read_text(encoding='utf-8-sig', errors="ignore")
@@ -34,7 +34,7 @@ def qwenmt_glossary():
     return None
 
 
-# 获取当前需要操作的prompt txt文件
+# Get the prompt txt file needed for current operation
 @lru_cache
 def get_prompt_file(ainame, aisendsrt=True):
     prompt_path = f'{ROOT_DIR}/videotrans/'

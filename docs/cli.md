@@ -32,10 +32,10 @@ pyVideoTrans 支持通过命令行进行无界面操作，适合服务器部署�
 ### 启动方式
 
 ```bash
-# 源码部署
+# Source code deployment
 uv run cli.py [参数...]
 
-# Windows 打包版
+# Windows packaged version
 cli.exe [参数...]
 ```
 

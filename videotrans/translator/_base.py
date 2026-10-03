@@ -14,30 +14,30 @@ from videotrans.util.help_misc import get_md5,serial
 
 @dataclass
 class BaseTrans(BaseCon):
-    # 翻译渠道
+    # Translation channel
     translate_type: int = 0
-    # 存放待翻译的字幕列表字典
+    # List storing subtitles to be translated
     text_list: List[SrtItem] = None
-    # 唯一任务id
+    # Unique task ID
     uuid: Optional[str] = None
-    # 测试时不使用缓存
+    # Do not use cache during tests
     is_test: bool = False
-    # 原始语言代码
+    # Original language code
     source_code: str = ""
-    # 目标语言代码
+    # Target language code
     target_code: str = ""
-    # 对于AI渠道，这是目标语言的自然语言表达，其他渠道等于 target_code
+    # For AI channels, natural language representation of target language; equals target_code for other channels
     target_language_name: str = ""
 
-    # 翻译API 地址
+    # Translation API URL
     api_url: str = field(default="", init=False)
-    # 模型名
+    # Model name
     model_name: str = field(default="", init=False)
-    # 同时翻译的字幕行数量
+    # Number of subtitle lines translated concurrently
     trans_thread: int = 5
-    # 翻译后暂停秒
+    # Pause seconds after translation
     wait_sec: float = float(settings.get('translation_wait', 0))
-    #  是AI翻译渠道并且选中了以完整srt格式字幕发送
+    # Whether AI translation channel and send full SRT format is selected
     aisendsrt: Optional[bool] = None
     local_dir: str = None
 
@@ -54,7 +54,7 @@ class BaseTrans(BaseCon):
     def _item_task(self, data: Union[List[str], str]):
         raise NotImplemented()
 
-    # 实际操作 run  -> run_text|run_srt -> _item_task
+    # Actual operations run -> run_text|run_srt -> _item_task
     def run(self) -> List[SrtItem]:
         try:
             if hasattr(self, '_download'):
@@ -62,11 +62,11 @@ class BaseTrans(BaseCon):
                 self._download()
                 self.signal(text=tr("Transation subtitles"))
             if not self.aisendsrt:
-                # 是文字列表  [str,...]
+                # Is text list: [str, ...]
                 source_text = [t['text'].replace("\n", " ") for t in self.text_list]
                 return self._run_text(
                     [source_text[i:i + self.trans_thread] for i in range(0, len(source_text), self.trans_thread)])
-            # 是srt格式字幕列表 [SrtItem,...]
+            # Is SRT-formatted subtitle list: [SrtItem, ...]
             return self._run_srt(
                     [self.text_list[i:i + self.trans_thread] for i in range(0, len(self.text_list), self.trans_thread)])        
         except RetryError as e:
@@ -83,12 +83,12 @@ class BaseTrans(BaseCon):
 
 
     def _run_text(self, split_source_text: List[List[str]]):
-        # 传统翻译渠道或AI翻译渠道以按行形式翻译
+        # Traditional translation channels or AI translation channels translate line-by-line
         """
         split_source_text=[
-            ["字幕文本1","字幕文本2",...],
-            ["字幕文本1","字幕文本2",...],
-            ["字幕文本1","字幕文本2",...],
+            ["subtitle text 1", "subtitle text 2", ...],
+            ["subtitle text 1", "subtitle text 2", ...],
+            ["subtitle text 1", "subtitle text 2", ...],
             ...
         ]
         """
@@ -96,7 +96,7 @@ class BaseTrans(BaseCon):
         logger.debug(f'以纯文本行形式翻译，每次翻译{self.trans_thread}行，翻译后暂停{self.wait_sec}s')
         
         for i, it in enumerate(split_source_text):
-            """ it=['你好啊我的朋友','第二行']  此时 _item_task 接收的是 list[str] """
+            """ it=['Hello my friend', 'Second line'] At this point _item_task receives list[str] """
             if self._exit(): return
             self.signal(text=tr('starttrans') + f' {i} ')
             result = self._get_cache(it)
@@ -108,7 +108,7 @@ class BaseTrans(BaseCon):
                 if x < len(it):
                     target_list.append(result_item.strip())
                     self.signal(text=result_item + "\n", type='subtitle')
-            # 行数不匹配填充空行
+            # Fill empty lines when line count does not match
             if len(sep_res) < len(it):
                 logger.debug(f'行数不匹配，原始：{len(it)}, 结果：{len(sep_res)}\n{it=}\n{sep_res=}')
                 tmp = ["" for x in range(len(it) - len(sep_res))]
@@ -128,8 +128,8 @@ class BaseTrans(BaseCon):
             raise TranslateSrtError(tr("Translate result is empty")+f'\n{self.api_url}')
         return self.text_list
 
-    # 发送完整字幕格式内容进行翻译
-    # 此时 _item_task 接收的是 srt 格式的字符串
+    # Send full subtitle format content for translation
+    # At this point _item_task receives an SRT-formatted string
     def _run_srt(self, split_source_text: List[List[SrtItem]]):
         """
         split_source_text=[
@@ -143,7 +143,7 @@ class BaseTrans(BaseCon):
         for i, it in enumerate(split_source_text):
             if self._exit(): return
             self.signal(text=tr('starttrans') + f' {i} ')
-            # 组成合法的srt格式字符串
+            # Form valid SRT-formatted string
             srt_str = "\n\n".join(
                 [f"{srt_dict['line']}\n{srt_dict['time']}\n{srt_dict['text'].strip()}" for srt_dict in it])
             result = self._get_cache(srt_str)

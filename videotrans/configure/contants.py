@@ -1,27 +1,27 @@
-#-------------标点 空格语言-----------
-# 中日韩 泰国语 高棉语 粤语 不使用空格
+# ------------- Punctuation and Space Languages -----------
+# CJK, Thai, Khmer, Cantonese do not use spaces between words
 CJK_LANG = ["zh", "ja", "ko", "yu", "th", "km", "yue"]
-# 常见标点
+# Common punctuation
 PUNC_FLAGS = [",", ".", "?", "!", ";", "，", "。", "？", "；", "！"]
-# 逗号等软性标点
+# Soft punctuation like comma
 PUNC_FLAGS_HALF = [",", "，", "-", "、", ":", "："]
-# 句子终止标点
+# Sentence-ending punctuation
 PUNC_FLAGS_END = [".", "。", "?", "？", "!", "！"]
 NON_WORD = r"""^[,.?!;'"_，。？；‘’“”！~@#￥%…&*（【】）｛｝《、》$()\[\]{}=+<>\s-]+$"""
 
-#------------跳过使用代理的域名---------------
-# 不使用代理的域名
+# ------------ Proxy bypass domain list ---------------
+# Domains that bypass proxy
 _no_proxy_list = [
-    # --- 腾讯云 ---
+    # --- Tencent Cloud ---
     "tencentcloudapi.com", ".tencentcloudapi.com",
 
     # --- HuggingFace ---
     "hf-mirror.com", ".hf-mirror.com",
 
-    # --- 百度 (包含 fanyi.baidu 等所有子域) ---
+    # --- Baidu (including fanyi.baidu and all subdomains) ---
     "baidu.com", ".baidu.com",
 
-    # --- 字节跳动 (包含 openspeech 等所有子域) ---
+    # --- ByteDance (including openspeech and all subdomains) ---
     "bytedance.com", ".bytedance.com", ".volces.com", "volces.com",
 
     # --- MiniMax ---
@@ -33,7 +33,7 @@ _no_proxy_list = [
     # --- ModelScope ---
     "modelscope.cn", ".modelscope.cn",
 
-    # --- 阿里云 (包含 dashscope, aliyuncs 等) ---
+    # --- Alibaba Cloud (including dashscope, aliyuncs, etc.) ---
     "aliyuncs.com", ".aliyuncs.com",
 
     # --- SiliconFlow ---
@@ -43,9 +43,9 @@ _no_proxy_list = [
     "bigmodel.cn", ".bigmodel.cn",
 
     "api.gradio.app", ".api.gradio.app",
-    # "microsoft.com", ".microsoft.com", # 涵盖 tts.speech.microsoft.com
+    # "microsoft.com", ".microsoft.com", # covers tts.speech.microsoft.com
 
-    # --- 本地回环 (涵盖所有端口：7860, 8000, 9880, 5051等) ---
+    # --- Local loopback (covers all ports: 7860, 8000, 9880, 5051, etc.) ---
     "localhost",
     "127.0.0.1",
     "127.0.0.2",
@@ -53,15 +53,15 @@ _no_proxy_list = [
 ]
 no_proxy = ",".join(_no_proxy_list)
 
-#----------------支持的音视频格式---------------
-# 支持的视频格式
+# ---------------- Supported Video/Audio Formats ---------------
+# Supported video formats
 VIDEO_EXTS = ["mp4", "mkv", "mpeg", "avi", "mov", "mts", "webm", "ogg", "ts", "flv", "wmv"]
-# 支持的音频格式
+# Supported audio formats
 AUDIO_EXITS = ["mp3", "wav", "aac", "flac", "m4a", "ogg", "wma"]
 
-#-----------默认模型名字-----------------
+# ----------- Default Model Names -----------------
 FASTER_MODELS_DICT = {"large-v3": "Systran/faster-whisper-large-v3"}
-# deepgram 支持的语音识别模型
+# Deepgram supported speech recognition models
 DEEPGRAM_MODEL = [
     "nova-3",
     "whisper-large",
@@ -74,9 +74,9 @@ DEEPGRAM_MODEL = [
     "base",
 ]
 
-# 缺省 gemini 模型
+# Default Gemini model
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash,gemini-3.5-flash,gemini-pro-latest,gemini-flash-latest,gemini-2.5-pro,gemini-2.5-flash"
-# gemini-tts 音色
+# Gemini TTS voice roles
 GEMINITTS_ROLES = "Zephyr,Puck,Charon,Kore,Fenrir,Leda,Orus,Aoede,Callirrhoe,Autonoe,Enceladus,Iapetus,Umbriel,Algieba,Despina,Erinome,Algenib,Rasalgethi,Laomedeia,Achernar,Alnilam,Schedar,Gacrux,Pulcherrima,Achird,Zubenelgenubi,Vindemiatrix,Sadachbia,Sadaltager,Sulafat"
 
 GEMINI_TTS_MODELS = "gemini-3.1-flash-tts-preview,gemini-2.5-flash-preview-tts,gemini-2.5-pro-preview-tts"
@@ -87,8 +87,8 @@ Whisper_Models = "large-v3"
 ELEVENLABS_TTS_MODELS = "eleven_v3,eleven_flash_v2_5,eleven_flash_v2,eleven_multilingual_v2,eleven_multilingual_v1"
 
 
-#--------------模型下载地址-------------------
-# 内置说话人下载地址
+# -------------- Model Download URLs -------------------
+# Built-in speaker diarization download URLs
 BUILTINT_URL_MS = [
     "https://www.modelscope.cn/models/himyworld/videotrans/resolve/master/onnx/seg_model.onnx",
     "https://www.modelscope.cn/models/himyworld/videotrans/resolve/master/onnx/nemo_en_titanet_small.onnx",
@@ -100,7 +100,7 @@ BUILTINT_URL_HF = [
     "https://huggingface.co/mortimerme/repocollect/resolve/main/onnx/3dspeaker_speech_eres2net_large_sv_zh-cn_3dspeaker_16k.onnx?download=true"
 ]
 
-# 内置标点恢复模型下载地址
+# Built-in punctuation restoration model download URLs
 PUNC_RESTORE_MS = [
     "https://www.modelscope.cn/models/himyworld/videotrans/resolve/master/puntc/model.onnx",
     "https://www.modelscope.cn/models/himyworld/videotrans/resolve/master/puntc/config.yaml",
@@ -111,33 +111,33 @@ PUNC_RESTORE_HF = [
     "https://huggingface.co/mortimerme/repocollect/resolve/main/puntc/config.yaml?download=true",
     "https://huggingface.co/mortimerme/repocollect/resolve/main/puntc/tokens.json?download=true",
 ]
-# 降噪模型下载地址
+# Denoise model download URLs
 DENOISE_URL_MS = [
     'https://modelscope.cn/models/himyworld/videotrans/resolve/master/onnx/dpdfnet8.onnx'
 ]
 DENOISE_URL_HF = [
     'https://huggingface.co/mortimerme/repocollect/resolve/main/onnx/dpdfnet8.onnx?download=true'
 ]
-# 背景音频分离地址前缀
+# Background audio separation URL prefix
 UVR_URL_MS = 'https://www.modelscope.cn/models/himyworld/videotrans/resolve/master/onnx/{}'
 UVR_URL_HF = 'https://huggingface.co/mortimerme/repocollect/resolve/main/onnx/{}?download=true'
 # realtime stt
 REALTIME_URL_MS='https://modelscope.cn/models/himyworld/videotrans/resolve/master/realtimestt.zip'
 REALTIME_URL_HF='https://huggingface.co/mortimerme/repocollect/resolve/main/realtimestt.zip?download=true'
 
-#----------Rubberband 库安装提示------------------
+# ---------- Rubberband Library Installation Tips ------------------
 INSTALL_RUBBERBAND_TIPS = """Windows: For Windows systems, please download the file, extract it, and place it in the ffmpeg folder in the current directory. Use a better audio acceleration algorithm\nhttps://breakfastquay.com/files/releases/rubberband-4.0.0-gpl-executable-windows.zip
 Darwin: `brew install rubberband`  and  `uv add pyrubberband` Use a better audio acceleration algorithm
 Linux: `sudo apt install rubberband-cli libsndfile1-dev` and `uv add pyrubberband`  Use a better audio acceleration algorithm"""
 
-#--------进度状态提示文字-----------------------
+# -------- Progress Status Constants -----------------------
 END_STATUS = "end"
 ERROR_STATUS = "error"
 SUCCEED_STATUS = "succeed"
 STOP_STATUS = "stop"
 ING_STATUS = "ing"
 
-#------------配音试听词---------------
+# ------------ Voice Preview Audition Texts ---------------
 LISTEN_TEXT = {
     "zh": "你好啊，我亲爱的朋友，希望你的每一天都是美好愉快的！",
     "zh-cn": "你好啊，我亲爱的朋友，希望你的每一天都是美好愉快的！",

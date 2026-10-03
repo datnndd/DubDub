@@ -16,14 +16,14 @@ retun output=['spk0', 'spk0', 'spk0', 'spk0', 'spk0', 'spk0', 'spk0', 'spk0', 's
 
 
 def _assign_speakers(subtitles, diarizations):
-    # ----------------- 1. 预处理 diarizations -----------------
+    # ----------------- 1. Preprocess diarizations -----------------
     clean_diars = []
     for dia in diarizations:
         if (len(dia) == 2 and len(dia[0]) == 2 and dia[0][0] < dia[0][1]):
             clean_diars.append((dia[0][0], dia[0][1], dia[1]))
-    clean_diars.sort(key=lambda x: x[0])  # 按开始时间排序
+    clean_diars.sort(key=lambda x: x[0])  # Sort by start time
 
-    # ----------------- 2. 预处理 subtitles（保留原顺序） -----------------
+    # ----------------- 2. Preprocess subtitles (preserve original order) -----------------
     indexed_subs = []
     for idx, sub in enumerate(subtitles):
         if len(sub) == 2 and sub[0] < sub[1]:
@@ -32,29 +32,29 @@ def _assign_speakers(subtitles, diarizations):
             indexed_subs.append((idx, None, None))
 
     valid_subs = [s for s in indexed_subs if s[1] is not None]
-    valid_subs.sort(key=lambda x: x[1])  # 只对有效片段按开始时间排序
+    valid_subs.sort(key=lambda x: x[1])  # Sort valid segments only by start time
 
-    # 输出数组，默认全是 "spk0"
+    # Output array, default all "spk0"
     output = ["spk0"] * len(subtitles)
 
-    # ----------------- 3. 扫描线分配说话人 -----------------
+    # ----------------- 3. Sweep-line speaker assignment -----------------
     d_ptr = 0
-    active = []           # 存储 (d_start, d_end, speaker)
+    active = []           # Store (d_start, d_end, speaker)
     total_diars = len(clean_diars)
 
     for orig_idx, s_start, s_end in valid_subs:
         duration = s_end - s_start
 
-        # 将开始时间 < VAD 结束时间 的 diar 加入窗口
+        # Add diar with start time < VAD end time into window
         while d_ptr < total_diars and clean_diars[d_ptr][0] < s_end:
             active.append(clean_diars[d_ptr])
             d_ptr += 1
 
-        # 移除窗口中已经结束的 diar（结束时间 <= VAD 开始时间）
-        # 因为 active 很小，重建列表完全没问题
+        # Remove diar from window that has already ended (end time <= VAD start time)
+        # Rebuilding list is lightweight because active list is small
         active = [d for d in active if d[1] > s_start]
 
-        # 计算重叠
+        # Calculate overlap
         overlaps = defaultdict(int)
         for d_start, d_end, spk in active:
             o_start = max(s_start, d_start)
@@ -62,7 +62,7 @@ def _assign_speakers(subtitles, diarizations):
             overlaps[spk] += (o_end - o_start)
 
         if not overlaps:
-            continue  # 保持 "spk0"
+            continue  # Keep "spk0"
 
         num_speakers = len(overlaps)
         best_spk = max(overlaps, key=overlaps.get)
@@ -73,7 +73,7 @@ def _assign_speakers(subtitles, diarizations):
         else:  # num_speakers == 1
             if max_overlap > 0.2 * duration:
                 output[orig_idx] = best_spk
-            # 否则保持 "spk0"
+            # Otherwise keep "spk0"
     return output
 
 def _map_speakers(diarizations):
@@ -81,13 +81,13 @@ def _map_speakers(diarizations):
     spk_map = {spk: f'spk{i}' for i, spk in enumerate(speaker_list)}
     for d in diarizations:
         d['speaker'] = spk_map.get(d['speaker'], 'spk0')
-    logger.debug(f'原始说话人排序后：{speaker_list=}')
-    logger.debug(f'映射为新说话人标识：{spk_map=}')
+    logger.debug(f'Sorted raw speakers: {speaker_list=}')
+    logger.debug(f'Mapped to new speaker IDs: {spk_map=}')
     return diarizations
 
 
 def _normalize_diarizations(raw_output):
-    """将原始说话人分离结果标准化为统一格式"""
+    """Standardize raw diarization output into a unified format."""
     output = []
     speaker_list = set()
     for item in raw_output:
@@ -100,13 +100,13 @@ def _normalize_diarizations(raw_output):
     spk_map = {spk: f'spk{i}' for i, spk in enumerate(speaker_list)}
     for d in output:
         d['speaker'] = spk_map.get(d['speaker'], 'spk0')
-    logger.debug(f'原始说话人排序后：{speaker_list=}')
-    logger.debug(f'映射为新说话人标识：{spk_map=}')
+    logger.debug(f'Sorted raw speakers: {speaker_list=}')
+    logger.debug(f'Mapped to new speaker IDs: {spk_map=}')
     return output
 
 
 def _diarize_and_write(subtitles_file, diarizations, speak_file):
-    """通用：读取字幕文件，将说话人分离结果分配到字幕，写入结果"""
+    """Common: read subtitle file, assign diarization results to subtitles, and write out result."""
     subtitles = json.loads(Path(subtitles_file).read_text(encoding='utf-8'))
     diar_list = [[d['times'], d['speaker']] for d in diarizations]
     output = _assign_speakers(subtitles, diar_list)
@@ -153,7 +153,8 @@ def cam_speakers(*, input_file, subtitles_file: str, speak_file: str, num_speake
         return False, f'{e}{msg}'
 
 
-# pyannote 3.4 依赖 huggingface_hub<1.0，高于会出现 use_auth_token 被废弃改为 token错误，而其他很多模块要求 huggingface_hub>1.0, 因此通过补丁允许 huggingface_hub仍接受 废弃的 use_auth_token
+# pyannote 3.4 depends on huggingface_hub<1.0; newer versions deprecate use_auth_token in favor of token,
+# while many other modules require huggingface_hub>1.0. This monkey patch allows huggingface_hub to still accept use_auth_token.
 def _hook_hf():
     import os
     if app_cfg.proxy:
@@ -162,24 +163,24 @@ def _hook_hf():
     import huggingface_hub
     import huggingface_hub.file_download
 
-    # 1. 备份原生的 hf_hub_download 方法
+    # 1. Backup original hf_hub_download function
     _original_hf_hub_download = huggingface_hub.file_download.hf_hub_download
 
-    # 2. 定义我们自己的包装（拦截）函数
+    # 2. Define custom wrapper function
     def patched_hf_hub_download(*args, **kwargs):
-        # 拦截并处理 use_auth_token
+        # Intercept and handle use_auth_token
         if "use_auth_token" in kwargs:
-            # 取出 use_auth_token 并从 kwargs 中删除
+            # Extract use_auth_token and remove from kwargs
             auth_token = kwargs.pop("use_auth_token")
             
-            # 将其赋值给新版 hf_hub_download 认的 'token' 参数
+            # Map it to the 'token' parameter expected by modern hf_hub_download
             if "token" not in kwargs:
                 kwargs["token"] = auth_token
                 
-        # 调用并返回原本的下载逻辑
+        # Call original download logic
         return _original_hf_hub_download(*args, **kwargs)
 
-    # 3. 替换 huggingface_hub 中的方法为我们的包装函数
+    # 3. Replace huggingface_hub method with our wrapper
     huggingface_hub.hf_hub_download = patched_hf_hub_download
     huggingface_hub.file_download.hf_hub_download = patched_hf_hub_download
 

@@ -186,7 +186,7 @@ def remove_silence_wav(audio_file:str, rm_start=True)->bool:
 
         trimmed_audio = audio[start_trim:end_trim]
         trimmed_audio.export(audio_file, format="wav")
-        #print(f'原:{len(audio)},新:{len(trimmed_audio)}')
+        #print(f'original:{len(audio)},new:{len(trimmed_audio)}')
         return True
 
     return False

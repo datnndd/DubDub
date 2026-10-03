@@ -18,7 +18,7 @@ def set_proxy(set_val=''):
         return
 
     if set_val:
-        # 设置代理
+        # Set proxy
         set_val = set_val.lower()
         if not set_val.startswith("http") and not set_val.startswith('sock'):
             set_val = f"http://{set_val}"
@@ -27,7 +27,7 @@ def set_proxy(set_val=''):
         os.environ['HTTPS_PROXY'] = set_val
         return set_val
 
-    # 获取代理
+    # Get proxy
     http_proxy = app_cfg.proxy or os.environ.get('HTTP_PROXY') or os.environ.get('HTTPS_PROXY')
     if http_proxy:
         http_proxy = http_proxy.lower()
@@ -38,14 +38,14 @@ def set_proxy(set_val=''):
         return None
     try:
         import winreg
-        # 打开 Windows 注册表
+        # Open Windows registry
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                             r'Software\Microsoft\Windows\CurrentVersion\Internet Settings') as key:
-            # 读取代理设置
+            # Read proxy settings
             proxy_enable, _ = winreg.QueryValueEx(key, 'ProxyEnable')
             proxy_server, _ = winreg.QueryValueEx(key, 'ProxyServer')
             if proxy_enable == 1 and proxy_server:
-                # 是否需要设置代理
+                # Whether proxy setting is needed
                 proxy_server = proxy_server.lower()
                 if not proxy_server.startswith("http") and not proxy_server.startswith('sock'):
                     proxy_server = "http://" + proxy_server
@@ -63,7 +63,7 @@ def process_openai_api(url=""):
     if not url.startswith('http'):
         url = 'http://' + url
 
-    # 删除末尾 /
+    # Remove trailing /
     url = url.rstrip('/').lower()
     if url.find(".openai.com") > -1:
         return "https://api.openai.com/v1"
@@ -71,7 +71,7 @@ def process_openai_api(url=""):
     if url.endswith('/v1'):
         return url
 
-    # 存在 /v1/xx的，改为 /v1
+    # If /v1/xx exists, change to /v1
     if url.find('/v1/chat/') > -1:
         return re.sub(r'/v1.*$', '/v1', url, flags=re.I | re.S)
 
@@ -79,7 +79,7 @@ def process_openai_api(url=""):
 
 
 def is_connect_hf() -> bool:
-    # 强制使用 huggingface.co
+    # Force using huggingface.co
     if Path(f'{ROOT_DIR}/huggingface.txt').exists():
         return True
     try:

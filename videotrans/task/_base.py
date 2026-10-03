@@ -9,23 +9,23 @@ from videotrans.task.taskcfg import TaskCfgBase, SrtItem
 
 @dataclass
 class BaseTask(BaseCon):
-    # 各项配置信息，例如 翻译、配音、识别渠道等
+    # Configuration info, such as translation, dubbing, recognition channels, etc.
     cfg: TaskCfgBase = field(default_factory=TaskCfgBase, repr=False)
-    # 进度记录
+    # Progress tracking
     precent: int = 1
-    # 需要配音的原始字幕信息 List[dict]
+    # Original subtitle information requiring dubbing: List[dict]
     queue_tts: List = field(default_factory=list, repr=False)
-    # 是否已结束
+    # Whether the task has ended
     hasend: bool = False
-    # 是否需要语音识别
+    # Whether speech recognition is needed
     should_recogn: bool = False
-    # 是否需要字幕翻译
+    # Whether subtitle translation is needed
     should_trans: bool = False
-    # 是否需要配音
+    # Whether dubbing is needed
     should_dubbing: bool = False
-    # 是否需要人声分离
+    # Whether vocal separation is needed
     should_separate: bool = False
-    # 是否需要嵌入配音或字幕
+    # Whether embedding dubbing or subtitles is needed
     should_hebing: bool = False
 
     def __post_init__(self):
@@ -33,39 +33,39 @@ class BaseTask(BaseCon):
         if self.cfg.uuid:
             self.uuid = self.cfg.uuid
 
-    # 预先处理，例如从视频中拆分音频、人声背景分离、转码等
+    # Pre-processing, such as extracting audio from video, vocal/background separation, transcoding, etc.
     def prepare(self):
         pass
 
-    # 语音识别创建原始语言字幕
+    # Speech recognition to create original language subtitles
     def recogn(self):
         pass
 
-    # 说话人识别，Funasr/豆包语音识别大模型 /Deepgram 除外，再判断是否已有说话人，Gemini/openai gpt4-dia 会生成说话人
+    # Speaker diarization: except for Funasr/Doubao ASR LLM/Deepgram, check if speakers already exist; Gemini/openai gpt4-dia generate speakers
     def diariz(self):
         pass
 
-    # 将原始语言字幕翻译到目标语言字幕
+    # Translate original language subtitles to target language subtitles
     def trans(self):
         pass
 
-    # 根据 queue_tts 进行配音
+    # Perform dubbing according to queue_tts
     def dubbing(self):
         pass
 
-    # 配音加速、视频慢速对齐
+    # Dubbing speedup, video slowdown alignment
     def align(self):
         pass
 
-    # 视频、音频、字幕合并生成结果文件
+    # Merge video, audio, and subtitles to generate result file
     def assembling(self):
         pass
 
-    # 删除临时文件，移动或复制，发送成功消息
+    # Delete temporary files, move or copy, send success message
     def task_done(self):
         pass
 
-    # 删掉尺寸为0的无效文件
+    # Delete invalid files with size 0
     def _unlink_size0(self, file: Union[str, List[str]]):
         if not file: return
         files = [file] if isinstance(file, str) else file
@@ -74,7 +74,7 @@ class BaseTask(BaseCon):
             if p.exists() and p.stat().st_size == 0:
                 p.unlink(missing_ok=True)
 
-    # 保存字幕文件 到目标文件夹
+    # Save subtitle file to target folder
     def _save_srt_target(self, srt_list: List[SrtItem], file: str):
         from videotrans.util.help_srt import get_srt_from_list
         try:
@@ -88,7 +88,7 @@ class BaseTask(BaseCon):
         self.signal(text=Path(file).read_text(encoding='utf-8', errors="ignore"), type='replace_subtitle')
         return True
 
-    # 如果启用了 LLM重新断句，则跳过该步骤，LLM断句后时间轴发生变更，无法和原始字幕对齐
+    # If LLM resegmentation is enabled, skip this step; timelines change after LLM resegmentation and cannot align with original subtitles
     def check_target_sub(self, source_srt_list: List[SrtItem], target_srt_list: List[SrtItem]) -> List[SrtItem]:
         source_len = len(source_srt_list)
         target_len = len(target_srt_list)
@@ -97,7 +97,7 @@ class BaseTask(BaseCon):
             return target_srt_list
 
         logger.warning(f'翻译结果行数{target_len}，原始字幕行数{source_len}，不一致,根据原始字幕时间轴获取对应目标字幕文本')
-        # 根据原始字幕的时间轴，到目标字幕内寻找同样时间轴的字幕文本，更准确
+        # Based on original subtitle timeline, look up target subtitle text with matching timeline, more accurate
         _time2srt={}
         for it in target_srt_list:
             _time2srt[it['time']]=it['text']
@@ -108,7 +108,7 @@ class BaseTask(BaseCon):
             it['text']=_time2srt.get(it['time'],'')
         return _source
 
-    # 手动调用设为结束，成功完成或出错时
+    # Manually set as ended, on successful completion or error
     def set_end(self, succeed=False):
         self.hasend = True
         if succeed:
@@ -122,7 +122,7 @@ class BaseTask(BaseCon):
                 else:
                     from videotrans.util.help_ffmpeg import send_notification
                     send_notification(tr('Succeed'), f"{self.cfg.basename}")
-            # 清理临时文件
+            # Clean up temporary files
             try:
                 if self.cfg.cache_folder:
                     shutil.rmtree(self.cfg.cache_folder, ignore_errors=True)

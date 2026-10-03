@@ -97,8 +97,8 @@ class PrepareMixin:
             self._split_audio_byraw()
         if self.cfg.vocal and Path(self.cfg.vocal).exists():
             self.clone_ref = self.cfg.vocal
-        # 从字幕中提取说话人 start
-        # 如果存在原始字幕，并且字幕第一条开头存在说话人标识，提取出说话人
+        # Extract speaker from subtitle start
+        # If source subtitle exists and first item starts with speaker tag, extract speaker
         if vail_file(self.cfg.source_sub):
             try:
                 source_srt_list = get_subtitle_from_srt(self.cfg.source_sub, is_file=True)
@@ -113,7 +113,7 @@ class PrepareMixin:
                                 spk_list.append(spk_list[0])
                         else:
                             spk_list.append(groups.group(1))
-                            # 从字幕中删掉说话人标识
+                            # Remove speaker tag from subtitle
                             it['text']=it['text'].replace(groups.group(0),'')
                     if spk_list:                            
                         Path(self.cfg.target_dir + "/speaker.json").write_text(json.dumps(spk_list), encoding='utf-8')
@@ -121,8 +121,8 @@ class PrepareMixin:
                         with open(self.cfg.source_sub, "w", encoding="utf-8", errors="ignore") as f:
                             f.write(txt)
             except Exception as e:
-                logger.exception(f'从原始字幕中提取出说话人并删除标识后保存失败:{e}',exc_info=True)
-        # 从字幕中提取说话人 end
+                logger.exception(f'Failed to extract speakers and remove tags from source subtitle: {e}',exc_info=True)
+        # Extract speaker from subtitle end
             
         self.signal(text=tr('endfenliyinpin'))
         logger.debug(f'[预处理阶段结束耗时]:{time.time()-_st}s')

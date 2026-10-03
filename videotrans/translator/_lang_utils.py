@@ -7,8 +7,8 @@ from videotrans.translator._registry import _ID_NAME_DICT
 
 
 def get_code(show_text=None):
-    # - None 即不选择语言，则返回 None，调用处需根据返回结果判断
-    # 未在 LANG CODE 中找到则原样返回
+    # - None means no language selected; returns None, caller should handle accordingly
+    # Returns original value if not found in LANG_CODE
     if not show_text or show_text in ['-', 'No']:
         return None
     if show_text == 'zh':
@@ -18,50 +18,50 @@ def get_code(show_text=None):
     return LANGNAME_DICT_REV.get(show_text, show_text)
 
 
-# 根据显示的语言和翻译通道，获取该翻译通道要求的源语言代码和目标语言代码
-# translate_type 翻译通道索引
-# show_source 显示的原语言名称或 - 或  语言代码
-# show_target 显示的目标语言名称 或 - 或语言代码
-# 如果是AI渠道则返回语言的自然语言名称
-# 新增的语言代码直接返回
-# - No 是兼容早期不规范写法
+# Based on displayed language and translation channel, get the source and target language codes required by that channel
+# translate_type: translation channel index
+# show_source: displayed original language name, '-', or language code
+# show_target: displayed target language name, '-', or language code
+# Returns natural language name of the language for AI channels
+# Newly added language codes are returned directly
+# '- No' is for backward compatibility with early informal notation
 def get_source_target_code(*, show_source=None, show_target=None, translate_type=None):
     source_list = None
     target_list = None
 
     if show_source and show_source not in ['-', 'No']:
-        if show_source in LANG_CODE:  # 是语言代码
+        if show_source in LANG_CODE:  # Is language code
             source_list = LANG_CODE[show_source]
-        elif LANGNAME_DICT_REV.get(show_source):  # 是语言显示名字
+        elif LANGNAME_DICT_REV.get(show_source):  # Is displayed language name
             source_list = LANG_CODE.get(LANGNAME_DICT_REV.get(show_source))
-        elif show_source == 'zh':  # 特殊兼容zh
+        elif show_source == 'zh':  # Special compatibility for zh
             source_list = LANG_CODE['zh-cn']
 
     if show_target and show_target not in ['-', 'No']:
-        if show_target in LANG_CODE:  # 是语言代码
+        if show_target in LANG_CODE:  # Is language code
             target_list = LANG_CODE[show_target]
-        elif LANGNAME_DICT_REV.get(show_target):  # 语言名字
+        elif LANGNAME_DICT_REV.get(show_target):  # Language name
             target_list = LANG_CODE.get(LANGNAME_DICT_REV.get(show_target))
         elif show_target == 'zh':
-            # 特殊兼容zh
+            # Special compatibility for zh
             target_list = LANG_CODE['zh-cn']
 
-    # 均未找到，可能是新增语言代码
+    # Neither found; may be a newly added language code
     if not source_list and not target_list:
-        return show_source, show_target  # 返回原始输入
+        return show_source, show_target  # Return original input
 
-    # 未设置渠道则使用 Google
+    # If channel is not set, default to Google
     if translate_type == GOOGLE_INDEX or translate_type is None:
         return source_list[0] if source_list else show_source, target_list[0] if target_list else show_target
 
-    # AI渠道
+    # AI channels
     if translate_type in AI_TRANS_CHANNELS:
         return source_list[7] if source_list else show_source, target_list[7] if target_list else show_target
 
     return show_source, show_target
 
 
-# 单独返回 qwen-mt qwen-tts qwen-asr 所需要的语言名称
+# Separately returns language name required by qwen-mt, qwen-tts, and qwen-asr
 def get_language_qwen(langcode=None):
     if not langcode:
         return None
@@ -71,11 +71,11 @@ def get_language_qwen(langcode=None):
     return langcode if not _lang_list else _lang_list[9]
 
 
-# 判断当前翻译通道和目标语言是否允许翻译
-# 比如deepl不允许翻译到某些目标语言，某些通道是否填写api key 等
-# translate_type翻译通道
-# show_target 翻译后显示的目标语言名称
-# only_key=True 仅检测 key 和api，不判断目标语言
+# Check if translation is allowed for current channel and target language
+# E.g., DeepL does not support translation to certain target languages, check if API key is configured, etc.
+# translate_type: translation channel
+# show_target: target language name displayed after translation
+# only_key=True: only checks key and api without checking target language
 def is_allow_translate(*, translate_type=None, show_target=None, only_key=False, return_str=False):
     if translate_type == GOOGLE_INDEX or translate_type is None:
         return True
@@ -86,15 +86,15 @@ def is_allow_translate(*, translate_type=None, show_target=None, only_key=False,
     if _cls.key_name and not params.get(_cls.key_name):
         return "Please configure the SK or API information of the channel first."
 
-    # 如果只需要判断是否填写了 api key 等信息，到此返回
+    # If only checking whether API key is configured, return here
     if only_key:
         return True
 
     return True
 
 
-# 获取用于进行语音识别的预设语言，比如语音是英文发音、中文发音
-# 根据 原语言进行判断,基本等同于google，但只保留_之前的部分
+# Get preset language for speech recognition, e.g. English speech, Chinese speech
+# Determine based on original language, mostly identical to Google but retains only part before _
 def get_audio_code(*, show_source=None):
     if not show_source or show_source in ['auto', '-']:
         return 'auto'
@@ -103,8 +103,8 @@ def get_audio_code(*, show_source=None):
     return source_list[0] if source_list else "auto"
 
 
-# 获取嵌入MP4视频嵌入软字幕的3位字母语言代码 ISO 639-2/T ，根据目标语言确定
-# mkv视频需根据此返回的代码再调用 get_mkv_code 获取 ISO 639-2/B
+# Get 3-letter ISO 639-2/T language code for MP4 soft subtitle embedding based on target language
+# MKV videos need to call get_mkv_code with this returned code to get ISO 639-2/B
 def get_subtitle_code(*, show_target=None):
     try:
         if show_target in LANG_CODE:
@@ -115,7 +115,7 @@ def get_subtitle_code(*, show_target=None):
         logger.error(f'获取字幕嵌入3为语言代码错误:{e}')
     return 'eng'
 
-# 如果是 mkv 软字幕，根据mp4所需code换算为  B 标准代码 ISO 639-2/B
+# If MKV soft subtitle, convert MP4 code to ISO 639-2/B standard code
 def get_mkv_code(code):
     #  ISO 639-2/T :ISO 639-2/B
     langcode={

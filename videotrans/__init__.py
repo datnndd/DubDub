@@ -15,8 +15,8 @@ class ChannelProvider:
     key_name: Optional[str] = None
 
 
-# provider_type: TTS|STT|STS 配音，转录，翻译字幕
-# _ID_NAME_DICT 渠道配置信息
+# provider_type: TTS|STT|STS Dubbing, Transcription, Subtitle translation
+# _ID_NAME_DICT Channel configuration mapping
 def get_class(channel_id: int = 0, provider_type=None, _ID_NAME_DICT=None):
     _key = f'{provider_type}-{channel_id}'
     if _key in _loaded_modules:
@@ -30,5 +30,5 @@ def get_class(channel_id: int = 0, provider_type=None, _ID_NAME_DICT=None):
                 _loaded_modules[_key] = obj
                 return obj
     except Exception as e:
-        logger.exception(f'懒加载渠道{provider_type}:{channel_id=}失败:{e}', exc_info=True)
+        logger.exception(f'Failed to lazy load provider {provider_type}:{channel_id=}: {e}', exc_info=True)
         raise

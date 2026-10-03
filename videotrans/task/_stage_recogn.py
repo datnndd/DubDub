@@ -140,7 +140,7 @@ class RecognMixin:
             self.signal(text=tr('endtiquzimu'))
             return
         
-        # 选中说话人识别，则不重新断句
+        # If speaker diarization is enabled, skip re-segmentation
         if not self.cfg.enable_diariz and self.cfg.rephrase==1:
             try:
                 from videotrans.translator._openaicompat import OpenAICampat

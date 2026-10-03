@@ -18,42 +18,42 @@ from videotrans.task.taskcfg import TaskCfgSTT
 from videotrans.util.help_misc import is_connect_hf
 
 """
-仅语音识别
+Speech recognition only
 """
 
 
 @dataclass
 class SpeechToText(BaseTask):
     cfg: TaskCfgSTT = field(default_factory=TaskCfgSTT, repr=False)
-    # 识别后输出的字幕格式，srt txt 等
+    # Output subtitle format after recognition, e.g. srt, txt, etc.
     out_format: str = field(init=True, default='srt')
-    # 在这个子类中，should_recogn 总是 True。
+    # In this subclass, should_recogn is always True.
     should_recogn: bool = True
-    # 是否需要将生成的字幕复制到原始视频所在目录下，并重命名为视频同名，以方便视频自动加载软字幕
+    # Whether to copy the generated subtitle to the original video directory and rename it to match the video name for easy soft subtitle autoloading
     copysrt_rawvideo: bool = field(default=False, init=True)
-    # 存放原始语言字幕
+    # Stores original language subtitles
     source_srt_list: List = field(default_factory=list)
-    # 插入说话人到字幕开头
+    # Insert speaker prefix at the beginning of subtitle
     spk_insert: bool = False
 
     def __post_init__(self):
         super().__post_init__()
-        # -1=不启用说话人，0=启用并且不限制说话人数量，>0+1是最大说话人数量
+        # -1=disable speaker diarization, 0=enable with unlimited speakers, >0+1 is maximum speaker count
         self.max_speakers = self.cfg.nums_diariz if self.cfg.enable_diariz else -1
         if self.max_speakers > 0:
             self.max_speakers += 1
-        # 存放目标文件夹
+        # Target destination folder
         if not self.cfg.target_dir:
             self.cfg.target_dir = HOME_DIR + f"/recogn"
-        # 转录后的目标字幕文件，先统一转为srt，然后再使用ffmpeg转为其他格式字幕
+        # Target subtitle file after transcription; first unified to srt, then converted to other formats via ffmpeg if needed
         self.cfg.target_sub = self.cfg.target_dir + '/' + self.cfg.noextname + '.srt'
-        # 临时文件夹
+        # Temporary folder
         self.cfg.cache_folder = config.TEMP_DIR + f'/{self.uuid}'
-        # 处理为 16k 的wav单通道音频，供模型识别用
+        # Converted to 16k mono wav audio for model recognition
         self.cfg.shibie_audio = self.cfg.cache_folder + f'/{self.cfg.noextname}-{time.time()}.wav'
         self.signal(text=tr("Speech Recognition to Word Processing"))
 
-    # 预先处理
+    # Pre-processing
     def prepare(self):
         if self._exit(): return
         Path(self.cfg.target_dir).mkdir(parents=True, exist_ok=True)
@@ -64,7 +64,7 @@ class SpeechToText(BaseTask):
     def recogn(self):
         while 1:
             if self._exit(): return
-            # 尚未生成
+            # Not yet generated
             if Path(self.cfg.shibie_audio).exists():
                 break
             time.sleep(0.5)
@@ -72,7 +72,7 @@ class SpeechToText(BaseTask):
         from videotrans.util.help_down import down_file_from_hf
         from videotrans.configure.excepts import SpeechToTextError
 
-        # 需要降噪
+        # Noise reduction needed
         if self.cfg.remove_noise:
             logger.debug('开始降噪')
             try:
@@ -112,14 +112,14 @@ class SpeechToText(BaseTask):
         self._save_srt_target(self.source_srt_list, self.cfg.target_sub)
 
 
-        # 中英恢复标点符号
+        # Chinese/English punctuation restoration
         if self.cfg.detect_language != 'auto' and self.cfg.fix_punc==1 and self.cfg.detect_language[:2] in ['zh', 'en']:
 
             try:
                 from videotrans.process.prepare_audio import fix_punc
                 down_file_from_hf(f'{ROOT_DIR}/models/puntc', PUNC_RESTORE_MS if not is_connect_hf() else PUNC_RESTORE_HF, callback=self._process_callback)
                 text_dict = {f'{it["line"]}': re.sub(r'[,.?!，。？！]', ' ', it["text"]) for it in self.source_srt_list}
-                # 序列化后传递文件路径
+                # Pass file path after serialization
                 text_dict_file=f'{self.cfg.cache_folder}/text_dict_file_{time.time()}.json'
                 Path(text_dict_file).write_text(json.dumps(text_dict),encoding="utf-8")
                 kw = {"text_dict_file": text_dict_file, "is_cuda": self.cfg.is_cuda}
@@ -137,13 +137,13 @@ class SpeechToText(BaseTask):
             except Exception as e:
                 logger.exception(f'恢复标点出错，跳过{e}', exc_info=True)
 
-        # 本身已有说话人识别的，就不再重新断句
+        # If speaker diarization is already present, do not re-segment
         self.signal(text=Path(self.cfg.target_sub).read_text(encoding='utf-8'), type='replace_subtitle')
         if Path(self.cfg.cache_folder + "/speaker.json").exists(): return
         
-        # 选中说话人识别，则不使用LLM重新短句
+        # If speaker diarization is selected, do not use LLM re-segmentation
         if not self.cfg.enable_diariz and self.cfg.rephrase == 1:
-            # LLM重新断句
+            # LLM re-segmentation
             try:
                 from videotrans.translator._openaicompat import OpenAICampat
                 ob = OpenAICampat(
@@ -235,14 +235,14 @@ class SpeechToText(BaseTask):
         if self._exit(): return
         from videotrans.util.help_srt import simple_wrap
         if self.cfg.detect_language and self.cfg.detect_language != 'auto':
-            # 处理换行
+            # Handle line wrapping
             maxlen = int(
                 settings.get('cjk_len', 15) if self.cfg.detect_language[:2] in contants.CJK_LANG else
                 settings.get('other_len', 60))
             for i, it in enumerate(self.source_srt_list):
                 it['text'] = simple_wrap(it['text'], maxlen, self.cfg.detect_language)
 
-        # 移除标点符号
+        # Remove punctuation marks
         if self.cfg.fix_punc==2:
             from videotrans.util.help_srt import delete_punc
             for i, it in enumerate(self.source_srt_list):

@@ -2,16 +2,16 @@ import pytest
 
 torch = pytest.importorskip("torch", reason="torch not installed")
 
-# 检查 CUDA 是否可用
-print(f"\nCUDA是否可用: {'是 Yes' if torch.cuda.is_available() else '否 No'}")
+# Check if CUDA is available
+print(f"\nCUDA available: {'Yes' if torch.cuda.is_available() else 'No'}")
 
-# 如果 CUDA 可用，再检查 CUDNN
+# If CUDA is available, check cuDNN
 if torch.cuda.is_available():
-    print(f"\ncuDNN 是否可用: {'是 Yes' if torch.backends.cudnn.is_available() else '否 No'}")
-    print(f"\ncuDNN 版本号: {torch.backends.cudnn.version()}\n\n")
+    print(f"\ncuDNN available: {'Yes' if torch.backends.cudnn.is_available() else 'No'}")
+    print(f"\ncuDNN version: {torch.backends.cudnn.version()}\n\n")
 
 
 def test_cuda_available():
-    # 不强制要求 CUDA，仅打印信息
+    # CUDA is not strictly required, print information only
     has_cuda = torch.cuda.is_available()
     print(f"CUDA available: {has_cuda}")

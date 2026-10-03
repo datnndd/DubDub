@@ -1,19 +1,19 @@
-# 1. 获取并缓存可用 gpu 数量
-# 2. 获取可用 cuda 号
-# 3. MacOSX 是否支持 mps
+# 1. Get and cache the number of available GPUs
+# 2. Get available CUDA device index
+# 3. Check if MacOSX supports MPS
 import platform
 from videotrans.configure.config import app_cfg,settings,logger
 
 
 
-# 获取可用的gpu数量 并缓存在 config.NVIDIA_GPU_NUMS 中，0=无可用显卡
+# Get available GPU count and cache in config.NVIDIA_GPU_NUMS, 0 = no GPU available
 #
-# force_cpu: 未使用参数
-#   True 强制使用 cpu 即强制设定没有显卡
+# force_cpu: unused parameter
+#   True forces CPU usage (i.e. force treat as no GPU)
 def getset_gpu(force_cpu=False) -> int:
     if force_cpu:
         return 0
-    # 尚未获取过时是 -1
+    # -1 means not retrieved yet
     if app_cfg.NVIDIA_GPU_NUMS > -1:
         return app_cfg.NVIDIA_GPU_NUMS
     
@@ -22,40 +22,40 @@ def getset_gpu(force_cpu=False) -> int:
         return 0
         
     import torch
-    # 无可用显卡
+    # No GPU available
     app_cfg.NVIDIA_GPU_NUMS = 0 if not torch.cuda.is_available() else torch.cuda.device_count()
     logger.debug(f'可用 Nvidia 显卡数: {app_cfg.NVIDIA_GPU_NUMS}')
     return app_cfg.NVIDIA_GPU_NUMS
 
 
-# 获取当前限制可用的cuda显卡索引
-# return -1 无可用显卡， 强制调用端使用 cpu 或 mps
-# >=0 为显卡号
+# Get index of currently available CUDA device
+# return -1: no available GPU, force caller to use CPU or MPS
+# >=0: GPU device index
 def get_cudaX() -> int:
     if platform.system() == 'Darwin':
         return -1
     try:
-        # 尚未初始化可用显卡数量
+        # Available GPU count has not been initialized yet
         if app_cfg.NVIDIA_GPU_NUMS == -1:
             getset_gpu()
 
         if app_cfg.NVIDIA_GPU_NUMS == 0:
-            # 无可用显卡
+            # No GPU available
             return -1
 
         if app_cfg.NVIDIA_GPU_NUMS == 1 or not bool(settings.get('multi_gpus', False)):
-            # 只有一张卡，无可选 或 有多张但未启用多显卡
+            # Only one card available or multi-GPU is not enabled
             return 0
 
         import torch
-        # 存在可用显存大于24G的可直接返回使用
+        # If free VRAM > 24GB exists on default card, return and use it directly
         free_g = (1024 ** 3) * 24
         _default_index = 0
         _default_free, _ = torch.cuda.mem_get_info(_default_index)
         if _default_free > free_g:
             return 0
 
-        # 依次返回大于24G可用显存的，若不存在则返回空余显存最大的
+        # Sequentially check for cards with > 24GB free VRAM; if none, return the card with the largest free VRAM
         for i in range(1, app_cfg.NVIDIA_GPU_NUMS):
             free_bytes, _ = torch.cuda.mem_get_info(i)
             if free_bytes > free_g:
@@ -71,9 +71,9 @@ def get_cudaX() -> int:
         return 0
 
 
-# MacOSX 判断是否支持 mps
-# mps: 支持
-# cpu: 不支持，必须使用 cpu
+# Check if MacOSX supports MPS
+# mps: supported
+# cpu: not supported, must use CPU
 def mps_or_cpu() -> str:
     if platform.system() != 'Darwin':
         return 'cpu'

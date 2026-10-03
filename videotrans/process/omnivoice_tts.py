@@ -1,7 +1,7 @@
-# 语音合成，新进程执行
-# 返回元组
-# 失败：第一个值为False，则为失败，第二个值存储失败原因
-# 成功，第一个值存在需要的返回值，不需要时返回True，第二个值为None
+# Text-to-Speech synthesis executed in a separate process
+# Returns tuple:
+# Failure: first value is False, second value stores failure reason
+# Success: first value has desired return value or True, second value is None
 import time
 from pathlib import Path
 import traceback, json,os
@@ -11,12 +11,12 @@ from ._utils import _write_log, convert_to_wav
 
 
 def omnivoice_fun(
-        queue_tts_file=None,# 配音数据存在 json文件下，根据文件路径获取
+        queue_tts_file=None, # Dubbing data stored in json file, loaded via path
         logs_file=None,
         is_cuda=False,
         speed=1.0,
-        device_index=0, # gpu索引
-        is_redubb=False#是否处于单视频校对配音流程
+        device_index=0, # GPU index
+        is_redubb=False # Whether in single video proofreading dubbing workflow
 )->Tuple[bool,Union[str,None]]:
     from videotrans.util.help_role import get_f5tts_role, get_omnivoice_voice_info
     from videotrans.util.help_misc import vail_file
@@ -63,7 +63,7 @@ def omnivoice_fun(
                     wavfile, ref_text = get_omnivoice_voice_info(role)
 
                 if not wavfile or not Path(wavfile).is_file():
-                    # 仍然不存在，无参考音频不可用
+                    # Still does not exist, reference audio unavailable
                     msg = f"No ref_audio: {role=},{wavfile=}"
                     _write_log(logs_file, json.dumps({"type": "logs", "text": msg}))
                     err+=1
@@ -84,7 +84,7 @@ def omnivoice_fun(
                 if is_redubb:
                     convert_to_wav(output_filename,it['filename'])
 
-            # 是重新配音，继续轮询
+            # Re-dubbing mode, continue polling
             if is_redubb:
                 time.sleep(1)
                 continue

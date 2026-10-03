@@ -1,4 +1,4 @@
-# 定义一个工厂函数，返回配置好的 Session
+# Define a factory function returning a configured Session
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3 import Retry
@@ -6,16 +6,16 @@ from urllib3 import Retry
 
 def custom_session_factory():
     sess = requests.Session()
-    # 配置重试策略
+    # Configure retry strategy
     retries = Retry(
-        total=3,  # 总重试次数 (改为3)
-        connect=2,  # 连接重试次数
-        read=2,  # 读取重试次数
-        backoff_factor=2,  # 重试间隔时间 (秒)，避免瞬间频繁请求
-        status_forcelist=[500, 502, 503, 504]  # 遇到这些状态码才重试
+        total=3,  # Total retry count (changed to 3)
+        connect=2,  # Connection retry count
+        read=2,  # Read retry count
+        backoff_factor=2,  # Retry backoff interval (seconds) to prevent burst requests
+        status_forcelist=[500, 502, 503, 504]  # Retry only on these status codes
     )
 
-    # 将重试策略挂载到 http 和 https 协议上
+    # Mount retry strategy onto http and https protocols
     adapter = HTTPAdapter(max_retries=retries)
     sess.mount('http://', adapter)
     sess.mount('https://', adapter)

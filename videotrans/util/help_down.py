@@ -11,10 +11,10 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 全局锁对象防止同时下载模型，避免文件冲突或限流
+# Global lock object to prevent concurrent model downloads, avoiding file conflicts or rate-limiting
 download_lock = threading.Lock()
 
-"""解析URL获取纯净文件名 (去除 ?query)"""
+"""Parse URL to obtain clean filename (stripping ?query)."""
 
 
 def get_filename_from_url(url) -> str:
@@ -22,7 +22,7 @@ def get_filename_from_url(url) -> str:
     return os.path.basename(parsed.path)
 
 
-# 用于判断某个目录内是否存在指定类型的文件，存在则视为已存在
+# Check if files of specified type exist in a directory; considered existing if found
 def file_exists(dirname, glob_patter='*.bin') -> bool:
     if isinstance(glob_patter, str):
         glob_patter = [glob_patter]
@@ -33,9 +33,9 @@ def file_exists(dirname, glob_patter='*.bin') -> bool:
 
 
 """
-若无法连接 huggingface.co
-    针对 faster-whisper 系列模型， 使用 modelscope.cn 下载[https://modelscope.cn/collections/himyworld/faster-whisper]，速度更快，其他模型使用国内镜像 https://hf-mirror.com 下载(慢易报错429)
-若可连接 huggingface.co ，则始终使用
+If huggingface.co is unreachable:
+    For faster-whisper models, use modelscope.cn to download [https://modelscope.cn/collections/himyworld/faster-whisper] for faster speeds. Other models use the domestic mirror https://hf-mirror.com (slower, prone to 429).
+If huggingface.co is reachable, always use it directly.
 """
 _original_http_get = None
 
@@ -53,14 +53,14 @@ def check_and_down_hf(model_id, repo_id, local_dir, callback=None, allow_list=No
 
     import huggingface_hub.file_download as hf_fd
     if not _original_http_get:
-        # ── 补丁 http_get: 注入 _ChunkTracker 绕过 tqdm ──
+        # ── Patch http_get: inject _ChunkTracker bypassing tqdm ──
         _original_http_get = hf_fd.http_get
     import huggingface_hub
     from huggingface_hub.errors import LocalEntryNotFoundError
 
     _state = {"completed": 0, "total_files": 0}
 
-    # ── 总进度 ──
+    # ── Overall progress ──
     class ProgressTqdm(tqdm.tqdm):
         def update(self, n=1):
             super().update(n)
@@ -91,10 +91,10 @@ def check_and_down_hf(model_id, repo_id, local_dir, callback=None, allow_list=No
                 if callback:
                     pct = min(self.downloaded / expected_size * 100, 99.9)
                     name = displayed_filename or url.rsplit('/', 1)[-1].split('?')[0]
-                    # 综合进度
+                    # Combined progress
                     completed = _state.get("completed", 0)
                     total = _state.get("total_files", 0)
-                    # 单文件进度
+                    # Single file progress
                     callback({"type": "file", "percent": pct,
                               "filename": f'[{completed + 1}/{total}](hf) {name}' if total > 0 else name})
                     if total > 0:
@@ -125,7 +125,7 @@ def check_and_down_hf(model_id, repo_id, local_dir, callback=None, allow_list=No
             )
         except LocalEntryNotFoundError:
 
-            # 线程锁，避免同时多个下载或其他线程也在下载
+            # Thread lock to prevent concurrent downloads across threads
             if callback:
                 callback(' wait get download lock...')
             with download_lock:
@@ -171,8 +171,8 @@ def check_and_down_hf(model_id, repo_id, local_dir, callback=None, allow_list=No
     return True
 
 
-# 非 https开头的，则必须以 / 开头，根据是否可访问自动添加 huggingface.co或 hf-mirror.com
-# 如果是 http开头，则直接使用
+# If not starting with https, it must start with /, and huggingface.co or hf-mirror.com is automatically prepended based on reachability
+# If starting with http, use it directly
 def down_file_from_hf(local_dir, urls=None, callback=None) -> bool:
     Path(local_dir).mkdir(parents=True, exist_ok=True)
     max_retries = 10
@@ -180,7 +180,7 @@ def down_file_from_hf(local_dir, urls=None, callback=None) -> bool:
     from videotrans.configure.excepts import DownloadModelsError
     import requests
     endpoint = None
-    # 复用底层 TCP 连接
+    # Reuse underlying TCP connection
     session = requests.Session()
     proxy = {"https": app_cfg.proxy} if app_cfg.proxy else None
 
@@ -195,7 +195,7 @@ def down_file_from_hf(local_dir, urls=None, callback=None) -> bool:
         final_file_path = Path(f'{local_dir}/{filename}')
         temp_file_path = Path(f'{local_dir}/{filename}.downloading')
 
-        # 如果正式文件存在且有大小，说明之前已经 100% 成功下载过
+        # If destination file exists and is non-empty, it was previously downloaded completely
         if final_file_path.exists() and final_file_path.stat().st_size > 0:
             if callback:
                 callback(f'{filename}:100.00%')
@@ -215,7 +215,7 @@ def down_file_from_hf(local_dir, urls=None, callback=None) -> bool:
                 headers = {}
                 downloaded_size = 0
 
-                # 检查临时文件是否存在以及已下载的大小
+                # Check if temporary file exists and get already downloaded size
                 if temp_file_path.exists():
                     downloaded_size = temp_file_path.stat().st_size
                     if downloaded_size > 0:
@@ -225,17 +225,17 @@ def down_file_from_hf(local_dir, urls=None, callback=None) -> bool:
                     proxy = None
                 with session.get(url, headers=headers, stream=True, timeout=(15, 30), verify=False,
                                  proxies=proxy) as response:
-                    # 如果不是 200 (OK) 也不是 206 则抛出异常触发重试
+                    # If status is neither 200 (OK) nor 206, raise exception to trigger retry
                     if response.status_code not in (200, 206):
                         response.raise_for_status()
 
-                    # 根据状态码自适应判断源站是否支持断点续传
+                    # Adaptively check whether server supports resumed download based on status code
                     if response.status_code == 206:
-                        mode = 'ab'  # 追加
+                        mode = 'ab'  # Append
                         remaining_length = response.headers.get('content-length')
                         total_length = (downloaded_size + int(remaining_length)) if remaining_length else None
                     else:
-                        mode = 'wb'  # 不覆盖
+                        mode = 'wb'  # Overwrite
                         downloaded_size = 0
                         total_length = response.headers.get('content-length')
                         total_length = int(total_length) if total_length else None
@@ -250,15 +250,15 @@ def down_file_from_hf(local_dir, urls=None, callback=None) -> bool:
                                         file_percent = (downloaded_size / total_length) * 100
                                         callback(f'{filename}:{file_percent:.2f}%')
                                     else:
-                                        # 源站无 content-length ，退化为显示已下载的数据量
+                                        # Server has no content-length; fallback to displaying total downloaded bytes
                                         mb_size = downloaded_size / (1024 * 1024)
                                         callback(f'{filename}:{mb_size:.1f}MB')
 
-                    # 确保下载没有中途悄悄结束
+                    # Ensure download did not terminate prematurely
                     if total_length is not None and downloaded_size < total_length:
                         raise ConnectionError(f"文件截断：预期 {total_length} 字节，仅收到 {downloaded_size} 字节")
 
-                    # 使用 replace 跨平台覆盖
+                    # Cross-platform overwrite using replace
                     temp_file_path.replace(final_file_path)
                     logger.debug(f'下载完成 {filename}')
                     break
@@ -280,7 +280,7 @@ def down_zip(local_dir, zip_url, callback=None) -> bool:
     max_retries = 10
 
     proxy = None
-    # modelscope.cn 阿里魔塔不使用代理
+    # Do not use proxy for ModelScope
     if 'modelscope.cn' not in zip_url:
         proxy = {"https": app_cfg.proxy} if app_cfg.proxy else None
     try:
@@ -292,7 +292,7 @@ def down_zip(local_dir, zip_url, callback=None) -> bool:
 
     logger.debug(f'Download from {zip_url} to {local_dir}')
 
-    # 文件名带 .downloading 后缀 实现“断点续传”
+    # Append .downloading suffix to implement resumable downloads
     temp_zip_path = Path(local_dir) / f"{filename}.downloading"
     session = requests.Session()
     retries = 0
@@ -301,7 +301,7 @@ def down_zip(local_dir, zip_url, callback=None) -> bool:
             headers = {}
             downloaded_size = 0
 
-            # 检查是否有未完成的临时 zip 文件，有则尝试断点续传
+            # Check if incomplete temporary zip exists; resume if possible
             if temp_zip_path.exists():
                 downloaded_size = temp_zip_path.stat().st_size
                 if downloaded_size > 0:
@@ -312,13 +312,13 @@ def down_zip(local_dir, zip_url, callback=None) -> bool:
                 if response.status_code not in (200, 206):
                     response.raise_for_status()
 
-                # 判断源站是否支持 206 Range 续传
+                # Check if origin server supports 206 Range resumption
                 if response.status_code == 206:
-                    mode = 'ab'  # 追加
+                    mode = 'ab'  # Append
                     remaining = response.headers.get('content-length')
                     total_length = (downloaded_size + int(remaining)) if remaining else None
                 else:
-                    mode = 'wb'  # 覆盖
+                    mode = 'wb'  # Overwrite
                     downloaded_size = 0
                     total_length = response.headers.get('content-length')
                     total_length = int(total_length) if total_length else None
@@ -337,7 +337,7 @@ def down_zip(local_dir, zip_url, callback=None) -> bool:
                                     mb_size = downloaded_size / (1024 * 1024)
                                     callback(f'{tr("Download Models")} {filename} {mb_size:.1f}MB')
 
-                # 确保 Zip 文件已被完全接收
+                # Ensure zip file was completely received
                 if total_length is not None and downloaded_size < total_length:
                     raise ConnectionError(f"Zip下载不完整：预期 {total_length} 字节，实际收到 {downloaded_size} 字节")
                 break
@@ -350,10 +350,10 @@ def down_zip(local_dir, zip_url, callback=None) -> bool:
                     callback(f'Error:{msg}')
                 raise DownloadModelsError(f"{msg}\n[{zip_url}]\n多次重试后仍然失败: {e}")
 
-            # 指数退避
+            # Exponential backoff
             time.sleep(min(2 ** retries, 30))
 
-    # === 校验并解压 Zip 文件 ===
+    # === Validate and extract zip file ===
     try:
         if callback:
             callback('Extracting zip...')
@@ -369,7 +369,7 @@ def down_zip(local_dir, zip_url, callback=None) -> bool:
         return True
 
     except zipfile.BadZipFile as e:
-        # 如果 Zip 损坏，立即删除坏文件
+        # If zip is corrupted, remove corrupt file immediately
         if temp_zip_path.exists():
             temp_zip_path.unlink()
         msg = tr('model is missing. Please download it', local_dir)
@@ -384,8 +384,8 @@ def down_zip(local_dir, zip_url, callback=None) -> bool:
         raise DownloadModelsError(f"{msg}\n[{zip_url}]\n{e}")
 
 
-# 从 modelscope.cn 下载完整模型
-# 优先加载本地模型，失败则在线下载
+# Download complete model from modelscope.cn
+# Prefer loading local model; download online on failure
 _orig_download_file_lists = None
 def check_and_down_ms(model_id, callback=None, local_dir=None,allow_patterns=None) -> bool:
     global _orig_download_file_lists
@@ -398,13 +398,13 @@ def check_and_down_ms(model_id, callback=None, local_dir=None,allow_patterns=Non
     _state = {"completed": 0, "total_files": 0}
 
     def _patched_dfl(repo_files, *args, **kwargs):
-        # 简单统计非 tree 条目数
+        # Count non-tree entries
         _state["total_files"] = sum(1 for f in repo_files if f.get('Type') != 'tree')
         return _orig_download_file_lists(repo_files, *args, **kwargs)
 
     ms_sd._download_file_lists = _patched_dfl
 
-    # 回调类：追踪字节，不依赖 str(tqdm)
+    # Callback class: tracks bytes without depending on str(tqdm)
     class Pro(TqdmCallback):
         def __init__(self, *args):
             super().__init__(*args)
@@ -417,7 +417,7 @@ def check_and_down_ms(model_id, callback=None, local_dir=None,allow_patterns=Non
                 return
             try:
                 pct = min(self._downloaded / max(self.file_size, 1) * 100, 99.9)
-                # 格式: "[已下载数/总数] 文件名 进度%"
+                # Format: "[downloaded/total] filename percent%"
                 callback(
                     f"[{_state['completed'] + 1}/"
                     f"{max(_state['total_files'], 1)}](ms) "
@@ -432,12 +432,12 @@ def check_and_down_ms(model_id, callback=None, local_dir=None,allow_patterns=Non
 
     try:
         try:
-            # 如果本地加载失败，则在线下载
+            # If local load fails, download online
             snapshot_download(model_id=model_id, local_files_only=True, progress_callbacks=[Pro], local_dir=local_dir)
             if callback:
                 callback(f'{model_id} exists')
         except ValueError:
-            # 线程锁，避免同时多个下载或其他线程也在下载
+            # Thread lock to prevent concurrent downloads across threads
             if callback:
                 callback('wait get download lock...')
             with download_lock:

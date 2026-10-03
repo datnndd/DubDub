@@ -40,8 +40,8 @@ class FasterAll(BaseRecogn):
     def _download(self):
         repo_id = FASTER_MODELS_DICT.get(self.model_name, self.model_name)
         check_and_down_hf(self.model_name, repo_id, self.local_dir, callback=self._process_callback)
-        # 批量时预先vad切分
-        # 否则后断句处理
+        # Pre-segment using VAD when batching
+        # Otherwise post-segmentation processing
 
         if settings.get('whisper_prepare'):
             self._vad_split()
@@ -55,7 +55,7 @@ class FasterAll(BaseRecogn):
         logs_file = f'{config.TEMP_DIR}/{self.uuid}/faster-{self.detect_language}-{time.time()}.log'
         _max_speech=max(int(float(settings.get('max_speech_duration_s', 5)) * 1000),2000)
         if self.recogn2pass:
-            # 2次识别， 生成简短的字幕
+            # Second-pass recognition, generates brief subtitles
             _max_speech = max(int(float(settings.get('max_speech_duration_s2', 2)) * 1000),500)
         
         

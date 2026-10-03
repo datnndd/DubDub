@@ -11,7 +11,7 @@ from videotrans.task.taskcfg import TaskCfgTTS, SrtItem
 
 
 """
-仅配音任务：对应 批量为字幕配音 面板
+Dubbing-only task: corresponds to the "Batch Dubbing for Subtitles" panel.
 """
 
 
@@ -19,22 +19,22 @@ from videotrans.task.taskcfg import TaskCfgTTS, SrtItem
 class DubbingSrt(BaseTask):
     cfg: TaskCfgTTS = field(default_factory=TaskCfgTTS, repr=False)
     out_ext: str = "wav"
-    # 是否是 字幕多角色配音 功能
+    # Whether this is the multi-role subtitle dubbing feature
     is_multi_role: bool = field(init=True, default=False)
-    # 固定为True
+    # Fixed to True
     should_dubbing: bool = True
     ignore_align: bool = False
-    # 多角色配音时直接使用该字幕信息
+    # Directly use this subtitle info during multi-role dubbing
     subs: List = field(default_factory=list, repr=False)
 
     def __post_init__(self):
         super().__post_init__()
-        # 输出目标位置
+        # Target output location
         if not self.cfg.target_dir:
             self.cfg.target_dir = f"{HOME_DIR}/tts"
-        # 需要配音的字幕文件
+        # Subtitle file requiring dubbing
         self.cfg.target_sub = self.cfg.name
-        # 配音后音频文件保存为
+        # Audio file after dubbing saved as
         self.cfg.target_wav = f'{self.cfg.target_dir}/{self.cfg.noextname}.wav'
         self.signal(text=tr("Dubbing from subtitles"))
         logger.debug(f'配音 {self.cfg=}')
@@ -50,7 +50,7 @@ class DubbingSrt(BaseTask):
     def _tts(self) -> None:
         from videotrans.util.help_srt import get_subtitle_from_srt
         queue_tts = []
-        # 获取字幕
+        # Get subtitles
         try:
             rate = int(str(self.cfg.voice_rate).replace('%', ''))
         except (TypeError,ValueError):
@@ -58,7 +58,7 @@ class DubbingSrt(BaseTask):
 
         rate = f"+{rate}%" if rate >= 0 else f"{rate}%"
 
-        # 如果配音文件是txt，则转为单条字幕形式，以便统一处理
+        # If the dubbing file is a txt, convert it to single-line subtitle format for unified processing
         if self.cfg.target_sub.endswith('.txt'):
             text = Path(self.cfg.target_sub).read_text(encoding='utf-8').strip()
             text = re.sub(r"(\s*?\r?\n\s*?){2,}", "\n", text, flags=re.I | re.S)
@@ -82,14 +82,14 @@ class DubbingSrt(BaseTask):
         else:
             subs = get_subtitle_from_srt(self.cfg.target_sub)
 
-        # 取出每一条字幕，行号\n开始时间 --> 结束时间\n内容
+        # Extract each subtitle: line number\nstart time --> end time\ncontent
         for i, it in enumerate(subs):
             if it['end_time'] < it['start_time'] or not it['text'].strip():
                 continue
             try:
                 spec_role = app_cfg.dubbing_role.get(int(it.get('line', 1))) if self.is_multi_role else None
             except Exception as e:
-                # 每条字幕的单独角色，错误可忽略
+                # Individual role for each subtitle, errors can be ignored
                 logger.exception(f'每条字幕的单独角色:{e}',exc_info=True)
                 spec_role = None
             voice_role = spec_role if spec_role else self.cfg.voice_role
@@ -114,7 +114,7 @@ class DubbingSrt(BaseTask):
             raise DubbingSrtError(tr('No subtitles required'))
         self.queue_tts = queue_tts
 
-        # 调用配音渠道操作
+        # Call dubbing channel operations
         tts.run(
             queue_tts=self.queue_tts,
             language=self.cfg.target_language_code,
@@ -124,7 +124,7 @@ class DubbingSrt(BaseTask):
             event_sink=self.event_sink,
             cancellation_token=self.cancellation_token,
         )
-        # 如果需要单独保存每条字幕的配音
+        # If individual dubbing audio for each subtitle needs to be saved separately
         if settings.get('save_segment_audio', False):
             outname = self.cfg.target_dir + f'/segment_audio_{self.cfg.noextname}'
             Path(outname).mkdir(parents=True, exist_ok=True)
@@ -135,14 +135,14 @@ class DubbingSrt(BaseTask):
                     try:
                         shutil.copy2(it['filename'], name)
                     except shutil.SameFileError:
-                        # 忽略同文件错误
+                        # Ignore same file error
                         pass
 
-    # 音频加速对齐字幕
+    # Audio speedup to align subtitles
     def align(self) -> None:
         if self.ignore_align: return
         from videotrans.util.help_ffmpeg import runffmpeg
-        # 只有一行
+        # Only one line
         if len(self.queue_tts) < 2:
             if len(self.queue_tts) == 1:
                 runffmpeg(['-y', '-i', self.queue_tts[0]['filename'], '-b:a', '128k', self.cfg.target_wav])
@@ -152,7 +152,7 @@ class DubbingSrt(BaseTask):
             self.signal(text=tr("Sound speed alignment stage"))
 
         target_path = Path(self.cfg.target_wav)
-        # 如果文件夹内存在同名，则添加时间后缀
+        # If the same filename exists in the folder, append timestamp suffix
         if target_path.is_file() and target_path.stat().st_size > 0:
             self.cfg.target_wav = self.cfg.target_wav[
                                   :-4] + f'-{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}{target_path.suffix}'
@@ -165,8 +165,8 @@ class DubbingSrt(BaseTask):
             target_audio=self.cfg.target_wav,
             cache_folder=self.cfg.cache_folder,
             remove_silent_mid=self.cfg.remove_silent_mid if not self.cfg.target_sub.endswith('.txt') else True,
-            # 是否移除字幕间空隙 仅在未自动加速时且是srt文件时才起作用,txt配音时移除，即直接音频文件相连
-            align_sub_audio=False,  # 不对齐字幕 字幕配音不修原始字幕，因此对齐无意义
+            # Whether to remove gaps between subtitles: only effective when not auto-accelerating and file is srt; removed when txt dubbing, directly concatenating audio files
+            align_sub_audio=False,  # Do not align subtitles: subtitle dubbing does not modify original subtitles, so alignment is meaningless
             event_sink=self.event_sink,
             cancellation_token=self.cancellation_token,
         )
@@ -184,7 +184,7 @@ class DubbingSrt(BaseTask):
         if self._exit(): return
         from videotrans.util.help_ffmpeg import runffmpeg, remove_silence_wav
         if Path(self.cfg.target_wav).is_file():
-            # 移除末尾静音
+            # Remove trailing silence
             remove_silence_wav(self.cfg.target_wav, rm_start=False)
             if self.out_ext.lower() != 'wav':
                 runffmpeg(

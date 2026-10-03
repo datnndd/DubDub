@@ -382,7 +382,7 @@ def test_unified_tts_preview_with_custom_voice_and_api(tmp_path: Path, monkeypat
     monkeypatch.setattr(voice_preview, "_preview_synthesizer", fake_synth)
 
     # Direct function test
-    p_id, p_path = asyncio.run(
+    p_id, p_path, _ = asyncio.run(
         synthesize_unified_tts_preview(
             provider=2,
             voice=v_id,

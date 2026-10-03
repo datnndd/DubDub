@@ -102,7 +102,7 @@ class GeminiRecogn(BaseRecogn):
         srt_str_list = []
 
         prompt = Path(ROOT_DIR+'/videotrans/prompts/recogn/gemini_recogn.txt').read_text(encoding='utf-8')
-        # 保存说话人
+        # Save speakers
         speaker_list=[]
         for seg_group in seg_list:
             api_key = self.api_keys.pop(0)

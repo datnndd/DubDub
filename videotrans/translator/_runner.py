@@ -19,7 +19,7 @@ def _check_google():
     return True
 
 
-# 翻译,先根据翻译通道和目标语言，取出目标语言代码
+# Translation: first extract target language code based on translation channel and target language
 def run(*, translate_type=0,
         text_list=None,
         is_test=False,
@@ -30,12 +30,12 @@ def run(*, translate_type=0,
         event_sink=None,
         cancellation_token=None) -> Union[List, str, None]:
     translate_type = int(translate_type)
-    # ai渠道下，target_language_name 是语言名称
-    # 其他渠道下是语言代码
-    # source_code 是原语言代码
+    # Under AI channels, target_language_name is the language name
+    # Under other channels, it is the language code
+    # source_code is the original language code
     target_language_name = target_code
     if translate_type in AI_TRANS_CHANNELS:
-        # 对AI渠道，返回目标语言的自然语言表达
+        # For AI channels, return natural language representation of target language
         _, target_language_name = get_source_target_code(show_target=target_code, translate_type=translate_type)
     kwargs = {
         "text_list": text_list,

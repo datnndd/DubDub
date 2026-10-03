@@ -1,7 +1,7 @@
-# 语音识别，新进程执行
-# 返回元组
-# 失败：第一个值为False，则为失败，第二个值存储失败原因
-# 成功，第一个值存在需要的返回值，不需要时返回True，第二个值为None
+# Speech recognition executed in a separate process
+# Returns tuple:
+# Failure: first value is False, second value stores failure reason
+# Success: first value has desired return value or True, second value is None
 import json, traceback
 from pathlib import Path
 from typing import List, Tuple, Union
@@ -31,7 +31,7 @@ def faster_whisper(
         hotwords=None,
         repetition_penalty=1.0,
         compression_ratio_threshold=2.2,
-        device_index=0,  # gpu索引
+        device_index=0,  # GPU index
         max_speech_ms=6000,
         subtitle_srt=None
 ) -> Tuple[Union[List[SrtItem], bool], Union[str, None]]:
@@ -46,7 +46,7 @@ def faster_whisper(
 
     def _create_model(_compute_type):
         try:
-            logger.debug(f'[faster_whisper]加载模型{model_name}: {is_cuda=},{_compute_type=}')
+            logger.debug(f'[faster_whisper] Loading model {model_name}: {is_cuda=},{_compute_type=}')
             model = WhisperModel(
                 local_dir,
                 device="cuda" if is_cuda else 'cpu',
@@ -55,20 +55,20 @@ def faster_whisper(
             )
             return model
         except Exception as e:
-            # 对数据类型问题引发的错误重试
-            # cuda下先尝试使用 float16
+            # Retry on data type errors
+            # In CUDA mode, first try float16
             if is_cuda and _compute_type != 'float16':
-                logger.warning(f'faster-whisper CUDA下 加载模型失败，更改为 [float16] 类型后重试{e}')
+                logger.warning(f'faster-whisper CUDA model loading failed, retrying with [float16]: {e}')
                 return _create_model('float16')
 
 
-            # 如果cpu并且非 int8,先尝试 int8
+            # If CPU mode and not int8, first try int8
             if not is_cuda and _compute_type != 'int8':
-                logger.warning(f'faster-whisper CPU下 加载模型失败，更改为 [int8] 类型后重试{e}')
+                logger.warning(f'faster-whisper CPU model loading failed, retrying with [int8]: {e}')
                 return _create_model('int8')
-            # 保底 float32
+            # Fallback to float32
             if _compute_type != 'float32':
-                logger.warning(f'faster-whisper  加载模型失败，更改为 [float32] 类型后重试, {is_cuda=}')
+                logger.warning(f'faster-whisper model loading failed, retrying with [float32], {is_cuda=}')
                 return _create_model('float32')
             raise
 
@@ -78,13 +78,13 @@ def faster_whisper(
         last_end_time = audio_duration / 1000.0 if audio_duration > 0 else (speech_timestamps[-1][1] / 1000.0 if speech_timestamps else 0)
 
         try:
-            # 1. 加载基础模型
+            # 1. Load base model
             _write_log(logs_file, json.dumps({"type": "logs", "text": 'loading model'}))
-            logger.debug(f'开始加载 faster-whisper模型{model_name},数据类型:{compute_type}')
+            logger.debug(f'Loading faster-whisper model {model_name}, compute_type: {compute_type}')
             model = _create_model(compute_type)
         except Exception as e:
             error = traceback.format_exc()
-            logger.error(f'[faster_whisper][{is_cuda=}]语音转录加载模型失败:{local_dir=}\n{error}')
+            logger.error(f'[faster_whisper][{is_cuda=}] Speech transcription model loading failed: {local_dir=}\n{error}')
             return False, f'{e},{error}'
 
         if not temperature:
@@ -104,13 +104,13 @@ def faster_whisper(
         if speech_timestamps:
 
             _write_log(logs_file, json.dumps({"type": "logs", "text": 'Transcribe batch...'}))
-            logger.debug(f'预先VAD处理后，将断句时间数据传给 BatchedInferencePipeline 批量识别,batch_size=4')
-            # 4. 执行批量推理
-            # 使用 batched_model.transcribe
+            logger.debug(f'After pre-VAD processing, passing timestamps to BatchedInferencePipeline, batch_size=4')
+            # 4. Execute batched inference
+            # Using batched_model.transcribe
             batched_model = BatchedInferencePipeline(model=model)
 
-            # 3. 转换时间戳格式
-            # BatchedInferencePipeline 需要 [{'start': start_sec, 'end': end_sec}, ...]
+            # 3. Convert timestamp format
+            # BatchedInferencePipeline requires [{'start': start_sec, 'end': end_sec}, ...]
             clip_timestamps_dicts = [
                 {"start": it[0] / 1000.0, "end": it[1] / 1000.0}
                 for it in speech_timestamps
@@ -121,9 +121,9 @@ def faster_whisper(
                 beam_size=beam_size,
                 best_of=best_of,
                 no_speech_threshold=no_speech_threshold,
-                # vad_filter 必须为 False，否则 clip_timestamps 可能被忽略或产生冲突，
+                # vad_filter must be False, otherwise clip_timestamps may be ignored or conflict
                 vad_filter=False,
-                clip_timestamps=clip_timestamps_dicts,  # 自定义分段
+                clip_timestamps=clip_timestamps_dicts,  # Custom segments
                 condition_on_previous_text=condition_on_previous_text,
                 word_timestamps=False,
                 without_timestamps=True,
@@ -197,11 +197,11 @@ def faster_whisper(
             if jianfan and raws:
                 for it in raws:
                     it['text'] = zhconv.convert(it['text'], 'zh-hans')
-            logger.debug('断句完毕返回结果')
-        # 保存识别结果到临时目录下，防止进程崩溃后永久等待
+            logger.debug('Resegmentation complete, returning results')
+        # Save recognition results to temporary directory to prevent deadlock if child process crashes
         if subtitle_srt:
             Path(subtitle_srt).write_text("\n\n".join([f'{i+1}\n{it.startraw} --> {it.endraw}\n{it.text}' for i,it in enumerate(raws)]),encoding="utf-8")
-            logger.debug(f'faster-whisper下已临时保存识别结果到 {subtitle_srt}，防止进程崩溃后永久等待')
+            logger.debug(f'faster-whisper saved temporary results to {subtitle_srt} to prevent subprocess hang')
         
         return raws,None
     except BaseException as e:

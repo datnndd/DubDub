@@ -55,26 +55,26 @@ def vail_file(file=None):
 
 
 def shutdown_system():
-    # 获取当前操作系统类型
+    # Get current operating system type
     system = platform.system()
 
     if system == "Windows":
-        # Windows 下的关机命令
+        # Windows shutdown command
         subprocess.call("shutdown /s /t 0", shell=True)
     elif system == "Linux":
-        # Linux 下的关机命令
+        # Linux shutdown command
         subprocess.call("poweroff")
     elif system == "Darwin":
-        # macOS 下的关机命令
+        # macOS shutdown command
         subprocess.call("sudo shutdown -h now", shell=True)
     else:
         logger.error(f"Unsupported system: {system}")
 
 
-# 判断 novoice.mp4是否创建好
+# Check whether novoice.mp4 is ready
 def is_novoice_mp4(novoice_mp4, noextname, uuid=None, *, event_sink=None, cancellation_token=None):
-    # 预先创建好的
-    # 判断novoice_mp4是否完成
+    # Pre-created
+    # Check if novoice_mp4 is completed
     t = 0
     job_uuid = uuid or noextname
 
@@ -113,7 +113,7 @@ def is_novoice_mp4(novoice_mp4, noextname, uuid=None, *, event_sink=None, cancel
         return True
 
 
-# 将字符串做 md5 hash处理
+# Process string with MD5 hashing
 @lru_cache
 def get_md5(input_string: str):
     md5 = hashlib.md5()
@@ -121,7 +121,7 @@ def get_md5(input_string: str):
     return md5.hexdigest()
 
 
-# 播放音频
+# Play audio
 def pygameaudio(filepath):
     import os
     if not os.path.exists(filepath):
@@ -145,16 +145,16 @@ def read_last_n_lines(filename, n=100):
     from collections import deque
     try:
         with open(filename, 'r', encoding='utf-8') as file:
-            # 使用 deque 只保留最后 n 行
+            # Use deque to retain only the last n lines
             last_lines = deque(file, maxlen=n)
-        return list(last_lines)  # 返回列表形式
+        return list(last_lines)  # Return as a list
     except FileNotFoundError:
         return []
     except Exception:
         return []
 
 
-# 序列化
+# Serialization
 def serial(data: object) -> str:
     if not isinstance(data, list):
         return json.dumps(asdict(data) if is_dataclass(data) else data)
@@ -165,11 +165,11 @@ def serial(data: object) -> str:
 
 
 def check_new_version():
-    # 查看当前最新版本信息
+    # Check latest version info
     try:
         import requests
-        # 纯静态文件，仅返回版本信息字符串
-        # 只获取当前软件版本号数字和操作系统类型(win32/macos/linux)
+        # Pure static file, returns only version info string
+        # Only gets current software version number and operating system type (win32/macos/linux)
         url = f"https://pyvideotrans.com/version.json?version={VERSION}&os={sys.platform}"
         res = requests.get(url)
         res.raise_for_status()
@@ -206,10 +206,10 @@ def get_tts_type(type_index=None):
 def atomic_write_json(data, target_path):
     target = Path(target_path)
 
-    # 创建临时文件
+    # Create temporary file
     fd, tmp_name = tempfile.mkstemp(dir=target.parent, suffix='.tmp', text=True)
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
         json.dump(data, f)
 
-    # 原子替换（此处即使进程崩溃，原文件依然完整）
+    # Atomic replace (even if process crashes, original file remains intact)
     os.replace(tmp_name, target_path)

@@ -8,7 +8,7 @@ import httpx
 from videotrans.configure.config import defaulelang
 
 
-# 内部已整理好错误提示消息的异常，将ex=None,message='{错误消息}'
+# Base exception class with pre-formatted error message, ex=None, message='{error_message}'
 class VideoTransError(Exception):
     def __init__(self, message=''):
         super().__init__(message)
@@ -46,7 +46,7 @@ class SttTimeoutError(VideoTransError):
 
 
 
-# 出现该类异常时，需要立即停止任务
+# When this exception is raised, terminate task immediately
 class StopTask(VideoTransError):
     pass
 
@@ -55,13 +55,13 @@ class StopRetry(VideoTransError):
     pass
 
 
-# 不可恢复，无需继续重试的异常
+# Non-recoverable exceptions that should not be retried
 NO_RETRY_EXCEPT = (
     ConnectionError,
 
-    TooManyRedirects,  # 重定向次数过多
-    InvalidURL,  # URL 格式无效
-    # 代理错误
+    TooManyRedirects,  # Too many redirects
+    InvalidURL,  # Invalid URL format
+    # Proxy errors
     ProxyError,
     MissingSchema,
     InvalidSchema,
@@ -80,7 +80,7 @@ NO_RETRY_EXCEPT = (
     StopTask
 )
 
-"""检查错误信息中是否包含本地地址"""
+"""Check if error message contains a local address."""
 def _is_local_address(url_or_message):
     if not url_or_message:
         return False
@@ -91,13 +91,13 @@ def _is_local_address(url_or_message):
     return any(indicator in text for indicator in local_indicators)
 
 
-"""尝试从错误信息中提取API地址"""
+"""Attempt to extract API URL from error message."""
 
 
 def _extract_api_url_from_error(error):
     error_str = str(error)
 
-    # 查找URL模式
+    # Find URL pattern
     url_patterns = [
         r'https?://[^\s\'"]+',
         r'www\.[^\s\'"]+\.[a-z]{2,}',
@@ -112,13 +112,13 @@ def _extract_api_url_from_error(error):
     return None
 
 
-"""处理连接错误的详细信息"""
+"""Handle detailed connection error message."""
 
 
 def _handle_connection_error_detail(error, lang):
     error_str = str(error).lower()
 
-    # 检查是否为本地地址
+    # Check if local address
     is_local = _is_local_address(error_str)
     api_url = _extract_api_url_from_error(error)
 
@@ -180,12 +180,12 @@ def _handle_connection_error_detail(error, lang):
             else "Network connection failed"
         )
 
-    # 为中文用户添加额外提示
+    # Additional tips for Chinese locale
     if lang == 'zh' and api_url and not is_local:
         if "edge.microsoft.com" in api_url.lower():
             base_message += ". 微软翻译使用频繁可能触发限流，请稍等段时间重试。"
             return base_message
-        # 检查是否为国外知名API服务
+        # Check if well-known overseas API service
         foreign_apis = ['openai', 'anthropic', 'claude', 'elevenlabs', 'deepgram', 'google', 'aws.amazon']
         if any(api in api_url.lower() for api in foreign_apis):
             base_message += "。注意：某些国外服务需要科学上网才能访问"
@@ -200,7 +200,7 @@ def _nofoundfile(e,lang):
         return f'请检查文件是否存在，若存在，可能文件名可能过长，请重命名为简短名称，并移动到浅层目录下:\n{filename}' if lang=='zh' else f'The filename may be too long. Please rename it to a shorter name and move it to a shallow directory.:\n{filename}'
     return f"文件不存在：{filename}" if lang == 'zh' else f"File not found: {filename}"
 
-# 根据异常类型，返回整理后的可读性错误消息
+# Return formatted, human-readable error message based on exception type
 def get_msg_from_except(ex:Exception)->str:
     if isinstance(ex, VideoTransError):
         return str(ex)
@@ -216,9 +216,9 @@ def get_msg_from_except(ex:Exception)->str:
     from deepgram.clients.common.v1.errors import DeepgramApiError
     from openai import AuthenticationError, PermissionDeniedError, NotFoundError, BadRequestError, RateLimitError, \
     APIConnectionError, APIError, ContentFilterFinishReasonError, InternalServerError, LengthFinishReasonError
-    # 异常处理映射
+    # Exception handler mapping
     exception_handlers = {
-        # === 认证和权限问题 ===
+        # === Authentication and permission issues ===
         AuthenticationError: lambda e: (
             f"API密钥错误，请检查密钥是否正确 {e.message}" if lang == 'zh'
             else (e.body.get('message') if e.body else e.message)
@@ -229,17 +229,17 @@ def get_msg_from_except(ex:Exception)->str:
             else (e.body.get('message') if e.body else e.message)
         ),
 
-        # === 频率限制 ===
-        # === 资源不存在问题 ===
-        # === 请求参数问题 ===
-        # === 服务端问题 ===
+        # === Rate limits ===
+        # === Resource not found ===
+        # === Request parameter issues ===
+        # === Server side errors ===
         (RateLimitError,InternalServerError, NotFoundError, BadRequestError, APIConnectionError, APIError): lambda e: e.body.get('message') if hasattr(e, 'body') and e.body else e.message,
 
         LengthFinishReasonError: lambda e: f'内容太长超出最大允许Token，请减小内容或增大max_token,或者降低每次发送字幕行数\n{e}' if lang == 'zh' else f'{e}',
         ContentFilterFinishReasonError: lambda
             e: f"内容触发AI风控被过滤 {e}" if lang == 'zh' else f'Content triggers AI risk control and is filtered\n{e}',
 
-        # === 配置和地址问题 ===
+        # === Configuration and address issues ===
         (TooManyRedirects, MissingSchema, InvalidSchema, InvalidURL): lambda e: (
             f"请求地址格式不正确，请检查配置 {e.message}" if lang == 'zh'
             else f"Request URL format is incorrect, check configuration {e.message}"
@@ -258,7 +258,7 @@ def get_msg_from_except(ex:Exception)->str:
 
         DeepgramApiError: lambda e: e.message if hasattr(e, 'message') else str(e),
         ApiError_11: lambda e: e.body.get('detail', {}).get('message', e.body) if hasattr(e, 'body') else str(e),
-        # === 网络连接问题 ===
+        # === Network connection issues ===
         (ReqConnectionError, ConnectionError, ConnectionResetError, ConnectionRefusedError, ConnectionAbortedError,
          httpcore.ConnectTimeout, httpx.ConnectTimeout, httpx.ConnectError, httpx.ReadError, Timeout): lambda e: (
             _handle_connection_error_detail(e, lang)
@@ -279,13 +279,13 @@ def get_msg_from_except(ex:Exception)->str:
             else f"File already exists: {getattr(e, 'filename', '')}"
         ),
 
-        # === 操作系统错误 ===
+        # === Operating system errors ===
         OSError: lambda e: (
             f"系统错误 ({e.errno})：{e.strerror}" if lang == 'zh'
             else f"System Error ({e.errno}): {e.strerror}"
         ),
 
-        # === 数据处理错误 ===
+        # === Data processing errors ===
         KeyError: lambda e: (
             f"处理数据时缺少必需的键：{e}" if lang == 'zh'
             else f"{e}"
@@ -306,7 +306,7 @@ def get_msg_from_except(ex:Exception)->str:
             else f" {e.reason}"
         ),
 
-        # === 程序内部错误 ===
+        # === Internal application errors ===
         AttributeError: lambda e: (
             f"程序内部错误：{e}" if lang == 'zh'
             else f"{e}"
@@ -342,12 +342,12 @@ def get_msg_from_except(ex:Exception)->str:
         ),
     }
 
-    # 遍历映射，查找匹配的处理器
+    # Iterate over mapping to find matching handler
     for exc_types, handler in exception_handlers.items():
         if isinstance(ex, exc_types):
             return handler(ex)
 
-    # === 后备处理逻辑 ===
+    # === Fallback processing logic ===
     error_str = str(ex)
     if any(keyword in error_str.lower() for keyword in [
         'connection', 'connect', 'refused', 'reset', 'timeout', 'retries',
@@ -371,5 +371,5 @@ def get_msg_from_except(ex:Exception)->str:
                 return str(error_info.get('message', error_info))
             return str(error_info)
         return str(_msg)
-    # 默认错误消息
+    # Default error message
     return ''

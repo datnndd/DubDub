@@ -82,7 +82,7 @@ class DubbingMixin:
             }
             _dubbing_cache=f'{DUBBING_CACHE}/{_key}.wav'
             if vail_file(_dubbing_cache):
-                # 直接使用缓存
+                # Directly use cache
                 shutil.copy2(_dubbing_cache,tmp_dict['filename'])
             if str(voice).strip().lower() == 'clone' and self.cfg.tts_type in SUPPORT_CLONE:
                 tmp_dict['ref_wav'] = f"{self.cfg.cache_folder}/clone-{i}.wav"
@@ -92,7 +92,7 @@ class DubbingMixin:
         self.queue_tts = copy.deepcopy(queue_tts)
 
         if not self.queue_tts or len(self.queue_tts) < 1:
-            raise RuntimeError(f'字幕长度为0，无法继续配音')
+            raise RuntimeError(f'Subtitle length is 0, cannot proceed with dubbing')
 
         if len([it.get("ref_wav") for it in self.queue_tts if it.get("ref_wav")]) > 0:
             self._create_ref_from_vocal()
@@ -115,7 +115,7 @@ class DubbingMixin:
             if self.cfg.fix_punc==2:
                 it['text']=delete_punc(it['text'])
             if Path(it['filename']).exists():
-                # 保存缓存
+                # Save to cache
                 shutil.copy2(it['filename'],f'{DUBBING_CACHE}/'+Path(it['filename']).name.split('-')[-1])
                 if outname:
                     text = re.sub(r'["\'*?\\/|:<>\r\n\t]+', '', it['text'], flags=re.I | re.S)

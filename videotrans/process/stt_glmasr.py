@@ -1,7 +1,7 @@
-# 语音识别，新进程执行
-# 返回元组
-# 失败：第一个值为False，则为失败，第二个值存储失败原因
-# 成功，第一个值存在需要的返回值，不需要时返回True，第二个值为None
+# Speech recognition executed in a separate process
+# Returns tuple:
+# Failure: first value is False, second value stores failure reason
+# Success: first value has desired return value or True, second value is None
 import re, json, traceback
 from pathlib import Path
 from typing import List, Tuple, Union
@@ -20,7 +20,7 @@ def glmasr_asr(
         audio_file=None,
         local_dir=None,
         jianfan=False,
-        device_index=0  # gpu索引
+        device_index=0  # GPU index
 ) -> Tuple[Union[List[SrtItem], bool], Union[str, None]]:
     import torch,zhconv
     from videotrans.process._stt_utils import _write_log
@@ -30,13 +30,13 @@ def glmasr_asr(
     processor = AutoProcessor.from_pretrained(local_dir)
 
 
-    # 使用 device_map="auto" 自动分配，或指定 device
+    # Automatically allocate using device_map="auto" or specify device
     device_arg = f"cuda:{device_index}" if is_cuda else "auto"
     model = GlmAsrForConditionalGeneration.from_pretrained(local_dir, device_map=device_arg)
     msg = f'Use device {model.device}'
     _write_log(logs_file, json.dumps({"type": "logs", "text": msg}))
 
-    logger.debug(f'huggingface_asr 渠道使用模型: {local_dir}')
+    logger.debug(f'huggingface_asr channel model: {local_dir}')
     try:
         if cut_audio_list and isinstance(cut_audio_list, str):
             cut_audio_list: List[SrtItem] = [SrtItem(**item) for item in
@@ -76,7 +76,7 @@ def glmasr_asr(
         for i, (it, text) in enumerate(zip(raws, decoded_outputs)):
             _write_log(logs_file, json.dumps({"type": "logs", "text": f"subtitles {i + 1}/{total}..."}))
             if text:
-                # 清理特殊标记
+                # Clean special tokens
                 cleaned_text = re.sub(r'<unk>|</unk>', '', text).strip()
                 if jianfan:
                     cleaned_text = zhconv.convert(cleaned_text, 'zh-hans')

@@ -46,7 +46,7 @@ class AlignMixin:
         if vail_file(self.cfg.novoice_mp4):
             self.video_time = get_video_duration(self.cfg.novoice_mp4)
         
-        # 变速后更新字幕
+        # Update subtitles after speed change
         if self.cfg.voice_autorate or self.cfg.video_autorate or self.cfg.align_sub_audio:
             srt = ""
             for it in self.queue_tts:

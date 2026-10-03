@@ -6,18 +6,18 @@ from ._utils import _write_log
 
 
 def _remove_unwanted_characters(text: str) -> str:
-    # 保留中文、日文、韩文、英文、数字和常见符号，去除其他字符
+    # Retain Chinese, Japanese, Korean, English, numbers, and common symbols, remove other characters
     allowed_characters = re.compile(r'<\|\w+\|>')
     return re.sub(allowed_characters, '', text)
 
 
 def _resegment(texts, language, max_speech_ms, logs_file=None) -> List[SrtItem]:
     """
-    仅针对过长的 Whisper 识别结果重新断句，并格式化为 SRT 字幕格式。
-    保留 Whisper 原本正常的短句，不对其进行全局拉平。
+    Only re-segment overlong Whisper recognition results and format as SRT subtitles.
+    Preserves Whisper's originally normal short sentences without flattening globally.
     """
 
-    # --- 辅助函数：将毫秒转换为 SRT 标准时间格式 HH:MM:SS,mmm ---
+    # --- Helper function: convert milliseconds to SRT standard time format HH:MM:SS,mmm ---
     def format_srt_time(ms_time):
         ms_time = int(ms_time)
         seconds, milliseconds = divmod(ms_time, 1000)
@@ -25,8 +25,8 @@ def _resegment(texts, language, max_speech_ms, logs_file=None) -> List[SrtItem]:
         hours, minutes = divmod(minutes, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
-    # --- 语言连接规则与标点判定 ---
-    # 东方中日韩等语言通常无需空格，其他字母系语言需空格
+    # --- Language concatenation rules and punctuation determination ---
+    # CJK and certain Asian languages do not need spaces; alphabetic languages do
     no_space_langs = {'zh', 'ja', 'th', 'yue', 'ko', 'km'}
     use_space = language.lower() not in no_space_langs
 
@@ -41,13 +41,13 @@ def _resegment(texts, language, max_speech_ms, logs_file=None) -> List[SrtItem]:
     def build_text(chunk_words):
         if use_space:
             text_str = " ".join(chunk_words)
-            # 修复字母语言由于空格连接导致的标点前导空格问题 (如 "Hello , world" -> "Hello, world")
+            # Fix leading space before punctuation caused by space-joining in alphabetic languages (e.g. "Hello , world" -> "Hello, world")
             text_str = re.sub(r'\s+([.,?!:;])', r'\1', text_str)
         else:
             text_str = "".join(chunk_words)
         return text_str.strip()
 
-    # --- 核心逻辑 ---
+    # --- Core logic ---
     final_segments = []
 
     _len = len(texts)
@@ -60,8 +60,8 @@ def _resegment(texts, language, max_speech_ms, logs_file=None) -> List[SrtItem]:
         _c_percent = seg_idx * _block
         _write_log(logs_file, json.dumps({"type": "logs", "text": f'Resegment:{_c_percent:.2f}%'}))
 
-        # 1. 如果该句话时长未超过 max_speech_ms，或者没有 words 数据可供细分
-        # 直接原样保留该句，不破坏 Whisper 原有断句结构
+        # 1. If this sentence does not exceed max_speech_ms, or has no words data for subdivision
+        # Preserve original sentence directly without breaking Whisper's original segmentation structure
         if seg_duration <= max_speech_ms or not words:
             final_segments.append({
                 'text': segment.get('text', '').strip(),
@@ -70,7 +70,7 @@ def _resegment(texts, language, max_speech_ms, logs_file=None) -> List[SrtItem]:
             })
             continue
 
-        # 2. 如果该句话超长，则必须进入其内部使用 words 进行重新局部切分
+        # 2. If this sentence is overlong, recursively subdivide internally using word-level timestamps
         current_chunk = []
         chunk_start_ms = None
         prev_word_end_ms = None
@@ -89,52 +89,52 @@ def _resegment(texts, language, max_speech_ms, logs_file=None) -> List[SrtItem]:
             if chunk_start_ms is None:
                 chunk_start_ms = w_start_ms
 
-            # 预测：如果把当前词加入，当前子句的时长会是多少？
+            # Look ahead: what would the chunk duration be if this word is added?
             future_duration = w_end_ms - chunk_start_ms
 
-            # --- 判定是否需要切断 ---
+            # --- Determine if split is needed ---
             should_split = False
 
-            # 强制切断：如果不切，加上这个词就会直接超时 (确保绝对 <= max_speech_ms)
+            # Hard split: adding this word exceeds max_speech_ms (guarantees strictly <= max_speech_ms)
             if future_duration > max_speech_ms and len(current_chunk) > 0:
                 should_split = True
             else:
-                # 弹性切断：在不超时的前提下，寻找标点或明显的语音停顿
+                # Soft split: find punctuation or obvious speech pause while remaining within duration limits
                 pause_ms = w_start_ms - prev_word_end_ms if prev_word_end_ms is not None else 0
                 current_duration = prev_word_end_ms - chunk_start_ms if prev_word_end_ms else 0
 
                 if len(current_chunk) > 0:
-                    # 遇到强标点结束
+                    # Strong sentence-ending punctuation reached
                     if has_punc(prev_word_text, end_punc):
                         should_split = True
-                    # 遇到明显的长静音停顿 (>= 800ms)
+                    # Obvious long silence pause reached (>= 800ms)
                     elif pause_ms >= 800:
                         should_split = True
-                    # 遇到短停顿 (>= 300ms) 且伴随逗号等弱标点
+                    # Short pause (>= 300ms) with weak punctuation like comma
                     elif has_punc(prev_word_text, comma_punc) and pause_ms >= 300:
                         should_split = True
-                    # 为了防止有些长句既没标点也没大停顿，如果时长已经过半，遇到个中等停顿(>=400ms)也果断切
+                    # For long sentences without punctuation or major pauses, split if elapsed duration > 50% and pause >= 400ms
                     elif current_duration > (max_speech_ms * 0.5) and pause_ms >= 400:
                         should_split = True
 
             if should_split:
-                # 结算当前子句
+                # Commit current chunk
                 final_segments.append({
                     'text': build_text(current_chunk),
                     'start': chunk_start_ms,
                     'end': prev_word_end_ms
                 })
-                # 将当前词作为下一个新子句的开头
+                # Start new chunk with current word
                 current_chunk = [w_text]
                 chunk_start_ms = w_start_ms
             else:
-                # 不切断，把词吸纳进当前子句
+                # Do not split, append word to current chunk
                 current_chunk.append(w_text)
 
             prev_word_end_ms = w_end_ms
             prev_word_text = w_text
 
-        # 遍历完该句的所有 words 后，将残存的词组收尾
+        # After iterating all words, flush remaining chunk
         if current_chunk:
             final_segments.append({
                 'text': build_text(current_chunk),
@@ -142,7 +142,7 @@ def _resegment(texts, language, max_speech_ms, logs_file=None) -> List[SrtItem]:
                 'end': prev_word_end_ms
             })
 
-    # --- 3. 组装输出：封装为指定的 SRT 字典列表格式 ---
+    # --- 3. Assemble output: wrap into list of SrtItem objects ---
     srt_output = []
     for idx, seg in enumerate(final_segments):
         start_ms = int(seg['start'])

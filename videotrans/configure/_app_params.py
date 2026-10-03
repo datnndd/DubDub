@@ -40,7 +40,7 @@ def set_settings_ref(settings):
 @dataclass
 class AppParams:
     """
-    AppParams: 对应 params.json，包含 getset_params 功能
+    AppParams: corresponds to params.json, contains getset_params functionality
     """
     _json_path: str = f"{ROOT_DIR}/videotrans/params.json"
 
@@ -79,7 +79,7 @@ class AppParams:
                         )
                     loaded["provider_catalog_version"] = PROVIDER_CATALOG_VERSION
                     migrated = True
-                # 单独更新 f5tts_role
+                # Update f5tts_role separately
                 loaded['f5tts_role']=("\n".join(set( (str(loaded.get('f5tts_role', '')).strip()+"\n"+default['f5tts_role']).split("\n") ) )).strip()
                 filtered = {key: value for key, value in loaded.items() if key in default}
                 if len(filtered) != len(loaded):
@@ -205,7 +205,7 @@ class AppParams:
             data = self.to_dict()
             _write_with_retry(self._json_path, json.dumps(data, ensure_ascii=False))
         except Exception as e:
-            logging.getLogger('VideoTrans').exception(f'保存 params 到本地失败：{e}', exc_info=True)
+            logging.getLogger('VideoTrans').exception(f'Failed to save params locally: {e}', exc_info=True)
 
     def __getattribute__(self, item):
         if not item.startswith('_') and item in {

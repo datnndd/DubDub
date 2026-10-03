@@ -19,44 +19,44 @@ from videotrans.util.help_misc import vail_file,pygameaudio,get_tts_type
 
 @dataclass
 class BaseTTS(BaseCon):
-    # 配音渠道
+    # Dubbing channel
     tts_type: int = 2
-    # 存放字幕信息队列，扩展的SrtItem
+    # Queue storing subtitle information, extended SrtItem
     queue_tts: List[Dict[str, Any]] = field(default_factory=list, repr=False)
-    # 参考音频或角色字典
+    # Reference audio or role dictionary
     roledict: Dict[str, Any] = field(default_factory=dict, repr=False)
-    # queue_tts 数量
+    # queue_tts count
     len: int = field(init=False)
-    # 语言代码
+    # Language code
     language: Optional[str] = None
-    # 唯一uid
+    # Unique uid
     uuid: Optional[str] = None
-    # 是否立即播放
+    # Whether to play immediately
     play: bool = False
-    # 是否测试
+    # Whether testing
     is_test: bool = False
 
-    # 音量、音速和音调使用百分比/Hz字符串
+    # Volume, speech rate and pitch use percentage/Hz string
     volume: Union[float, str] = field(default='+0%', init=False)
     rate: Union[float, str] = field(default='+0%', init=False)
     pitch: Union[float, str] = field(default='+0Hz', init=False)
 
-    # 是否完成
+    # Whether finished
     has_done: int = field(default=0, init=False)
 
-    # 每次任务后暂停时间
+    # Pause duration after each task
     wait_sec: float = float(settings.get('dubbing_wait', 0))
-    # 并发线程数量
+    # Concurrent thread count
     dub_nums: int = int(float(settings.get('dubbing_thread', 1)))
-    # 存放消息
+    # Stores message
     error: Union[str, Exception, None] = None
-    # 配音api地址
+    # Dubbing API URL
     api_url: str = field(default='', init=False)
-    # 启用 CUDA（本地渠道按需使用）
+    # Enable CUDA (used on demand by local channels)
     is_cuda: bool = False
     local_dir: str = None
-    # 单视频模式下，重型本地进程可在配音校对期间等待新任务
-    # is_redubb is True 代表是配音校对面板发起的
+    # In single video mode, heavy local processes can wait for new tasks during dubbing proofreading
+    # is_redubb is True indicates triggered from dubbing proofreading panel
     is_redubb:bool=False
 
     def __post_init__(self):
@@ -66,8 +66,8 @@ class BaseTTS(BaseCon):
         self.len = len(self.queue_tts)
         self._cleantts()
 
-    # 子类未重写 _exec()方法: run() ->_exec() ->__local_mul_thread() -> _item_task() -> _run()
-    # 子类重写  _exec()方法 run() -> _exec()
+    # Subclass did not override _exec() method: run() -> _exec() -> _local_mul_thread() -> _item_task() -> _run()
+    # Subclass overrides _exec() method: run() -> _exec()
     def run(self) -> None:
         if self._exit(): return
         from videotrans.configure.excepts import DubbingSrtError
@@ -80,24 +80,24 @@ class BaseTTS(BaseCon):
                 self.signal(text=tr("check or download models"))
                 self._download()
                 self.signal(text=tr('Dubbing'))
-            # 兼容实现为异步函数的渠道
+            # Support channels implemented as async coroutine functions
             if inspect.iscoroutinefunction(self._exec):
                 try:
-                    # 检查当前线程是否有正在运行的事件循环
+                    # Check whether the current thread has a running event loop
                     loop = asyncio.get_running_loop()
                 except RuntimeError:
                     loop = None
 
                 if loop and loop.is_running():
-                    # 如果当前线程已有正在运行的 loop（例如 Web 框架主线程），
+                    # If the current thread already has a running loop (e.g. web framework main thread),
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                         future = executor.submit(asyncio.run, self._exec())
                         future.result()
                 else:
-                    # 如果没有正在运行的 loop，直接使用 asyncio.run
+                    # If there is no running loop, directly use asyncio.run
                     asyncio.run(self._exec())
             else:
-                # 可能调用多线程
+                # May invoke multithreading
                 self._exec()
         except RetryError as e:
             raise e.last_attempt.exception()
@@ -115,7 +115,7 @@ class BaseTTS(BaseCon):
                 raise
 
 
-        # 试听或测试时播放
+        # Play during preview or test
         if self.play:
             if vail_file(self.queue_tts[0]['filename']):
                 return pygameaudio(self.queue_tts[0]['filename'])
@@ -125,13 +125,13 @@ class BaseTTS(BaseCon):
                 raise self.error.last_attempt.exception()
             raise self.error if isinstance(self.error, Exception) else DubbingSrtError(str(self.error))
 
-        # 记录成功数量
+        # Record success count
         succeed_nums = 0
         for it in self.queue_tts:
             if self._exit(): return
             if not it['text'].strip() or vail_file(it['filename']):
                 succeed_nums += 1
-        # 只有全部配音都失败，才视为失败
+        # Only considered failure if all dubbings failed
         if succeed_nums < 1:
             if self._exit(): return
             logger.error(f'本次配音全部失败：{self.error}')
@@ -142,23 +142,23 @@ class BaseTTS(BaseCon):
         logger.debug(f'本次 {_tts_name} 配音成功 {succeed_nums} 个，失败 {self.len - succeed_nums} 个')
         self.signal(text=tr("Dubbing succeeded {}，failed {}", succeed_nums, self.len - succeed_nums))
 
-    # 若子类未重写  _exec(), 则默认调用该方法
-    # 此方法内判断返回的错误是否 StopTask 类型，若是则直接终止任务
+    # If subclass does not override _exec(), this method is called by default
+    # Checks if returned error is StopTask type; if so, terminates task directly
     def _local_mul_thread(self) -> None:
         if self._exit(): return
         from videotrans.configure.excepts import StopTask
-        # 单个字幕行，无需多线程
+        # Single subtitle line, no need for multithreading
         if len(self.queue_tts) == 1 or self.dub_nums == 1:
             logger.debug(f'设定最大配音线程: {self.dub_nums},实际 单线程配音, 待配音字幕长度: {self.len}, 配音后暂停{self.wait_sec}s')
             for k, item in enumerate(self.queue_tts):
                 if self._exit(): return
                 if not item.get('text').strip() or vail_file(item['filename']):
                     continue
-                # 只记录最后一个错误
+                # Only record the last error
                 error = self._item_task(item, k)
                 self.error = error
                 if error and isinstance(error, StopTask):
-                    # 发送终止信号，终止时会将 uuid 加入 app_cfg.stop_uid
+                    # Send termination signal; termination will add uuid to app_cfg.stop_uid
                     raise error
 
                 self.signal(text=f'{tr("Dubbing")} [{k + 1}/{self.len}]')
@@ -182,32 +182,32 @@ class BaseTTS(BaseCon):
             if all_task:
                 for task in as_completed(all_task):
                     if self._exit(): return
-                    # 只记录最后一个错误
+                    # Only record the last error
                     error = task.result()
                     self.error = error
                     if error and isinstance(error, StopTask):
-                        # 发送终止信号，终止时会将 uuid 加入 app_cfg.stop_uid
+                        # Send termination signal; termination will add uuid to app_cfg.stop_uid
                         raise error
                     completed_tasks += 1
                     self.signal(text=f"{tr('Dubbing')}: [{completed_tasks}/{self.len}] ...")
             self.signal(text=f"TTS ended ...")
         finally:
-            # 只能取消排队的任务，并让主线程不再等待。
+            # Only cancels queued tasks and prevents main thread from waiting
             pool.shutdown(wait=False)
 
-    # run() 调用此逻辑，子类可覆写此逻辑，实现全部 queue_tts 配音
-    # 若不覆写，则进入多线程，挨个调用 _item_task() 一条条字幕配音，子类=必须实现 _run() 方法
+    # Called by run(); subclasses may override to implement batch dubbing for entire queue_tts
+    # If not overridden, enters multithreading, calling _item_task() per subtitle; subclass must implement _run()
     def _exec(self) -> None:
         self._local_mul_thread()
 
-    # 每条字幕任务，由 _local_mul_thread 方法在多个线程中调用
-    # data_item 是 queue_tts 中每个元素
-    # 子类若没有覆写 _exec() 方法，则必须实现 _run() 方法
-    # return 返回为None为成功，失败返回错误消息 或 抛出异常
+    # Each subtitle task, called in multiple threads by _local_mul_thread
+    # data_item is each element in queue_tts
+    # If subclass does not override _exec(), it must implement _run()
+    # return: None on success; returns error message or raises exception on failure
     def _item_task(self, data_item: Union[Dict, List, None], idx: int = -1) -> Union[str, Exception, None]:
         if self._exit() or not data_item.get('text', '').strip() or vail_file(data_item.get('filename')):
             return
-        # 有些不可恢复的错误，例如 404 sk错误 无权访问等，直接发送 error 信号，无需继续多线程
+        # For unrecoverable errors like 404, invalid SK, unauthorized, send error signal directly without continuing other threads
         try:
             self.signal(text=f'{tr("Dubbing")} {idx}/{self.len}')
             return self._run(data_item,idx)
@@ -218,11 +218,11 @@ class BaseTTS(BaseCon):
             logger.exception(f'\n第{idx}条字幕配音失败,字幕文本:{data_item}\n{e}', exc_info=True)
             return e
 
-    # 子类未重写 _exec 方法时，则必须实现该方法
+    # If subclass did not override _exec, it must implement this method
     def _run(self, data_item: Union[Dict, List, None], idx: int = -1) -> Union[str, None]:
         raise NotImplemented
 
-    # 文本规范化和清理音量等参数
+    # Text normalization and parameter cleanup (volume, etc.)
     def _cleantts(self) -> None:
         normalizer = None
         if settings.get('normal_text'):
@@ -254,7 +254,7 @@ class BaseTTS(BaseCon):
 
         logger.debug(f'{self.volume=}, {self.rate=}, {self.pitch=}')
 
-    # 将 百分比音量改为 小数形式
+    # Convert percentage rate/volume to decimal float
     def get_speed(self) -> float:
         speed = 1.0
         try:
@@ -279,7 +279,7 @@ class BaseTTS(BaseCon):
             pass
         return pitch
 
-    # 返回参考音频和参考文本
+    # Return reference audio and reference text
     def get_ref_wav(self, item) -> Tuple[str, str]:
         role = item['role']
         ref_wav, ref_text = None, None

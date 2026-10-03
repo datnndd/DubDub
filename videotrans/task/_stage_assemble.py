@@ -126,7 +126,7 @@ class AssembleMixin:
         target_m4a = self.cfg.cache_folder + "/will_embed.m4a"
         output_source_output = True
         duration_ms = int(get_video_duration(self.cfg.novoice_mp4))
-        # 如果视频时长大于音频时长，音频末尾补静音，后续不再判断音频是否大于视频
+        # If video duration is greater than audio duration, pad silence at end of audio; do not compare audio > video thereafter
         audio_had_append=False
         if not self.should_dubbing:
             self.signal(text=tr("Get original sound..."))
@@ -167,10 +167,10 @@ class AssembleMixin:
                 os.path.basename(self.cfg.target_wav)
             ]
             v_a_offset=duration_ms-audio_ms
-            # 视频时长大于音频超过100ms，音频末尾补静音
+            # If video duration exceeds audio by more than 100ms, pad silence at end of audio
             if v_a_offset>100:
                 audio_had_append=True
-                logger.debug(f'视频时长{duration_ms}ms-音频时长{audio_ms}ms={v_a_offset}ms,需延长音频')
+                logger.debug(f'Video duration {duration_ms}ms - Audio duration {audio_ms}ms = {v_a_offset}ms, extending audio')
                 _cmd.extend(['-af', f'apad=pad_dur={v_a_offset/1000.0}'])
             _cmd.extend([
                 "-ac", "2", "-b:a", "128k", "-c:a", "aac",
@@ -196,9 +196,9 @@ class AssembleMixin:
         is_copy_mode = str(self.video_codec_num) == '264'
         is_lossless=self.is_copy_video and is_copy_mode and not self.cfg.video_autorate and self.cfg.subtitle_type not in [1, 3]
         if is_lossless:
-            logger.debug(f'当前原始视频是标准264,输出也是264，未视频慢速，未嵌入硬字幕，放弃视频末尾处理，实现无损输出。音频时长-视频时长={a_v_offset}ms'+('，\n音频时长大于视频时长{a_v_offset}ms，理论上视频末尾应定格等待音频播放完毕，但不同播放器可能有不同处理方式，如音频截断，视频末尾黑屏等' if a_v_offset>0 else ''))
+            logger.debug(f'Source video is standard 264, output is also 264, no video slowdown, no hard subtitles embedded, skipping tail freeze for lossless output. Audio duration - video duration = {a_v_offset}ms')
 
-        elif a_v_offset > 500 and not audio_had_append:#只有未对音频末尾增加静音，才考虑延长视频
+        elif a_v_offset > 500 and not audio_had_append: # Only extend video if silence was not appended to audio end
             try:
                 self.signal(text="Freeze end of video...")
                 self._video_extend(a_v_offset)

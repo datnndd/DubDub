@@ -61,7 +61,7 @@ class OpenAICampat(BaseTrans):
             "timeout":300,
             "temperature":float(self.temperature)            
         }
-        # 针对 openai 官方或 GPT模型，使用 max_completion_tokens 参数，其他第三方使用 max_tokens 参数            
+        # For official OpenAI or GPT models, use max_completion_tokens; for other third parties, use max_tokens
         if "api.openai.com" in self.api_url or (self.ainame=='chatgpt' and re.match(r'^(gpt|o\d)', self.model_name, flags=re.I)):
             kwargs["max_completion_tokens"]=int(self.max_tokens)
         else:
@@ -176,7 +176,7 @@ class OpenAICampat(BaseTrans):
             new_sublist.append(_send(srt_str))
 
         _srtlist = get_subtitle_from_srt("\n\n".join(new_sublist), is_file=False)
-        # 修正可能存在的时间戳错误
+        # Fix potential timestamp errors
         _len = len(_srtlist)
         for i, it in enumerate(_srtlist):
             _had_edit = False

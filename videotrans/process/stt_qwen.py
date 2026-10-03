@@ -1,7 +1,7 @@
-# 语音识别，新进程执行
-# 返回元组
-# 失败：第一个值为False，则为失败，第二个值存储失败原因
-# 成功，第一个值存在需要的返回值，不需要时返回True，第二个值为None
+# Speech recognition executed in a separate process
+# Returns tuple:
+# Failure: first value is False, second value stores failure reason
+# Success: first value has desired return value or True, second value is None
 import json, traceback
 from pathlib import Path
 from typing import List
@@ -16,14 +16,14 @@ def _load_qwen3_asr_model():
 
 
 
-#支持热词
+# Supports hotwords
 def qwen3asr_fun(
         cut_audio_list=None,
         logs_file=None,
         is_cuda=False,
         audio_file=None,
         model_name="1.7B",
-        device_index=0,  # gpu索引
+        device_index=0,  # GPU index
         hotword=None
 ):
     import torch

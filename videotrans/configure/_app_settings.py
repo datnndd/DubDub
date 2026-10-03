@@ -19,7 +19,7 @@ from videotrans.configure.contants import (
 @dataclass
 class AppSettings:
     """
-    AppSettings: 对应 cfg.json，包含 parse_init 功能
+    AppSettings: corresponds to cfg.json, contains parse_init functionality
     """
     homedir: str = ROOT_DIR + "/output"
     lang: str = ""
@@ -234,7 +234,7 @@ class AppSettings:
                 data["hf_token"] = ""
             _write_with_retry(self._json_path, json.dumps(data, ensure_ascii=False))
         except Exception as e:
-            logging.getLogger('VideoTrans').exception(f'保存settings到本地失败：{e}', exc_info=True)
+            logging.getLogger('VideoTrans').exception(f'Failed to save settings locally: {e}', exc_info=True)
 
     def _handle_hf_token(self):
         p = Path(ROOT_DIR + "/models/hf_token.txt")

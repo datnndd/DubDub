@@ -69,13 +69,13 @@ class ElevenLabsRecogn(BaseRecogn):
                 )
                 continue
 
-            # 如果静音超过 200 并且句子时长已超过500，并且有标点，则断句
+            # If silence exceeds 200ms and sentence duration exceeds 500ms, and punctuation is present, split sentence
             diff_prev = st - last_tmp['end_time']
             segment_time = last_tmp['end_time'] - last_tmp['start_time']
 
             logger.debug(f'\n{text=},{isflag=},{spk=},{diff_prev=},{segment_time=}\n')
 
-            # 不同说话人，强制断句
+            # Different speaker, force sentence split
 
             if spk != last_tmp['spk']:
                 last_tmp['time'] = ms_to_time_string(
@@ -93,7 +93,7 @@ class ElevenLabsRecogn(BaseRecogn):
                 continue
 
             if (diff_prev >= 200 or segment_time >= 500) and isflag:
-                # 如果标点在开始，则该word给下个，否则给当前
+                # If punctuation is at start, assign word to next segment; otherwise assign to current
                 if text[0] in self.flag:
                     last_tmp['text'] += text[0]
                     last_tmp['time'] = ms_to_time_string(

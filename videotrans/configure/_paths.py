@@ -15,7 +15,7 @@ TEMP_DIR = f'{TEMP_ROOT}/None'
 TRANSLATE_CACHE = f'{TEMP_ROOT}/translate_cache'
 DUBBING_CACHE = f'{TEMP_ROOT}/dubbing_cache'
 
-# 单视频模式时重新进行配音，队列数据文件和停止标识文件
+# Queue data file and stop signal file for re-dubbing in single video mode
 REDUBB_QUEUE_FILE=f'{TEMP_ROOT}/redubbing.json'
 REDUBB_STATUS_FILE=f'{TEMP_ROOT}/stopredubbing.pid'
 
@@ -26,16 +26,16 @@ Path(f"{DUBBING_CACHE}").mkdir(parents=True, exist_ok=True)
 
 def fix_ssl_cert_env():
     """
-    修复部分用户电脑上存在错误的全局 SSL 证书环境变量，
-    强制将其指向程序自带的 certifi 证书路径。
+    Fix incorrect global SSL certificate environment variables on some user machines,
+    forcing them to point to the certifi certificate path bundled with the application.
     """
     try:
         import certifi
         ca_bundle = certifi.where()
         
-        # 确保该路径确实存在（兼容 PyInstaller 打包后的临时目录）
+        # Ensure the path exists (compatible with PyInstaller unpacked temporary directory)
         if os.path.exists(ca_bundle):
-            # 强制覆盖用户的错误环境变量，指引到正确的证书
+            # Force overwrite erroneous user environment variables to point to the correct bundle
             os.environ['CURL_CA_BUNDLE'] = ca_bundle
             os.environ['REQUESTS_CA_BUNDLE'] = ca_bundle
             os.environ['SSL_CERT_FILE'] = ca_bundle
@@ -43,7 +43,7 @@ def fix_ssl_cert_env():
             raise FileNotFoundError
             
     except Exception:
-        # 如果 certifi 加载失败，至少把错误的干扰变量删掉，让系统回退到默认逻辑
+        # If certifi fails to load, remove interfering environment variables so system falls back to default logic
         for key in ['CURL_CA_BUNDLE', 'REQUESTS_CA_BUNDLE', 'SSL_CERT_FILE']:
             os.environ.pop(key, None)
 
@@ -78,7 +78,7 @@ def _set_env():
     os.environ['HF_HUB_ETAG_TIMEOUT'] = "30"
     os.environ["HF_HUB_DISABLE_XET"] = "1"
     os.environ['GRADIO_ANALYTICS_ENABLED'] = '0'
-    # 必须在 import requests, modelscope 等库之前执行！
+    # Must be executed before importing requests, modelscope, or other network libraries!
     fix_ssl_cert_env()
     if Path(f'{ROOT_DIR}/netoffline.txt').is_file():
         os.environ['HF_HUB_OFFLINE'] = '1'

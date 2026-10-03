@@ -19,13 +19,13 @@ class InputFile:
     def __setitem__(self, key, value):
         return setattr(self, key, value)
 
-    # 处理：dataclass_obj | dict_obj
+    # Handles: dataclass_obj | dict_obj
     def __or__(self, other):
         if isinstance(other, dict):
             return asdict(self) | other
         return NotImplemented
 
-    # 处理：dict_obj | dataclass_obj
+    # Handles: dict_obj | dataclass_obj
     def __ror__(self, other):
         if isinstance(other, dict):
             return other | asdict(self)
@@ -59,7 +59,7 @@ class SignMsg:
     def get(self, key,default=None):
         return getattr(self,key,default)
 
-    # 应该在结束状态
+    # Should be in terminal state
     def is_stop(self):
         return self.type in ['end','stop','succeed','error']
 
@@ -75,8 +75,8 @@ class SrtItem:
     endraw: str = ''
     line: Optional[int] = 1
     time: Optional[str] = ""
-    spk: Optional[str] = ""#说话人id
-    filename: Optional[str] = ""#对应音频片段
+    spk: Optional[str] = ""  # Speaker id
+    filename: Optional[str] = ""  # Corresponding audio segment
 
 
     def __getitem__(self, key):
@@ -98,111 +98,111 @@ class SrtItem:
         return iter(_names)
 
 
-# 视频翻译流程使用全部属性
+# Video translation workflow uses all attributes
 @dataclass
 class TaskCfgBase:
-    # 通用区域
-    uuid: str = None  # 默认唯一任务id
-    project_id: Optional[str] = None  # 所属项目id
+    # General section
+    uuid: str = None  # Default unique task id
+    project_id: Optional[str] = None  # Parent project id
 
-    name: Union[os.PathLike,str]=None  # 规范化处理的原始文件绝对路径 D:/XXX/1.MP4
-    dirname: Union[os.PathLike,str]=None  # 原始文件所在目录 D:/XXX
-    noextname: str = None  # 去掉扩展名的原始视频名
-    basename: str = None  # noextname + ext 名 1.mp4
-    ext: str = None  # 扩展名 mp4
+    name: Union[os.PathLike,str]=None  # Normalized absolute path to original file D:/XXX/1.MP4
+    dirname: Union[os.PathLike,str]=None  # Directory of original file D:/XXX
+    noextname: str = None  # Original video name without extension
+    basename: str = None  # noextname + ext name 1.mp4
+    ext: str = None  # Extension mp4
 
-    target_dir: str = None  # 输出文件夹，目标视频输出文件夹
+    target_dir: str = None  # Output folder, target video output folder
 
-    cache_folder: str = None  # 当前文件的临时文件夹,用于存放临时过程文件
+    cache_folder: str = None  # Temporary folder for current file, stores intermediate files
 
-    is_cuda: bool = False  # 是否使用cuda加速
+    is_cuda: bool = False  # Whether to use CUDA acceleration
 
-    source_language: str = None  # 原始语言名称或代码
-    source_language_code: str = None  # 原始语言代码
-    source_sub: Union[os.PathLike,str]=None  # 原始字幕文件绝对路径
-    source_wav: Union[os.PathLike,str]=None  # 原始语言音频，存在于临时文件夹下
-    source_wav_output: Union[os.PathLike,str]=None  # 原始语言音频输出，存在于目标文件夹下
+    source_language: str = None  # Original language name or code
+    source_language_code: str = None  # Original language code
+    source_sub: Union[os.PathLike,str]=None  # Absolute path to original subtitle file
+    source_wav: Union[os.PathLike,str]=None  # Original language audio, located under temporary folder
+    source_wav_output: Union[os.PathLike,str]=None  # Original language audio output, located under target folder
 
-    target_language: str = None  # 目标语言名称或代码
-    target_language_code: str = None  # 目标语言代码
-    target_sub: Union[os.PathLike,str]=None  # 目标字幕文件绝对路径
-    target_wav: Union[os.PathLike,str]=None  # 目标语言音频，存在于临时文件夹下
-    target_wav_output: Union[os.PathLike,str]=None  # 目标语言音频输出，存在于目标文件夹下
+    target_language: str = None  # Target language name or code
+    target_language_code: str = None  # Target language code
+    target_sub: Union[os.PathLike,str]=None  # Absolute path to target subtitle file
+    target_wav: Union[os.PathLike,str]=None  # Target language audio, located under temporary folder
+    target_wav_output: Union[os.PathLike,str]=None  # Target language audio output, located under target folder
 
 
-# 语音识别
+# Speech recognition
 @dataclass
 class TaskCfgSTT(TaskCfgBase):
-    ####### 语音识别相关
-    detect_language: str = None  # 字幕检测语言代码
-    recogn_type: int = None  # 语音识别渠道
-    model_name: str = None  # 模型名字
-    shibie_audio: Union[os.PathLike,str]=None  # 转为 pcm_s16le  16k 作为语音识别的音频文件
-    remove_noise: bool = False  # 是否移除噪声
+    ####### Speech recognition related
+    detect_language: str = None  # Subtitle detection language code
+    recogn_type: int = None  # Speech recognition channel
+    model_name: str = None  # Model name
+    shibie_audio: Union[os.PathLike,str]=None  # Converted to pcm_s16le 16k as speech recognition audio file
+    remove_noise: bool = False  # Whether to remove noise
     force_recogn: bool = False  # Re-run ASR after an explicit stage reset.
-    enable_diariz: bool = False  # 是否进行说话人识别
-    nums_diariz: int = 0  # 是否进行说话人识别
-    rephrase: int = 0  # 0 默认断句不处理 1=LLM重新断句
-    fix_punc: int = 0  # 0=默认，1=恢复标点符号，2=移除所有标点
+    enable_diariz: bool = False  # Whether to perform speaker diarization
+    nums_diariz: int = 0  # Number of diarization speakers
+    rephrase: int = 0  # 0=default segmentation, 1=LLM re-segmentation
+    fix_punc: int = 0  # 0=default, 1=restore punctuation, 2=remove all punctuation
     deepgram_options: Optional[Union[dict, str]] = None
 
 
-# 配音
+# Dubbing
 @dataclass
 class TaskCfgTTS(TaskCfgBase):
-    ######## 配音相关
-    tts_type: int = None  # 语音合成渠道
-    volume: str = "+0%"  # 音量
-    pitch: str = "+0Hz"  # 音调
-    voice_rate: str = "+0%"  # 语速
-    voice_role: str = None  # 配音角色
+    ######## Dubbing related
+    tts_type: int = None  # Speech synthesis channel
+    volume: str = "+0%"  # Volume
+    pitch: str = "+0Hz"  # Pitch
+    voice_rate: str = "+0%"  # Voice rate
+    voice_role: str = None  # Voice role
     line_roles: dict[str, str] = field(default_factory=dict)  # per-subtitle voice assignments
-    voice_autorate: bool = False  # 是否音频自动加速
-    video_autorate: bool = False  # 是否视频自动慢速
-    remove_silent_mid: bool = False  # 是否移除字幕间的空隙
-    align_sub_audio: bool = True  # 是否强制对齐字幕和声音
+    voice_autorate: bool = False  # Whether audio auto-accelerates
+    video_autorate: bool = False  # Whether video auto-slows
+    remove_silent_mid: bool = False  # Whether to remove gaps between subtitles
+    align_sub_audio: bool = True  # Whether to force alignment between subtitles and voice
 
 
-# 字幕翻译
+# Subtitle translation
 @dataclass
 class TaskCfgSTS(TaskCfgBase):
-    ######## 字幕翻译相关
-    translate_type: int = None  # 字幕翻译渠道
+    ######## Subtitle translation related
+    translate_type: int = None  # Subtitle translation channel
     aisendsrt: Optional[bool] = None  # None follows the global setting; bool selects the existing text/SRT prompt flow
-    segments: Optional[Union[list, tuple]] = None  # 待翻译或已识别的字幕片段列表
+    segments: Optional[Union[list, tuple]] = None  # Subtitle segment list to translate or recognized
 
 
-# 视频翻译所有
+# Video translation all
 @dataclass
 class TaskCfgVTT(TaskCfgSTT, TaskCfgTTS, TaskCfgSTS):
-    ############## 视频翻译特有
-    subtitle_language: str = None  # 软字幕嵌入语言代码，3位
-    app_mode: str = "biaozhun"  # 工作模式 biaohzun tiqu
-    subtitles: str = ""  # 已存在的字幕文本，例如预先导入的
-    targetdir_mp4: Union[os.PathLike,str]=None  # 最终输出合成后的mp4
-    novoice_mp4: Union[os.PathLike,str]=None  # 从原始视频分离出的无声视频
-    is_separate: bool = False  # 是否进行人声、背景音分离
-    embed_bgm: bool = True  # 是否需要重新嵌入背景音
-    instrument: Union[os.PathLike,str]=None  # 分离出的背景音频
-    vocal: Union[os.PathLike,str]=None  # 分离出的人声音频
-    clear_cache: bool = False  # 是否清理已存在的文件
-    background_music: Union[os.PathLike,str]=None  # 手动添加的背景音频，整理后的完整路径
-    subtitle_type: int = 0  # 软硬字幕嵌入类型 0=不嵌入，1=硬字幕，2=软字幕，3=双硬，4=双软
-    only_out_mp4: bool = False  # 是否仅仅输出mp4,仅视频翻译使用
+    ############## Video translation specific
+    subtitle_language: str = None  # Soft subtitle embedded language code, 3 letters
+    app_mode: str = "biaozhun"  # Work mode: standard or extract
+    subtitles: str = ""  # Existing subtitle text, e.g. pre-imported
+    targetdir_mp4: Union[os.PathLike,str]=None  # Final output composite mp4
+    novoice_mp4: Union[os.PathLike,str]=None  # Silent video extracted from original video
+    is_separate: bool = False  # Whether to perform vocal and background sound separation
+    embed_bgm: bool = True  # Whether to re-embed background music
+    instrument: Union[os.PathLike,str]=None  # Separated background audio
+    vocal: Union[os.PathLike,str]=None  # Separated vocal audio
+    clear_cache: bool = False  # Whether to clean up existing files
+    background_music: Union[os.PathLike,str]=None  # Manually added background audio, normalized full path
+    subtitle_type: int = 0  # Subtitle embedding type: 0=none, 1=hard, 2=soft, 3=dual hard, 4=dual soft
+    only_out_mp4: bool = False  # Whether to output mp4 only, used only in video translation
     only_out_dubbed_audio: bool = False
     subtitle_source: str = "audio_asr"  # subtitle source audio_asr|video_ocr
     ocr_roi: Optional[tuple] = None  # normalized (x,y,w,h)
     ocr_roi_confirmed: bool = False  # user confirmed ROI in dialog
-    recogn2pass: bool = False  # 对配音音频再次识别
-    output_srt: int = 0  # 转录并翻译 模式输出字幕类似，0=单字幕，1=目标语言在线双字幕，2=目标语言在上双字幕
-    copysrt_rawvideo: bool = False  # 是否将生成的字幕复制到视频目录下
-    loop_backaudio: int = 0  # 循环背景音 或 延长拉伸背景音
-    backaudio_volume: float = 0.8  # 背景音量
+    recogn2pass: bool = False  # Second-pass speech recognition on dubbed audio
+    output_srt: int = 0  # Output subtitle format in transcribe and translate mode: 0=single, 1=bilingual target bottom, 2=bilingual target top
+    copysrt_rawvideo: bool = False  # Whether to copy generated subtitles to video directory
+    loop_backaudio: int = 0  # Loop background audio or stretch background audio
+    backaudio_volume: float = 0.8  # Background volume
     source_audio_volume: float = 0.0  # final mix contribution from original video audio
     thumbnail: Union[os.PathLike,str]=None  # optional exported video cover image
     subtitle_style: Optional[dict] = None  # per-job hard subtitle appearance
-    batch:bool=False# 批量翻译模式或单视频翻译模式
-    batch_size:int=0#0批量并发模式，>0 每批n个
+    batch:bool=False  # Batch translation mode or single video translation mode
+    batch_size:int=0  # 0=concurrent batch mode, >0 n items per batch
     
     def __repr__(self):
         _msg=[]
