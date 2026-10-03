@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,7 +13,7 @@ from videotrans.configure.config import ROOT_DIR
 
 logger = logging.getLogger("videotrans.db")
 
-DEFAULT_DB_PATH = Path(ROOT_DIR) / "projects.db"
+DEFAULT_DB_PATH = Path(os.environ.get("DB_PATH", Path(ROOT_DIR) / "projects.db"))
 _current_db_path: Path = DEFAULT_DB_PATH
 
 _BASE_SCHEMA = """

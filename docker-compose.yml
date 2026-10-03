@@ -1,0 +1,52 @@
+services:
+  # CPU deployment (Default)
+  # Run with: docker compose up -d
+  webui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USE_CUDA: "false"
+    image: pyvideotrans-webui:cpu
+    container_name: pyvideotrans-webui
+    ports:
+      - "7860:7860"
+    environment:
+      - DB_PATH=/app/data/projects.db
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./output:/app/output
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  # NVIDIA GPU deployment (CUDA 12.8)
+  # Run with: docker compose --profile gpu up -d webui-gpu
+  webui-gpu:
+    profiles:
+      - gpu
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USE_CUDA: "true"
+    image: pyvideotrans-webui:gpu
+    container_name: pyvideotrans-webui-gpu
+    ports:
+      - "7860:7860"
+    environment:
+      - DB_PATH=/app/data/projects.db
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./output:/app/output
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped

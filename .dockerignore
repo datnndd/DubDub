@@ -1,10 +1,24 @@
 .git
 .venv
 __pycache__
+*.pyc
+*.pyo
+*.pyd
 .pytest_cache
 .ruff_cache
+.coverage
+htmlcov
+.agents
+.idea
+.vscode
+.DS_Store
+
+# Frontend build artifacts
 frontend/node_modules
 frontend/dist
+
+# Application persistent and temporary data
+data
 logs
 models
 output

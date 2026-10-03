@@ -88,6 +88,32 @@ uv run python webui.py --host 0.0.0.0 --port 7860
 
 ---
 
+#### Option C: Docker & Docker Compose
+
+Run pyVideoTrans containerized with persistent storage (`./data`, `./models`, `./output`, `./logs`):
+
+**CPU Mode:**
+```bash
+# Start CPU container via Docker Compose
+docker compose up -d
+
+# Or build and run directly with Docker
+docker build -t pyvideotrans-webui .
+docker run -d -p 7860:7860 -v ./output:/app/output -v ./models:/app/models pyvideotrans-webui
+```
+
+**GPU Mode (NVIDIA CUDA 12.8):**
+```bash
+# Start GPU container via Docker Compose
+docker compose --profile gpu up -d webui-gpu
+
+# Or build and run directly with Docker
+docker build --build-arg USE_CUDA=true -t pyvideotrans-webui:gpu .
+docker run -d --gpus all -p 7860:7860 -v ./output:/app/output -v ./models:/app/models pyvideotrans-webui:gpu
+```
+
+---
+
 ## 🛠️ CLI Mode (Headless / Batch Processing)
 
 You can also run tasks directly via the CLI:
